@@ -1,0 +1,17 @@
+# BMO Deep Agent UI - .gitignore
+
+# Node
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary files
+*.tmp
+*.bak
+

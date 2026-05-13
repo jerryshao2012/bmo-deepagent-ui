@@ -27,8 +27,10 @@ yarn dev
     6. Click **Generate a new client secret** and copy the generated secret.
     7. Do same for .env.docker:
         * **Application name**: BMO Deep Agent (or any name you prefer)
-        * **Homepage URL**: https://deepagent-ui.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io
-        * **Authorization callback URL**: https://deepagent-ui.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io/api/auth/callback/github
+        * **Homepage URL**: https://<your-app-fqdn>
+          * Such as https://deepagent-ui.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io
+        * **Authorization callback URL**: https://<your-app-fqdn>/api/auth/callback/github
+          * Such as https://deepagent-ui.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io/api/auth/callback/github
 2. Set up Google OAuth
     1. Go to [Google Cloud Console](https://console.cloud.google.com/home/dashboard).
     2. Click the project dropdown at the top and click **New Project** (or use an existing one). Give it a name and create it.
@@ -40,7 +42,8 @@ yarn dev
     8. Set the **Application type** to **Web application**.
     9. Add a name (e.g., BMO Deep Agent).
     10. Under **Authorized redirect URIs**, click **+ Add URI** and enter: http://localhost:3000/api/auth/callback/google
-        * Also create a same for .env.docker with this URL: https://deepagent-ui.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io/api/auth/callback/google
+        * Also add this URL: https://<your-app-fqdn>/api/auth/callback/google
+          * Such as https://deepagent-ui.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io/api/auth/callback/google
     11. Click **Create**.
     12. A modal will pop up with your **Client ID** and **Client Secret**. Copy both of these.
 3. Update the .env file

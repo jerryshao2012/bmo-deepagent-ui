@@ -17,9 +17,7 @@ const DEFAULT_PAGE_SIZE = 20;
 
 function createThreadsClient() {
   const config = getConfig();
-  if (!config) {
-    return null;
-  }
+  if (!config) return null;
 
   const apiKey =
     config.langsmithApiKey ||
@@ -88,14 +86,12 @@ export function useThreads(props: {
   return useSWRInfinite(
     (pageIndex: number, previousPageData: ThreadItem[] | null) => {
       const config = getConfig();
+      if (!config) return null;
+
       const apiKey =
-        config?.langsmithApiKey ||
+        config.langsmithApiKey ||
         process.env.NEXT_PUBLIC_LANGSMITH_API_KEY ||
         "";
-
-      if (!config) {
-        return null;
-      }
 
       // If the previous page returned no items, we've reached the end
       if (previousPageData && previousPageData.length === 0) {
@@ -236,7 +232,7 @@ export function useThreadStatus(threadId?: string | null) {
 
 export async function deleteThread(threadId: string): Promise<void> {
   const config = getConfig();
-  if (!config) throw new Error("No config found");
+  if (!config) return;
 
   const apiKey =
     config.langsmithApiKey ||

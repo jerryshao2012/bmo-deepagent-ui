@@ -48,8 +48,8 @@ if [ -n "$UI_FQDN" ]; then
     --resource-group $RESOURCE_GROUP \
     --image $ACR_NAME.azurecr.io/deepagent-ui:latest \
     --set-env-vars \
-      NEXT_PUBLIC_LANGGRAPH_URL=https://$AGENT_FQDN \
-      NEXT_PUBLIC_ASSISTANT_ID=research \
+      NEXT_PUBLIC_LANGGRAPH_URL=${NEXT_PUBLIC_LANGGRAPH_URL:-https://deep-research-agent.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io} \
+      NEXT_PUBLIC_ASSISTANT_ID=${NEXT_PUBLIC_ASSISTANT_ID:-research} \
       NEXT_PUBLIC_LANGSMITH_API_KEY=$LANGCHAIN_API_KEY \
       AUTH_SECRET=$AUTH_SECRET \
       AUTH_GITHUB_ID=$AUTH_GITHUB_ID \
@@ -83,8 +83,8 @@ else
     --cpu 1.0 \
     --memory 2Gi \
     --env-vars \
-      NEXT_PUBLIC_LANGGRAPH_URL=https://$AGENT_FQDN \
-      NEXT_PUBLIC_ASSISTANT_ID=research \
+      NEXT_PUBLIC_LANGGRAPH_URL=${NEXT_PUBLIC_LANGGRAPH_URL:-https://deep-research-agent.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io} \
+      NEXT_PUBLIC_ASSISTANT_ID=${NEXT_PUBLIC_ASSISTANT_ID:-research} \
       NEXT_PUBLIC_LANGSMITH_API_KEY=$LANGCHAIN_API_KEY \
       AUTH_SECRET=$AUTH_SECRET \
       AUTH_GITHUB_ID=$AUTH_GITHUB_ID \

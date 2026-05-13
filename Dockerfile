@@ -5,6 +5,7 @@ COPY package.json yarn.lock* ./
 RUN sed -i 's|https://bmostaging.jfrog.io/artifactory/api/npm/bmoai-npm-virtual/|https://registry.npmjs.org/|g' yarn.lock
 RUN (yarn install --frozen-lockfile || yarn install)
 COPY . .
+COPY ".env.docker" ./.env
 # Use webpack for the production image build path.
 RUN NEXT_TELEMETRY_DISABLED=1 yarn build --webpack
 

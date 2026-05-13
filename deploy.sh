@@ -27,26 +27,27 @@ echo "📦 Checking Container App status..."
 if az containerapp show --name deepagent-ui --resource-group $RESOURCE_GROUP &> /dev/null; then
   echo "📝 Container app 'deepagent-ui' already exists. Updating with new image..."
   
-  # Update the container app with the new image
+  # Update the container app with the new image and ensure all environment variables are set
   az containerapp update \
     --name deepagent-ui \
     --resource-group $RESOURCE_GROUP \
-    --image $ACR_NAME.azurecr.io/deepagent-ui:latest
-  
-  if [ $? -ne 0 ]; then
-    echo "❌ Failed to update container app."
-    exit 1
-  fi
-
-  # Restart the container to pick up the new image
-  echo "🔄 Restarting container to apply new image..."
-  az containerapp update \
-    --name deepagent-ui \
-    --resource-group $RESOURCE_GROUP \
-    --set-env-vars RESTART_TRIGGER="$(date +%s)"
+    --image $ACR_NAME.azurecr.io/deepagent-ui:latest \
+    --set-env-vars \
+      NEXT_PUBLIC_LANGGRAPH_URL=https://$AGENT_FQDN \
+      NEXT_PUBLIC_ASSISTANT_ID=research \
+      NEXT_PUBLIC_LANGSMITH_API_KEY=$LANGCHAIN_API_KEY \
+      AUTH_SECRET=$AUTH_SECRET \
+      AUTH_GITHUB_ID=$AUTH_GITHUB_ID \
+      AUTH_GITHUB_SECRET=$AUTH_GITHUB_SECRET \
+      AUTH_GOOGLE_ID=$AUTH_GOOGLE_ID \
+      AUTH_GOOGLE_SECRET=$AUTH_GOOGLE_SECRET \
+      AUTH_TRUST_HOST=true \
+      NODE_ENV=production \
+      PORT=3000 \
+      RESTART_TRIGGER="$(date +%s)"
     
   if [ $? -ne 0 ]; then
-    echo "❌ Failed to restart container app."
+    echo "❌ Failed to update container app."
     exit 1
   fi
 else
@@ -68,6 +69,12 @@ else
       NEXT_PUBLIC_LANGGRAPH_URL=https://$AGENT_FQDN \
       NEXT_PUBLIC_ASSISTANT_ID=research \
       NEXT_PUBLIC_LANGSMITH_API_KEY=$LANGCHAIN_API_KEY \
+      AUTH_SECRET=$AUTH_SECRET \
+      AUTH_GITHUB_ID=$AUTH_GITHUB_ID \
+      AUTH_GITHUB_SECRET=$AUTH_GITHUB_SECRET \
+      AUTH_GOOGLE_ID=$AUTH_GOOGLE_ID \
+      AUTH_GOOGLE_SECRET=$AUTH_GOOGLE_SECRET \
+      AUTH_TRUST_HOST=true \
       NODE_ENV=production \
       PORT=3000
       

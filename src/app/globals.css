@@ -463,3 +463,130 @@ button {
   text-decoration: line-through;
   text-decoration-color: #f85149;
 }
+
+/* ===========================
+   Sign-In Page Animations
+   =========================== */
+
+@keyframes signInCardEntrance {
+  0% {
+    opacity: 0;
+    transform: translateY(40px) scale(0.95);
+    filter: blur(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0px);
+  }
+}
+
+@keyframes signInLogoGlow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(17, 85, 204, 0.3),
+                0 0 40px rgba(45, 212, 191, 0.1),
+                inset 0 0 15px rgba(17, 85, 204, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(17, 85, 204, 0.5),
+                0 0 60px rgba(45, 212, 191, 0.2),
+                inset 0 0 25px rgba(17, 85, 204, 0.25);
+  }
+}
+
+@keyframes signInLogoSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes signInTitleFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes signInShimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.signin-card {
+  animation: signInCardEntrance 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.signin-card-inner {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(255, 255, 255, 0.7) 50%,
+    rgba(17, 85, 204, 0.05) 100%
+  );
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.8) inset,
+    0 20px 50px -12px rgba(15, 23, 42, 0.08),
+    0 0 60px -20px rgba(17, 85, 204, 0.05);
+}
+
+.signin-logo-ring {
+  border-radius: 50%;
+  border: 1px solid rgba(17, 85, 204, 0.1);
+  animation: signInLogoGlow 3s ease-in-out infinite;
+}
+
+.signin-logo-glow {
+  background: radial-gradient(
+    circle,
+    rgba(17, 85, 204, 0.08) 0%,
+    rgba(45, 212, 191, 0.03) 50%,
+    transparent 70%
+  );
+}
+
+.signin-logo-ring::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  border-top-color: rgba(17, 85, 204, 0.3);
+  border-right-color: rgba(45, 212, 191, 0.2);
+  animation: signInLogoSpin 6s linear infinite;
+}
+
+.signin-title {
+  animation: signInTitleFloat 4s ease-in-out infinite;
+  animation-delay: 1s;
+}
+
+.signin-btn {
+  overflow: hidden;
+}
+
+.signin-btn-shimmer {
+  background: linear-gradient(
+    110deg,
+    transparent 25%,
+    rgba(255, 255, 255, 0.04) 50%,
+    transparent 75%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.signin-btn:hover .signin-btn-shimmer {
+  opacity: 1;
+  animation: signInShimmer 1.2s ease-in-out infinite;
+}

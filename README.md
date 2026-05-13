@@ -13,6 +13,51 @@ yarn install
 yarn dev
 ```
 
+**Setup OAuth**
+
+1. Set up GitHub OAuth
+    1. Go to your [GitHub Developer Settings](https://github.com/settings/developers).
+    2. Click on **OAuth Apps** in the left sidebar, then click **New OAuth App**.
+    3. Fill in the application details:
+        * **Application name**: BMO Deep Agent Local (or any name you prefer)
+        * **Homepage URL**: http://localhost:3000
+        * **Authorization callback URL**: http://localhost:3000/api/auth/callback/github
+    4. Click **Register application**.
+    5. On the next page, you will see your **Client ID**. Copy this.
+    6. Click **Generate a new client secret** and copy the generated secret.
+    7. Do same for .env.docker:
+        * **Application name**: BMO Deep Agent (or any name you prefer)
+        * **Homepage URL**: https://deepagent-ui.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io
+        * **Authorization callback URL**: https://deepagent-ui.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io/api/auth/callback/github
+2. Set up Google OAuth
+    1. Go to [Google Cloud Console](https://console.cloud.google.com/home/dashboard).
+    2. Click the project dropdown at the top and click **New Project** (or use an existing one). Give it a name and create it.
+    3. Once the project is created, select it. Go to **APIs & Services > OAuth consent screen** from the left sidebar.
+    4. Select **External** (or **Internal** if you have a Google Workspace) and click **Create**.
+    5. Fill out the required fields (**App name**, **User support email**, **Developer contact information**) and click **Save and Continue** through the rest of the steps.
+    6. Now go to **APIs & Services > Credentials**.
+    7. Click **+ Create Credentials** at the top and select **OAuth client ID**.
+    8. Set the **Application type** to **Web application**.
+    9. Add a name (e.g., BMO Deep Agent).
+    10. Under **Authorized redirect URIs**, click **+ Add URI** and enter: http://localhost:3000/api/auth/callback/google
+        * Also create a same for .env.docker with this URL: https://deepagent-ui.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io/api/auth/callback/google
+    11. Click **Create**.
+    12. A modal will pop up with your **Client ID** and **Client Secret**. Copy both of these.
+3. Update the .env file
+Open the .env file in the root of your project and add the following keys with the values you copied from GitHub and Google. You also need to add an AUTH_SECRET (a random string used to encrypt cookies).
+
+```env
+# A random secret used by NextAuth to encrypt the session
+AUTH_SECRET="generate-a-random-secret-string-here"
+# GitHub OAuth
+AUTH_GITHUB_ID="your_github_client_id_here"
+AUTH_GITHUB_SECRET="your_github_client_secret_here"
+# Google OAuth
+AUTH_GOOGLE_ID="your_google_client_id_here"
+AUTH_GOOGLE_SECRET="your_google_client_secret_here"
+```
+> Tip: You can generate a good random string for `AUTH_SECRET` by running `openssl rand -base64 32` in your terminal.
+
 **Deploy a Deep Agent**
 
 As an example, see our [Deep Agents quickstarts](https://github.com/langchain-ai/deepagents/tree/main/examples) for examples and run the `deep_research` example.

@@ -1,6 +1,7 @@
 import { auth, signIn } from "@/auth";
 import ChatPage from "./chat-page";
 import SignInAnimation from "./components/SignInAnimation";
+import QRCodeSignIn from "./components/QRCodeSignIn";
 
 export default async function Page() {
   const session = await auth();
@@ -144,6 +145,9 @@ export default async function Page() {
                 </button>
               </form>
             </div>
+
+            {/* QR Code Section */}
+            <QRCodeSignIn azureUrl="https://deepagent-ui.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io/" />
 
             {/* Footer text */}
             <p className="mt-8 text-center text-[0.7rem] leading-relaxed text-slate-400">

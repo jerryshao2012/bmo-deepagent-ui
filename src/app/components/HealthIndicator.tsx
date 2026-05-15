@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { getConfig } from "@/lib/config";
 
 interface HealthStatus {
@@ -11,6 +11,7 @@ interface HealthStatus {
 export function HealthIndicator() {
   const [health, setHealth] = useState<HealthStatus>({ isHealthy: false });
   const [loading, setLoading] = useState(true);
+  const isFirstCheckRef = useRef(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,8 +26,9 @@ export function HealthIndicator() {
         return;
       }
 
-      // Randomly pick between the two health check endpoints
-      const useOkEndpoint = Math.random() < 0.5;
+      // Always use /health endpoint on first check to get version number
+      // Then randomly alternate between endpoints for subsequent checks
+      const useOkEndpoint = !isFirstCheckRef.current && Math.random() < 0.5;
       const healthUrl = useOkEndpoint
         ? `${config.deploymentUrl}/ok?check_db=0`
         : `${config.deploymentUrl}/health`;
@@ -65,6 +67,7 @@ export function HealthIndicator() {
       } finally {
         if (!cancelled) {
           setLoading(false);
+          isFirstCheckRef.current = false;
         }
       }
     };

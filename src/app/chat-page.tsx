@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Assistant } from "@langchain/langgraph-sdk";
 import { ClientProvider, useClient } from "@/providers/ClientProvider";
 import { Settings, MessagesSquare, SquarePen } from "lucide-react";
+import { HealthIndicator } from "./components/HealthIndicator";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -156,6 +157,7 @@ function HomePageInner({
               className="h-6 w-auto"
             />
             <h1 className="text-xl font-semibold">Deep Agent</h1>
+            <HealthIndicator />
             {!sidebar && (
               <Button
                 variant="ghost"

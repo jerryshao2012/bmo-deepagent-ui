@@ -2,6 +2,7 @@ import { auth, signIn } from "@/auth";
 import ChatPage from "./chat-page";
 import SignInAnimation from "./components/SignInAnimation";
 import QRCodeSignIn from "./components/QRCodeSignIn";
+import { HealthIndicator } from "./components/HealthIndicator";
 
 export default async function Page() {
   const session = await auth();
@@ -15,6 +16,7 @@ export default async function Page() {
             <img src="/bmo-logo.svg" alt="BMO" className="h-6 w-auto" />
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">Deep Agent</h1>
           </div>
+          <HealthIndicator />
         </header>
 
         {/* Canvas animation background */}

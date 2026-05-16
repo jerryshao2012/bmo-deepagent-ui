@@ -24,9 +24,28 @@ function createThreadsClient() {
     process.env.NEXT_PUBLIC_LANGSMITH_API_KEY ||
     "";
 
+  let apiUrl: string;
+  const defaultHeaders: Record<string, string> = {};
+  
+  if (typeof window !== "undefined") {
+    // Browser-side: use absolute URL to /api/proxy
+    apiUrl = `${window.location.origin}/api/proxy`;
+    // Pass deployment URL as header for dynamic local dev support
+    defaultHeaders["X-Deployment-URL"] = config.deploymentUrl;
+    if (apiKey) {
+      defaultHeaders["X-Api-Key"] = apiKey;
+    }
+  } else {
+    // Server-side: use direct deployment URL
+    apiUrl = config.deploymentUrl;
+    if (apiKey) {
+      defaultHeaders["X-Api-Key"] = apiKey;
+    }
+  }
+
   return new Client({
-    apiUrl: config.deploymentUrl,
-    defaultHeaders: apiKey ? { "X-Api-Key": apiKey } : {},
+    apiUrl,
+    defaultHeaders,
   });
 }
 
@@ -106,6 +125,7 @@ export function useThreads(props: {
         assistantId: config.assistantId,
         apiKey,
         status: props?.status,
+        isBrowser: typeof window !== "undefined",
       };
     },
     async ({
@@ -115,6 +135,7 @@ export function useThreads(props: {
       status,
       pageIndex,
       pageSize,
+      isBrowser,
     }: {
       kind: "threads";
       pageIndex: number;
@@ -123,10 +144,33 @@ export function useThreads(props: {
       assistantId: string;
       apiKey: string;
       status?: Thread["status"];
+      isBrowser?: boolean;
     }) => {
+      // Use API proxy for browser-side requests
+      let apiUrl: string;
+      const defaultHeaders: Record<string, string> = {};
+      
+      if (isBrowser) {
+        // Browser-side: use absolute URL to /api/proxy
+        apiUrl = typeof window !== "undefined" 
+          ? `${window.location.origin}/api/proxy`
+          : deploymentUrl;
+        // Pass deployment URL as header for dynamic local dev support
+        defaultHeaders["X-Deployment-URL"] = deploymentUrl;
+        if (apiKey) {
+          defaultHeaders["X-Api-Key"] = apiKey;
+        }
+      } else {
+        // Server-side: use direct deployment URL
+        apiUrl = deploymentUrl;
+        if (apiKey) {
+          defaultHeaders["X-Api-Key"] = apiKey;
+        }
+      }
+      
       const client = new Client({
-        apiUrl: deploymentUrl,
-        defaultHeaders: apiKey ? { "X-Api-Key": apiKey } : {},
+        apiUrl,
+        defaultHeaders,
       });
 
       // Check if assistantId is a UUID (deployed) or graph name (local)
@@ -239,9 +283,28 @@ export async function deleteThread(threadId: string): Promise<void> {
     process.env.NEXT_PUBLIC_LANGSMITH_API_KEY ||
     "";
 
+  let apiUrl: string;
+  const defaultHeaders: Record<string, string> = {};
+  
+  if (typeof window !== "undefined") {
+    // Browser-side: use absolute URL to /api/proxy
+    apiUrl = `${window.location.origin}/api/proxy`;
+    // Pass deployment URL as header for dynamic local dev support
+    defaultHeaders["X-Deployment-URL"] = config.deploymentUrl;
+    if (apiKey) {
+      defaultHeaders["X-Api-Key"] = apiKey;
+    }
+  } else {
+    // Server-side: use direct deployment URL
+    apiUrl = config.deploymentUrl;
+    if (apiKey) {
+      defaultHeaders["X-Api-Key"] = apiKey;
+    }
+  }
+
   const client = new Client({
-    apiUrl: config.deploymentUrl,
-    defaultHeaders: apiKey ? { "X-Api-Key": apiKey } : {},
+    apiUrl,
+    defaultHeaders,
   });
 
   await client.threads.delete(threadId);

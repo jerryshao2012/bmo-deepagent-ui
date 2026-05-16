@@ -50,6 +50,20 @@ yarn dev
 Open the .env file in the root of your project and add the following keys with the values you copied from GitHub and Google. You also need to add an AUTH_SECRET (a random string used to encrypt cookies).
 
 ```env
+# LangSmith API Key (required for connecting to deployed LangGraph server)
+# Get your key at: https://smith.langchain.com/settings
+# This key is used by the API proxy to authenticate requests to LangGraph
+LANGCHAIN_API_KEY="lsv2_pt_xxxx"
+
+# LangGraph Server URL (Server-side - required for API proxy)
+LANGGRAPH_URL="https://your-langgraph-server-url"
+
+# LangGraph Server URL (Client-side - exposed to browser)
+NEXT_PUBLIC_LANGGRAPH_URL="https://your-langgraph-server-url"
+
+# Assistant ID
+NEXT_PUBLIC_ASSISTANT_ID="research"
+
 # A random secret used by NextAuth to encrypt the session
 AUTH_SECRET="generate-a-random-secret-string-here"
 # GitHub OAuth
@@ -102,7 +116,9 @@ You can get the Deployment URL and Assistant ID from the terminal output and `la
 
 - **Deployment URL**: The URL for the LangGraph deployment you are connecting to
 - **Assistant ID**: The ID of the assistant or agent you want to use
-- [Optional] **LangSmith API Key**: Your LangSmith API key (format: `lsv2_pt_...`). This may be required for accessing deployed LangGraph applications. You can also provide this via the `NEXT_PUBLIC_LANGSMITH_API_KEY` environment variable.
+- [Optional] **LangSmith API Key**: Your LangSmith API key (format: `lsv2_pt_...`). This may be required for accessing deployed LangGraph applications. You can also provide this via the `LANGCHAIN_API_KEY` environment variable.
+
+**Note:** When deploying to production, the application uses a server-side API proxy that automatically adds the `X-API-Key` header from the `LANGCHAIN_API_KEY` environment variable. Health check endpoints (`/health`, `/ok`) bypass authentication.
 
 **Usage**
 
@@ -123,8 +139,17 @@ You can click on any file to view it.
 You can optionally set environment variables instead of using the settings dialog:
 
 ```env
+# For production deployments - used by server-side API proxy
+LANGCHAIN_API_KEY="lsv2_xxxx"
+
+# For local development - optional fallback
 NEXT_PUBLIC_LANGSMITH_API_KEY="lsv2_xxxx"
 ```
+
+**Authentication Architecture:**
+- **Production**: All API requests (except health checks) are proxied through `/api/proxy` which adds the `X-API-Key` header from `LANGCHAIN_API_KEY`
+- **Health Checks**: Endpoints `/health` and `/ok` bypass authentication
+- **Local Development**: Can optionally use `NEXT_PUBLIC_LANGSMITH_API_KEY` for direct client-side authentication
 
 **Note:** Settings configured in the UI take precedence over environment variables.
 

@@ -29,6 +29,9 @@ export function HealthIndicator() {
       // Always use /health endpoint on first check to get version number
       // Then randomly alternate between endpoints for subsequent checks
       const useOkEndpoint = !isFirstCheckRef.current && Math.random() < 0.5;
+      
+      // Health check endpoints bypass the proxy and access deployment URL directly
+      // as they don't require API key authentication
       const healthUrl = useOkEndpoint
         ? `${config.deploymentUrl}/ok?check_db=0`
         : `${config.deploymentUrl}/health`;

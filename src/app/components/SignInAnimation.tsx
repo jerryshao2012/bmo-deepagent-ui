@@ -5,7 +5,7 @@ import { useEffect, useRef, useCallback } from "react";
 interface Particle {
   x: number;
   y: number;
-  z: number; // Depth (0.1 to 1.0)
+  z: number;
   vx: number;
   vy: number;
   length: number;
@@ -18,26 +18,18 @@ interface Particle {
   swimSpeed: number;
 }
 
-interface GlowOrb {
+interface InkWash {
   x: number;
   y: number;
   radius: number;
-  color: string;
   alpha: number;
-  vx: number;
-  vy: number;
-  pulseSpeed: number;
-  pulsePhase: number;
 }
 
-const VIBRANT_COLORS = [
-  "66, 133, 244",  // Blue
-  "234, 67, 53",   // Red
-  "251, 188, 5",   // Yellow
-  "52, 168, 83",   // Green
-  "103, 58, 183",  // Purple
-  "0, 188, 212",   // Cyan
-  "255, 64, 129",  // Pink
+// Xieyi colors: Ink Black and Cinnabar Red
+const XIEYI_COLORS = [
+  "30, 30, 30",  // Deep Ink
+  "60, 60, 60",  // Medium Ink
+  "200, 60, 50", // Cinnabar Red (for contrast)
 ];
 
 export default function SignInAnimation() {
@@ -45,17 +37,18 @@ export default function SignInAnimation() {
   const mouseRef = useRef({ x: -1000, y: -1000, tx: 0, ty: 0 });
   const animRef = useRef<number>(0);
   const particlesRef = useRef<Particle[]>([]);
-  const orbsRef = useRef<GlowOrb[]>([]);
+  const inkWashesRef = useRef<InkWash[]>([]);
   const timeRef = useRef(0);
 
   const createParticles = useCallback((width: number, height: number) => {
     const particles: Particle[] = [];
-    // Slightly fewer fish than dashes to allow for more detail
-    const count = Math.min(Math.floor((width * height) / 4000), 800);
+    // Xieyi paintings have a lot of negative space. We shouldn't have too many fish.
+    const count = Math.min(Math.floor((width * height) / 8000), 150);
 
     for (let i = 0; i < count; i++) {
-      const color = VIBRANT_COLORS[Math.floor(Math.random() * VIBRANT_COLORS.length)];
-      const z = Math.random() * 0.9 + 0.1;
+      // 90% black ink fish, 10% red fish
+      const color = Math.random() > 0.1 ? XIEYI_COLORS[Math.floor(Math.random() * 2)] : XIEYI_COLORS[2];
+      const z = Math.random() * 0.7 + 0.3; // Less extreme depth
 
       particles.push({
         x: Math.random() * width,
@@ -63,37 +56,31 @@ export default function SignInAnimation() {
         z,
         vx: 0,
         vy: 0,
-        length: (Math.random() * 6 + 6) * z,
-        thickness: (Math.random() * 1.5 + 1) * z,
+        length: (Math.random() * 15 + 15) * z, // Slightly larger brush strokes
+        thickness: (Math.random() * 4 + 3) * z,
         angle: Math.random() * Math.PI * 2,
         color,
-        alpha: (Math.random() * 0.5 + 0.4) * z,
-        speed: (Math.random() * 0.4 + 0.3) * z,
+        alpha: (Math.random() * 0.4 + 0.5) * z, // Slightly translucent like ink
+        speed: (Math.random() * 0.5 + 0.2) * z,
         swimPhase: Math.random() * Math.PI * 2,
-        swimSpeed: (Math.random() * 0.1 + 0.05),
+        swimSpeed: (Math.random() * 0.08 + 0.04),
       });
     }
     return particles;
   }, []);
 
-  const createOrbs = useCallback((width: number, height: number) => {
-    const orbs: GlowOrb[] = [];
-    const orbColors = ["66, 133, 244", "103, 58, 183", "0, 188, 212", "255, 64, 129"];
-
-    for (let i = 0; i < 8; i++) {
-      orbs.push({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        radius: Math.random() * 400 + 200,
-        color: orbColors[i % orbColors.length],
-        alpha: 0.12 + Math.random() * 0.05,
-        vx: (Math.random() - 0.5) * 0.1,
-        vy: (Math.random() - 0.5) * 0.1,
-        pulseSpeed: Math.random() * 0.003 + 0.002,
-        pulsePhase: Math.random() * Math.PI * 2,
+  const createInkWashes = useCallback((width: number, height: number) => {
+    const washes: InkWash[] = [];
+    // A few abstract lotus leaf ink blobs in the corners
+    for (let i = 0; i < 6; i++) {
+      washes.push({
+        x: (Math.random() > 0.5 ? width * Math.random() * 0.2 : width - width * Math.random() * 0.2),
+        y: (Math.random() > 0.5 ? height * Math.random() * 0.3 : height - height * Math.random() * 0.3),
+        radius: Math.random() * 150 + 100,
+        alpha: Math.random() * 0.1 + 0.05, // very faint
       });
     }
-    return orbs;
+    return washes;
   }, []);
 
   useEffect(() => {
@@ -112,7 +99,7 @@ export default function SignInAnimation() {
       ctx.scale(dpr, dpr);
 
       particlesRef.current = createParticles(window.innerWidth, window.innerHeight);
-      orbsRef.current = createOrbs(window.innerWidth, window.innerHeight);
+      inkWashesRef.current = createInkWashes(window.innerWidth, window.innerHeight);
     };
 
     resize();
@@ -141,46 +128,40 @@ export default function SignInAnimation() {
       const h = window.innerHeight;
       const time = timeRef.current;
 
-      // Clear with trail
-      ctx.fillStyle = "rgba(248, 250, 252, 0.2)";
+      // Clear with rice paper feel (very faint warm tint)
+      ctx.fillStyle = "rgba(250, 248, 245, 0.3)";
       ctx.fillRect(0, 0, w, h);
 
-      // 1. Glow Orbs (Underwater Lighting Feel)
-      for (const orb of orbsRef.current) {
-        orb.x += orb.vx;
-        orb.y += orb.vy;
-
-        if (orb.x < -orb.radius) orb.vx = Math.abs(orb.vx);
-        if (orb.x > w + orb.radius) orb.vx = -Math.abs(orb.vx);
-        if (orb.y < -orb.radius) orb.vy = Math.abs(orb.vy);
-        if (orb.y > h + orb.radius) orb.vy = -Math.abs(orb.vy);
-
-        const pulseAlpha = orb.alpha * (0.8 + 0.2 * Math.sin(time * orb.pulseSpeed + orb.pulsePhase));
-        const gradient = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, orb.radius);
-        gradient.addColorStop(0, `rgba(${orb.color}, ${pulseAlpha})`);
-        gradient.addColorStop(0.6, `rgba(${orb.color}, ${pulseAlpha * 0.2})`);
-        gradient.addColorStop(1, `rgba(${orb.color}, 0)`);
-
+      // 1. Static Ink Washes (Abstract Lotus Leaves)
+      for (const wash of inkWashesRef.current) {
+        ctx.beginPath();
+        ctx.arc(wash.x, wash.y, wash.radius, 0, Math.PI * 2);
+        
+        const gradient = ctx.createRadialGradient(wash.x, wash.y, 0, wash.x, wash.y, wash.radius);
+        gradient.addColorStop(0, `rgba(40, 50, 45, ${wash.alpha})`);
+        gradient.addColorStop(0.7, `rgba(40, 50, 45, ${wash.alpha * 0.5})`);
+        gradient.addColorStop(1, `rgba(40, 50, 45, 0)`);
+        
         ctx.fillStyle = gradient;
-        ctx.fillRect(orb.x - orb.radius, orb.y - orb.radius, orb.radius * 2, orb.radius * 2);
+        ctx.fill();
       }
 
-      // 2. Fish Particles
+      // 2. Xieyi Fish Particles
       const particles = particlesRef.current;
       const { x: mx, y: my, tx, ty } = mouseRef.current;
 
       for (const p of particles) {
-        // Swimming Flow (Slightly more organic than before)
+        // Swimming Flow
         const flowAngle = 
-          Math.sin(p.x * 0.001 + time * 0.003) * Math.PI * 0.8 + 
-          Math.cos(p.y * 0.001 + time * 0.003) * Math.PI * 0.8;
+          Math.sin(p.x * 0.001 + time * 0.002) * Math.PI * 0.8 + 
+          Math.cos(p.y * 0.001 + time * 0.002) * Math.PI * 0.8;
         
-        p.angle += (flowAngle - p.angle) * 0.03;
+        p.angle += (flowAngle - p.angle) * 0.02;
         
         p.vx = Math.cos(p.angle) * p.speed;
         p.vy = Math.sin(p.angle) * p.speed;
 
-        // Mouse repulsion (Scaring the fish)
+        // Mouse repulsion
         const dx = p.x - mx;
         const dy = p.y - my;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -188,7 +169,6 @@ export default function SignInAnimation() {
           const force = (150 - dist) / 150;
           p.vx += (dx / dist) * force * 5;
           p.vy += (dy / dist) * force * 5;
-          // Quickly turn away
           p.angle = Math.atan2(p.vy, p.vx);
         }
 
@@ -205,34 +185,32 @@ export default function SignInAnimation() {
         const px = p.x + tx * p.z;
         const py = p.y + ty * p.z;
 
-        // Drawing the Fish
+        // Drawing Xieyi Fish (Minimalist Brush Strokes)
         ctx.save();
         ctx.translate(px, py);
         ctx.rotate(p.angle);
         ctx.globalAlpha = p.alpha;
         ctx.fillStyle = `rgb(${p.color})`;
         
-        // Body (Teardrop/Ellipse)
+        // One fluid stroke for the body (thick head, tapering to tail)
         ctx.beginPath();
-        ctx.moveTo(p.length / 2, 0); // Nose
-        ctx.quadraticCurveTo(0, p.thickness, -p.length / 4, 0); // Bottom curve
-        ctx.quadraticCurveTo(0, -p.thickness, p.length / 2, 0); // Top curve
+        ctx.moveTo(p.length / 2, 0); // Head
+        ctx.bezierCurveTo(p.length / 4, p.thickness, -p.length / 4, p.thickness * 0.5, -p.length / 2, 0);
+        ctx.bezierCurveTo(-p.length / 4, -p.thickness * 0.5, p.length / 4, -p.thickness, p.length / 2, 0);
         ctx.fill();
 
-        // Tail Wiggle
+        // A quick flick for the tail
         const wiggle = Math.sin(time * p.swimSpeed + p.swimPhase) * (p.length * 0.4);
         ctx.beginPath();
-        ctx.moveTo(-p.length / 4, 0);
-        ctx.lineTo(-p.length * 0.7, wiggle * 0.5);
-        ctx.lineTo(-p.length * 0.8, wiggle);
-        ctx.lineTo(-p.length * 0.7, wiggle * -0.5);
-        ctx.closePath();
+        ctx.moveTo(-p.length / 2.2, 0);
+        ctx.quadraticCurveTo(-p.length * 0.7, wiggle * 0.8, -p.length * 0.9, wiggle);
+        ctx.quadraticCurveTo(-p.length * 0.6, 0, -p.length / 2.2, 0);
         ctx.fill();
-
-        // Eye (Tiny dot for extra life)
-        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+        
+        // Minimalist eye dot
+        ctx.fillStyle = `rgba(0, 0, 0, ${p.alpha})`;
         ctx.beginPath();
-        ctx.arc(p.length * 0.25, -p.thickness * 0.2, 0.8 * p.z, 0, Math.PI * 2);
+        ctx.arc(p.length * 0.3, -p.thickness * 0.3, p.z * 1.2, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.restore();
@@ -250,7 +228,7 @@ export default function SignInAnimation() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseleave", handleMouseLeave);
     };
-  }, [createParticles, createOrbs]);
+  }, [createParticles, createInkWashes]);
 
   return (
     <canvas

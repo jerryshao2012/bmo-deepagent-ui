@@ -44,6 +44,7 @@ export default function SignInAnimation() {
   const animRef = useRef<number>(0);
   const particlesRef = useRef<Particle[]>([]);
   const inkWashesRef = useRef<InkWash[]>([]);
+  const inkFlowersRef = useRef<InkWash[]>([]);
   const timeRef = useRef(0);
 
   const createParticles = useCallback((width: number, height: number) => {
@@ -173,6 +174,20 @@ export default function SignInAnimation() {
     return washes;
   }, []);
 
+  const createInkFlowers = useCallback((width: number, height: number) => {
+    const flowers: InkWash[] = [];
+    // Spawn 4 abstract lotus flower washes slightly offset from the leaves
+    for (let i = 0; i < 4; i++) {
+      flowers.push({
+        x: (Math.random() > 0.5 ? width * (Math.random() * 0.2 + 0.05) : width - width * (Math.random() * 0.2 + 0.05)),
+        y: (Math.random() > 0.5 ? height * (Math.random() * 0.3 + 0.05) : height - height * (Math.random() * 0.3 + 0.05)),
+        radius: Math.random() * 70 + 60, // flower wash size (smaller than leaf washes)
+        alpha: Math.random() * 0.07 + 0.04, // very faint, translucent wash
+      });
+    }
+    return flowers;
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -190,6 +205,7 @@ export default function SignInAnimation() {
 
       particlesRef.current = createParticles(window.innerWidth, window.innerHeight);
       inkWashesRef.current = createInkWashes(window.innerWidth, window.innerHeight);
+      inkFlowersRef.current = createInkFlowers(window.innerWidth, window.innerHeight);
     };
 
     resize();
@@ -231,6 +247,20 @@ export default function SignInAnimation() {
         gradient.addColorStop(0, `rgba(40, 50, 45, ${wash.alpha})`);
         gradient.addColorStop(0.7, `rgba(40, 50, 45, ${wash.alpha * 0.5})`);
         gradient.addColorStop(1, `rgba(40, 50, 45, 0)`);
+        
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
+
+      // 1b. Static Ink Washes (Abstract Lotus Flowers - Soft, dilute watercolor-pink blobs)
+      for (const wash of inkFlowersRef.current) {
+        ctx.beginPath();
+        ctx.arc(wash.x, wash.y, wash.radius, 0, Math.PI * 2);
+        
+        const gradient = ctx.createRadialGradient(wash.x, wash.y, 0, wash.x, wash.y, wash.radius);
+        gradient.addColorStop(0, `rgba(235, 120, 140, ${wash.alpha})`);
+        gradient.addColorStop(0.6, `rgba(235, 120, 140, ${wash.alpha * 0.4})`);
+        gradient.addColorStop(1, `rgba(235, 120, 140, 0)`);
         
         ctx.fillStyle = gradient;
         ctx.fill();
@@ -673,7 +703,7 @@ export default function SignInAnimation() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseleave", handleMouseLeave);
     };
-  }, [createParticles, createInkWashes]);
+  }, [createParticles, createInkWashes, createInkFlowers]);
 
   return (
     <canvas

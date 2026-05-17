@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 interface Particle {
   x: number;
@@ -31,13 +31,6 @@ interface InkWash {
   alpha: number;
 }
 
-// Xieyi colors: Ink Black and Cinnabar Red
-const XIEYI_COLORS = [
-  "30, 30, 30",  // Deep Ink
-  "60, 60, 60",  // Medium Ink
-  "200, 60, 50", // Cinnabar Red (for contrast)
-];
-
 export default function SignInAnimation() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mouseRef = useRef({ x: -1000, y: -1000, tx: 0, ty: 0 });
@@ -54,40 +47,40 @@ export default function SignInAnimation() {
 
     for (let i = 0; i < count; i++) {
       const z = Math.random() * 0.7 + 0.3; // Depth factor (scale size, speed, and opacity)
-      
+
       const rand = Math.random();
-      let fishType: Particle["fishType"] = "ink_veil";
-      let color = "30, 30, 30";
-      let baseLength = 22;
-      let baseThickness = 5;
-      let baseSpeed = 0.35;
-      let swimSpeed = 0.055;
-      let tailLengthMult = 0.85;
-      let finLengthMult = 0.85;
-      let bodyPlumpness = 1.0;
-      let wavenumber = 2.6;
-      let swimAmplitudeMult = 1.0;
+      let fishType: Particle["fishType"];
+      let color;
+      let baseLength;
+      let baseThickness;
+      let baseSpeed;
+      let swimSpeed;
+      let tailLengthMult;
+      let finLengthMult;
+      let bodyPlumpness;
+      let wavenumber;
+      let swimAmplitudeMult;
 
       if (rand < 0.3) {
         // 1. Ink Veil-Tail (Classic slow black-ink fish with long flowing tails)
         fishType = "ink_veil";
         color = Math.random() > 0.5 ? "30, 30, 30" : "60, 60, 60";
-        baseLength = Math.random() * 8 + 20;       // 20-28px
-        baseThickness = Math.random() * 1.5 + 4.5;   // 4.5-6px
-        baseSpeed = Math.random() * 0.15 + 0.15;     // Slow, majestic glide
-        swimSpeed = Math.random() * 0.015 + 0.03;    // Heavy, slow sway
-        tailLengthMult = 1.15;                       // Extremely long tail
+        baseLength = Math.random() * 8 + 20; // 20-28px
+        baseThickness = Math.random() * 1.5 + 4.5; // 4.5-6px
+        baseSpeed = Math.random() * 0.15 + 0.15; // Slow, majestic glide
+        swimSpeed = Math.random() * 0.015 + 0.03; // Heavy, slow sway
+        tailLengthMult = 1.15; // Extremely long tail
         finLengthMult = 1.1;
-        bodyPlumpness = 1.15;                        // Plumper, elegant head/body
-        wavenumber = 2.2;                            // Slower, wider body wave
+        bodyPlumpness = 1.15; // Plumper, elegant head/body
+        wavenumber = 2.2; // Slower, wider body wave
         swimAmplitudeMult = 0.85;
       } else if (rand < 0.5) {
         // 2. Cinnabar Red Koi (Solid, energetic red)
         fishType = "cinnabar";
         color = "210, 50, 40";
-        baseLength = Math.random() * 6 + 18;       // 18-24px
-        baseThickness = Math.random() * 1.0 + 3.8;   // 3.8-4.8px
-        baseSpeed = Math.random() * 0.25 + 0.3;      // Faster, active
+        baseLength = Math.random() * 6 + 18; // 18-24px
+        baseThickness = Math.random() + 3.8; // 3.8-4.8px
+        baseSpeed = Math.random() * 0.25 + 0.3; // Faster, active
         swimSpeed = Math.random() * 0.02 + 0.05;
         tailLengthMult = 0.85;
         finLengthMult = 0.85;
@@ -97,9 +90,9 @@ export default function SignInAnimation() {
       } else if (rand < 0.7) {
         // 3. Kohaku Koi (Creamy warm-white body with red watercolor splotches)
         fishType = "kohaku";
-        color = "246, 243, 236";                     // Distinct warm-white base
+        color = "246, 243, 236"; // Distinct warm-white base
         baseLength = Math.random() * 6 + 18;
-        baseThickness = Math.random() * 1.0 + 3.8;
+        baseThickness = Math.random() + 3.8;
         baseSpeed = Math.random() * 0.2 + 0.25;
         swimSpeed = Math.random() * 0.02 + 0.055;
         tailLengthMult = 0.8;
@@ -112,7 +105,7 @@ export default function SignInAnimation() {
         fishType = "tancho";
         color = "246, 243, 236";
         baseLength = Math.random() * 6 + 19;
-        baseThickness = Math.random() * 1.0 + 3.9;
+        baseThickness = Math.random() + 3.9;
         baseSpeed = Math.random() * 0.2 + 0.25;
         swimSpeed = Math.random() * 0.02 + 0.05;
         tailLengthMult = 0.9;
@@ -124,14 +117,14 @@ export default function SignInAnimation() {
         // 5. Baby Ink Fish (Small, very dark black ink dart)
         fishType = "baby_ink";
         color = "15, 15, 15";
-        baseLength = Math.random() * 4 + 11;       // 11-15px (small)
-        baseThickness = Math.random() * 0.6 + 2.4;   // 2.4-3px (slender)
-        baseSpeed = Math.random() * 0.3 + 0.45;      // High speed darting
-        swimSpeed = Math.random() * 0.03 + 0.085;    // High frequency wiggle
+        baseLength = Math.random() * 4 + 11; // 11-15px (small)
+        baseThickness = Math.random() * 0.6 + 2.4; // 2.4-3px (slender)
+        baseSpeed = Math.random() * 0.3 + 0.45; // High speed darting
+        swimSpeed = Math.random() * 0.03 + 0.085; // High frequency wiggle
         tailLengthMult = 0.65;
         finLengthMult = 0.65;
         bodyPlumpness = 0.85;
-        wavenumber = 3.0;                            // Very tight wiggles
+        wavenumber = 3.0; // Very tight wiggles
         swimAmplitudeMult = 1.35;
       }
 
@@ -145,7 +138,7 @@ export default function SignInAnimation() {
         thickness: baseThickness * z,
         angle: Math.random() * Math.PI * 2,
         color,
-        alpha: (Math.random() * 0.3 + 0.6) * z,      // Faded overlay look
+        alpha: (Math.random() * 0.3 + 0.6) * z, // Faded overlay look
         speed: baseSpeed * z,
         swimPhase: Math.random() * Math.PI * 2,
         swimSpeed,
@@ -165,8 +158,14 @@ export default function SignInAnimation() {
     // A few abstract lotus leaf ink blobs in the corners
     for (let i = 0; i < 6; i++) {
       washes.push({
-        x: (Math.random() > 0.5 ? width * Math.random() * 0.2 : width - width * Math.random() * 0.2),
-        y: (Math.random() > 0.5 ? height * Math.random() * 0.3 : height - height * Math.random() * 0.3),
+        x:
+          Math.random() > 0.5
+            ? width * Math.random() * 0.2
+            : width - width * Math.random() * 0.2,
+        y:
+          Math.random() > 0.5
+            ? height * Math.random() * 0.3
+            : height - height * Math.random() * 0.3,
         radius: Math.random() * 150 + 100,
         alpha: Math.random() * 0.1 + 0.05, // very faint
       });
@@ -179,8 +178,14 @@ export default function SignInAnimation() {
     // Spawn 4 abstract lotus flower washes slightly offset from the leaves
     for (let i = 0; i < 4; i++) {
       flowers.push({
-        x: (Math.random() > 0.5 ? width * (Math.random() * 0.2 + 0.05) : width - width * (Math.random() * 0.2 + 0.05)),
-        y: (Math.random() > 0.5 ? height * (Math.random() * 0.3 + 0.05) : height - height * (Math.random() * 0.3 + 0.05)),
+        x:
+          Math.random() > 0.5
+            ? width * (Math.random() * 0.2 + 0.05)
+            : width - width * (Math.random() * 0.2 + 0.05),
+        y:
+          Math.random() > 0.5
+            ? height * (Math.random() * 0.3 + 0.05)
+            : height - height * (Math.random() * 0.3 + 0.05),
         radius: Math.random() * 70 + 60, // flower wash size (smaller than leaf washes)
         alpha: Math.random() * 0.07 + 0.04, // very faint, translucent wash
       });
@@ -203,9 +208,18 @@ export default function SignInAnimation() {
       canvas.style.height = `${window.innerHeight}px`;
       ctx.scale(dpr, dpr);
 
-      particlesRef.current = createParticles(window.innerWidth, window.innerHeight);
-      inkWashesRef.current = createInkWashes(window.innerWidth, window.innerHeight);
-      inkFlowersRef.current = createInkFlowers(window.innerWidth, window.innerHeight);
+      particlesRef.current = createParticles(
+        window.innerWidth,
+        window.innerHeight
+      );
+      inkWashesRef.current = createInkWashes(
+        window.innerWidth,
+        window.innerHeight
+      );
+      inkFlowersRef.current = createInkFlowers(
+        window.innerWidth,
+        window.innerHeight
+      );
     };
 
     resize();
@@ -214,11 +228,11 @@ export default function SignInAnimation() {
     const handleMouseMove = (e: MouseEvent) => {
       const x = e.clientX;
       const y = e.clientY;
-      mouseRef.current = { 
-        x, 
-        y, 
-        tx: (x / window.innerWidth - 0.5) * 30, 
-        ty: (y / window.innerHeight - 0.5) * 30 
+      mouseRef.current = {
+        x,
+        y,
+        tx: (x / window.innerWidth - 0.5) * 30,
+        ty: (y / window.innerHeight - 0.5) * 30,
       };
     };
 
@@ -242,12 +256,19 @@ export default function SignInAnimation() {
       for (const wash of inkWashesRef.current) {
         ctx.beginPath();
         ctx.arc(wash.x, wash.y, wash.radius, 0, Math.PI * 2);
-        
-        const gradient = ctx.createRadialGradient(wash.x, wash.y, 0, wash.x, wash.y, wash.radius);
+
+        const gradient = ctx.createRadialGradient(
+          wash.x,
+          wash.y,
+          0,
+          wash.x,
+          wash.y,
+          wash.radius
+        );
         gradient.addColorStop(0, `rgba(40, 50, 45, ${wash.alpha})`);
         gradient.addColorStop(0.7, `rgba(40, 50, 45, ${wash.alpha * 0.5})`);
         gradient.addColorStop(1, `rgba(40, 50, 45, 0)`);
-        
+
         ctx.fillStyle = gradient;
         ctx.fill();
       }
@@ -256,12 +277,19 @@ export default function SignInAnimation() {
       for (const wash of inkFlowersRef.current) {
         ctx.beginPath();
         ctx.arc(wash.x, wash.y, wash.radius, 0, Math.PI * 2);
-        
-        const gradient = ctx.createRadialGradient(wash.x, wash.y, 0, wash.x, wash.y, wash.radius);
+
+        const gradient = ctx.createRadialGradient(
+          wash.x,
+          wash.y,
+          0,
+          wash.x,
+          wash.y,
+          wash.radius
+        );
         gradient.addColorStop(0, `rgba(235, 120, 140, ${wash.alpha})`);
         gradient.addColorStop(0.6, `rgba(235, 120, 140, ${wash.alpha * 0.4})`);
         gradient.addColorStop(1, `rgba(235, 120, 140, 0)`);
-        
+
         ctx.fillStyle = gradient;
         ctx.fill();
       }
@@ -272,12 +300,12 @@ export default function SignInAnimation() {
 
       for (const p of particles) {
         // Swimming Flow
-        const flowAngle = 
-          Math.sin(p.x * 0.001 + time * 0.002) * Math.PI * 0.8 + 
+        const flowAngle =
+          Math.sin(p.x * 0.001 + time * 0.002) * Math.PI * 0.8 +
           Math.cos(p.y * 0.001 + time * 0.002) * Math.PI * 0.8;
-        
+
         p.angle += (flowAngle - p.angle) * 0.02;
-        
+
         p.vx = Math.cos(p.angle) * p.speed;
         p.vy = Math.sin(p.angle) * p.speed;
 
@@ -310,9 +338,15 @@ export default function SignInAnimation() {
         ctx.translate(px, py);
         ctx.rotate(p.angle);
         ctx.globalAlpha = p.alpha;
-        
+
         const N = 12; // Spine segments
-        const points: { x: number; y: number; tx: number; ty: number; thickness: number }[] = [];
+        const points: {
+          x: number;
+          y: number;
+          tx: number;
+          ty: number;
+          thickness: number;
+        }[] = [];
         const phase = time * p.swimSpeed + p.swimPhase;
         const k = p.wavenumber; // Custom wavenumber per fish type
 
@@ -328,8 +362,8 @@ export default function SignInAnimation() {
 
         // 2. Compute Tangents along the Spine
         for (let i = 0; i <= N; i++) {
-          let tx = 0;
-          let ty = 0;
+          let tx;
+          let ty;
           if (i === 0) {
             tx = points[0].x - points[1].x;
             ty = points[0].y - points[1].y;
@@ -346,31 +380,34 @@ export default function SignInAnimation() {
 
           // 2b. Compute Type-Specific Body Profile (no more generic tadpole shapes!)
           const s = i / N;
-          let tProfile = 0;
-          
+          let tProfile;
+
           if (p.fishType === "baby_ink") {
             // Sleek darting fry profile (slender and streamlined)
             if (s < 0.3) {
-              tProfile = 0.35 + 0.65 * Math.sin((s / 0.3) * Math.PI / 2);
+              tProfile = 0.35 + 0.65 * Math.sin(((s / 0.3) * Math.PI) / 2);
             } else {
-              tProfile = 0.2 + 0.8 * Math.cos(((s - 0.3) / 0.7) * Math.PI / 2);
+              tProfile =
+                0.2 + 0.8 * Math.cos((((s - 0.3) / 0.7) * Math.PI) / 2);
             }
           } else if (p.fishType === "ink_veil" || p.fishType === "cinnabar") {
             // Plump, elegant fancy body (Goldfish / high-backed Butterfly koi style)
             if (s < 0.4) {
-              tProfile = 0.25 + 0.75 * Math.sin((s / 0.4) * Math.PI / 2);
+              tProfile = 0.25 + 0.75 * Math.sin(((s / 0.4) * Math.PI) / 2);
             } else {
-              tProfile = 0.25 + 0.75 * Math.cos(((s - 0.4) / 0.6) * Math.PI / 2);
+              tProfile =
+                0.25 + 0.75 * Math.cos((((s - 0.4) / 0.6) * Math.PI) / 2);
             }
           } else {
             // Streamlined torpedo shape (Classic elegant majestic long Koi)
             if (s < 0.35) {
-              tProfile = 0.2 + 0.8 * Math.sin((s / 0.35) * Math.PI / 2);
+              tProfile = 0.2 + 0.8 * Math.sin(((s / 0.35) * Math.PI) / 2);
             } else {
-              tProfile = 0.2 + 0.8 * Math.cos(((s - 0.35) / 0.65) * Math.PI / 2);
+              tProfile =
+                0.2 + 0.8 * Math.cos((((s - 0.35) / 0.65) * Math.PI) / 2);
             }
           }
-          
+
           // Scale by bodyPlumpness per fish type
           points[i].thickness = p.thickness * tProfile * p.bodyPlumpness;
         }
@@ -396,31 +433,30 @@ export default function SignInAnimation() {
 
         // 4a. Configure Pectoral Fin Geometry per Fish Type for natural realism
         let finLen = p.length * 0.32;
-        let finSpread = 0.25;      // How much the fin swells outwards
+        let finSpread = 0.25; // How much the fin swells outwards
         let finAngleOffset = 0.75; // Direction (Pi * finAngleOffset) relative to body
-        
+
         if (p.fishType === "baby_ink") {
-          finLen = p.length * 0.18;  // Small, realistic stubby fins
+          finLen = p.length * 0.18; // Small, realistic stubby fins
           finSpread = 0.15;
           finAngleOffset = 0.65;
         } else if (p.fishType === "ink_veil") {
-          finLen = p.length * 0.38;  // Elegant trailing ribbon but completely proportional
+          finLen = p.length * 0.38; // Elegant trailing ribbon but completely proportional
           finSpread = 0.2;
-          finAngleOffset = 0.85;     // Sweeps gracefully backwards
+          finAngleOffset = 0.85; // Sweeps gracefully backwards
         } else if (p.fishType === "cinnabar") {
           finLen = p.length * 0.28;
-          finSpread = 0.18;          // Sleek, narrow leaf shape
+          finSpread = 0.18; // Sleek, narrow leaf shape
           finAngleOffset = 0.75;
         } else if (p.fishType === "kohaku") {
           finLen = p.length * 0.32;
-          finSpread = 0.45;          // Wide, round, natural fan stroke
+          finSpread = 0.45; // Wide, round, natural fan stroke
           finAngleOffset = 0.7;
         } else if (p.fishType === "tancho") {
-          finLen = p.length * 0.35;  // Highly elegant, ribbon-like but natural
+          finLen = p.length * 0.35; // Highly elegant, ribbon-like but natural
           finSpread = 0.25;
           finAngleOffset = 0.8;
         }
-
 
         // 4. Draw Left Pectoral Fin (Flowing watercolor stroke)
         if (leftPoints[shoulderIndex] && leftPoints[shoulderIndex + 2]) {
@@ -432,7 +468,8 @@ export default function SignInAnimation() {
           const sNy = sTx;
 
           // Swaying angle relative to body direction
-          const finAngleL = Math.PI * finAngleOffset + Math.sin(phase - 1.2) * 0.15;
+          const finAngleL =
+            Math.PI * finAngleOffset + Math.sin(phase - 1.2) * 0.15;
           const cosL = Math.cos(finAngleL);
           const sinL = Math.sin(finAngleL);
           const finDx = sTx * cosL - sTy * sinL;
@@ -460,7 +497,10 @@ export default function SignInAnimation() {
             end.y
           );
           // If white body, make the translucent fin slightly warm/translucent grey-pink for elegance
-          const finColor = (p.fishType === "kohaku" || p.fishType === "tancho") ? "200, 160, 160" : p.color;
+          const finColor =
+            p.fishType === "kohaku" || p.fishType === "tancho"
+              ? "200, 160, 160"
+              : p.color;
           ctx.fillStyle = `rgba(${finColor}, ${p.alpha * 0.55})`;
           ctx.fill();
         }
@@ -474,7 +514,8 @@ export default function SignInAnimation() {
           const sNx = -sTy;
           const sNy = sTx;
 
-          const finAngleR = -Math.PI * finAngleOffset - Math.sin(phase - 1.2) * 0.15;
+          const finAngleR =
+            -Math.PI * finAngleOffset - Math.sin(phase - 1.2) * 0.15;
           const cosR = Math.cos(finAngleR);
           const sinR = Math.sin(finAngleR);
           const finDx = sTx * cosR - sTy * sinR;
@@ -501,7 +542,10 @@ export default function SignInAnimation() {
             end.x,
             end.y
           );
-          const finColor = (p.fishType === "kohaku" || p.fishType === "tancho") ? "200, 160, 160" : p.color;
+          const finColor =
+            p.fishType === "kohaku" || p.fishType === "tancho"
+              ? "200, 160, 160"
+              : p.color;
           ctx.fillStyle = `rgba(${finColor}, ${p.alpha * 0.55})`;
           ctx.fill();
         }
@@ -520,7 +564,8 @@ export default function SignInAnimation() {
           thicknessMult: number,
           opacityMult: number
         ) => {
-          const lobeAngle = Math.PI + angleOffset + Math.sin(phase - phaseDelay) * 0.25;
+          const lobeAngle =
+            Math.PI + angleOffset + Math.sin(phase - phaseDelay) * 0.25;
           const cosA = Math.cos(lobeAngle);
           const sinA = Math.sin(lobeAngle);
 
@@ -547,7 +592,10 @@ export default function SignInAnimation() {
             tailTip.y
           );
           // If white body, tail has gorgeous semi-transparent cinnabar/rose tones
-          const tailColor = (p.fishType === "kohaku" || p.fishType === "tancho") ? "220, 160, 150" : p.color;
+          const tailColor =
+            p.fishType === "kohaku" || p.fishType === "tancho"
+              ? "220, 160, 150"
+              : p.color;
           ctx.fillStyle = `rgba(${tailColor}, ${p.alpha * 0.45 * opacityMult})`;
           ctx.fill();
         };
@@ -576,22 +624,22 @@ export default function SignInAnimation() {
           ctx.fill();
         } else if (p.fishType === "ink_veil") {
           // Double sweeping veil-tails (veil-tail butterfly koi look, graceful and realistic)
-          drawTailLobe(p.length * 0.65, 0.28, 1.6, 1.8, 0.95);  // Realistic large left lobe
+          drawTailLobe(p.length * 0.65, 0.28, 1.6, 1.8, 0.95); // Realistic large left lobe
           drawTailLobe(p.length * 0.65, -0.28, 2.4, -1.8, 0.95); // Realistic large right lobe
         } else if (p.fishType === "cinnabar") {
           // Compact fan tail (1 large center lobe + 2 base stabilizer lobes, natural fan shape)
-          drawTailLobe(p.length * 0.52, 0.0, 2.0, 1.9, 1.0);     // Wide center fan
-          drawTailLobe(p.length * 0.32, 0.35, 1.7, 0.6, 0.85);   // Left stabilizer
+          drawTailLobe(p.length * 0.52, 0.0, 2.0, 1.9, 1.0); // Wide center fan
+          drawTailLobe(p.length * 0.32, 0.35, 1.7, 0.6, 0.85); // Left stabilizer
           drawTailLobe(p.length * 0.32, -0.35, 2.3, -0.6, 0.85); // Right stabilizer
         } else if (p.fishType === "kohaku") {
           // Sleek, compact swallow split-tail
-          drawTailLobe(p.length * 0.5, 0.16, 1.9, 0.8, 0.9);   // Slender left
+          drawTailLobe(p.length * 0.5, 0.16, 1.9, 0.8, 0.9); // Slender left
           drawTailLobe(p.length * 0.5, -0.16, 2.1, -0.8, 0.9); // Slender right
         } else if (p.fishType === "tancho") {
           // Elegant triple-lobed veil-tail (silk ribbon but realistically scaled)
-          drawTailLobe(p.length * 0.55, 0.22, 1.7, 1.1, 0.9);   // Flowing left
+          drawTailLobe(p.length * 0.55, 0.22, 1.7, 1.1, 0.9); // Flowing left
           drawTailLobe(p.length * 0.55, -0.22, 2.3, -1.1, 0.9); // Flowing right
-          drawTailLobe(p.length * 0.38, 0.0, 2.0, 0.75, 0.8);  // Elegant center
+          drawTailLobe(p.length * 0.38, 0.0, 2.0, 0.75, 0.8); // Elegant center
         }
 
         // 7. Draw Dynamic Curved Body
@@ -609,9 +657,16 @@ export default function SignInAnimation() {
         }
 
         // Seamless rounded head cap
-        const headCenterForwardX = points[0].x + points[0].tx * (p.thickness * 0.3);
-        const headCenterForwardY = points[0].y + points[0].ty * (p.thickness * 0.3);
-        ctx.quadraticCurveTo(headCenterForwardX, headCenterForwardY, leftPoints[0].x, leftPoints[0].y);
+        const headCenterForwardX =
+          points[0].x + points[0].tx * (p.thickness * 0.3);
+        const headCenterForwardY =
+          points[0].y + points[0].ty * (p.thickness * 0.3);
+        ctx.quadraticCurveTo(
+          headCenterForwardX,
+          headCenterForwardY,
+          leftPoints[0].x,
+          leftPoints[0].y
+        );
 
         ctx.closePath();
         ctx.fillStyle = `rgb(${p.color})`;
@@ -629,7 +684,12 @@ export default function SignInAnimation() {
           for (let i = N - 1; i >= 0; i--) {
             ctx.lineTo(rightPoints[i].x, rightPoints[i].y);
           }
-          ctx.quadraticCurveTo(headCenterForwardX, headCenterForwardY, leftPoints[0].x, leftPoints[0].y);
+          ctx.quadraticCurveTo(
+            headCenterForwardX,
+            headCenterForwardY,
+            leftPoints[0].x,
+            leftPoints[0].y
+          );
           ctx.closePath();
           ctx.clip(); // Constrain drawing to the fish's body shape
 
@@ -640,23 +700,47 @@ export default function SignInAnimation() {
             // Draw single round red crown on the forehead
             const crownPt = points[1] || points[0];
             ctx.beginPath();
-            ctx.arc(crownPt.x - crownPt.tx * (p.length * 0.02), crownPt.y - crownPt.ty * (p.length * 0.02), p.thickness * 0.65, 0, Math.PI * 2);
+            ctx.arc(
+              crownPt.x - crownPt.tx * (p.length * 0.02),
+              crownPt.y - crownPt.ty * (p.length * 0.02),
+              p.thickness * 0.65,
+              0,
+              Math.PI * 2
+            );
             ctx.fill();
           } else if (p.fishType === "kohaku") {
             // Draw 3 flowing splotches along the spine
             if (points[3]) {
               ctx.beginPath();
-              ctx.arc(points[3].x, points[3].y, p.thickness * 0.8, 0, Math.PI * 2);
+              ctx.arc(
+                points[3].x,
+                points[3].y,
+                p.thickness * 0.8,
+                0,
+                Math.PI * 2
+              );
               ctx.fill();
             }
             if (points[6]) {
               ctx.beginPath();
-              ctx.arc(points[6].x, points[6].y, p.thickness * 0.65, 0, Math.PI * 2);
+              ctx.arc(
+                points[6].x,
+                points[6].y,
+                p.thickness * 0.65,
+                0,
+                Math.PI * 2
+              );
               ctx.fill();
             }
             if (points[9]) {
               ctx.beginPath();
-              ctx.arc(points[9].x, points[9].y, p.thickness * 0.45, 0, Math.PI * 2);
+              ctx.arc(
+                points[9].x,
+                points[9].y,
+                p.thickness * 0.45,
+                0,
+                Math.PI * 2
+              );
               ctx.fill();
             }
           }
@@ -681,11 +765,11 @@ export default function SignInAnimation() {
 
         ctx.fillStyle = `rgba(15, 15, 15, ${p.alpha * 0.95})`;
         ctx.beginPath();
-        ctx.arc(leftEyeX, leftEyeY, p.z * 1.0, 0, Math.PI * 2);
+        ctx.arc(leftEyeX, leftEyeY, p.z, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.beginPath();
-        ctx.arc(rightEyeX, rightEyeY, p.z * 1.0, 0, Math.PI * 2);
+        ctx.arc(rightEyeX, rightEyeY, p.z, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.restore();

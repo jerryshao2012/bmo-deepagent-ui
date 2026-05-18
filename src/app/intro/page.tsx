@@ -4,6 +4,8 @@ import React, { useEffect, useState, useRef } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MarkdownContent } from "@/app/components/MarkdownContent";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 export const dynamic = "force-dynamic";
 import { useSearchParams } from "next/navigation";
@@ -50,6 +52,7 @@ function IntroPageContent() {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [sharedText, setSharedText] = useState<string>("");
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
+  const [isTelemetryFullscreen, setIsTelemetryFullscreen] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [copiedHtml, setCopiedHtml] = useState<boolean>(false);
   const [activeTelemetryTab, setActiveTelemetryTab] = useState<string>("edit");
@@ -61,6 +64,7 @@ function IntroPageContent() {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
+      setIsTelemetryFullscreen(false);
     }
     return () => {
       document.body.style.overflow = "";
@@ -857,27 +861,62 @@ function IntroPageContent() {
 
       {/* Real-time Telemetry Sync Editor Modal Dialog */}
       {isDialogOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-300">
-          <div className="relative w-full max-w-6xl h-[85vh] flex flex-col bg-zinc-950/90 border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+        <div className={cn(
+          "fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-md animate-in fade-in duration-300",
+          isTelemetryFullscreen ? "p-0" : "p-4"
+        )}>
+          <div className={cn(
+            "relative flex flex-col bg-zinc-950/90 border border-white/10 shadow-2xl transition-all duration-300 ease-in-out animate-in zoom-in-95 duration-300",
+            isTelemetryFullscreen
+              ? "w-screen max-w-none h-screen max-h-none rounded-none border-none p-6 sm:p-8"
+              : "w-full max-w-6xl h-[85vh] rounded-3xl p-6 sm:p-8"
+          )}>
             
             {/* Modal Header */}
-            <div className="flex items-start justify-between mb-6">
-              <div>
+            <div className="flex items-center justify-between mb-6 border-b border-white/5 pb-4 select-none">
+              <div className="flex items-center gap-3 min-w-0">
+                {/* macOS-style Window Control Dots */}
+                <div className="flex items-center gap-[6px] mr-2 shrink-0 group/dots py-1 px-1">
+                  <button
+                    onClick={() => setIsDialogOpen(false)}
+                    className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#FF5F56] border border-[#E0443E] active:bg-[#BF403A] focus:outline-none transition-colors"
+                    aria-label="Close"
+                  >
+                    <svg className="absolute h-[5px] w-[5px] text-[#4C0002] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100" viewBox="0 0 6 6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+                      <path d="M1 1l4 4M5 1L1 5" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => toast.info("Minimize is not supported in browser dialog")}
+                    className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#FFBD2E] border border-[#DFA023] active:bg-[#C08E1A] focus:outline-none transition-colors"
+                    aria-label="Minimize"
+                  >
+                    <svg className="absolute h-[5px] w-[5px] text-[#5C3E00] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100" viewBox="0 0 6 6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+                      <path d="M1 3h4" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setIsTelemetryFullscreen(prev => !prev)}
+                    className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#27C93F] border border-[#1AAB29] active:bg-[#12821B] focus:outline-none transition-colors"
+                    aria-label="Toggle Fullscreen"
+                  >
+                    <svg className="absolute h-[5px] w-[5px] text-[#003300] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100" viewBox="0 0 6 6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+                      <path d="M1.5 4.5l3-3 M1.5 2.5v2h2 M4.5 3.5v-2h-2" />
+                    </svg>
+                  </button>
+                </div>
+                
+                {/* Divider */}
+                <div className="h-4 w-[1px] bg-white/10 mr-2 shrink-0" />
+
                 <div className="flex items-center gap-3">
-                  <h3 className="font-outfit text-2xl font-bold text-white">Markdown Online Preview</h3>
+                  <h3 className="font-outfit text-xl font-bold text-white leading-none">Markdown Online Preview</h3>
                   <span 
-                    className={`h-2.5 w-2.5 rounded-full ${socket ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-pulse" : "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]"}`}
+                    className={`h-2.5 w-2.5 rounded-full shrink-0 ${socket ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-pulse" : "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]"}`}
                     title={socket ? "Websocket Synced (Connected)" : "Websocket Not Synced (Disconnected)"}
                   />
                 </div>
               </div>
-              
-              <button 
-                onClick={() => setIsDialogOpen(false)}
-                className="rounded-full bg-white/5 p-1.5 text-white/50 hover:bg-white/10 hover:text-white transition duration-200"
-              >
-                <X className="h-4 w-4" />
-              </button>
             </div>
 
             {/* Custom Text Area Container - Stretches to fill remaining space */}

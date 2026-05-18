@@ -14,6 +14,7 @@ import { MarkdownContent } from "@/app/components/MarkdownContent";
 import type { FileItem } from "@/app/types/types";
 import useSWRMutation from "swr/mutation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
 const LANGUAGE_MAP: Record<string, string> = {
   js: "javascript",
@@ -65,6 +66,7 @@ export const FileViewDialog = React.memo<{
     String(file?.path || "").replace(/^[/\\]+/, "")
   );
   const [fileContent, setFileContent] = useState(String(file?.content || ""));
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const fileUpdate = useSWRMutation(
     { kind: "files-update", fileName: originalFileName, fileContent },
@@ -86,6 +88,7 @@ export const FileViewDialog = React.memo<{
     setDisplayFileName(display);
     setFileContent(String(file?.content || ""));
     setIsEditingMode(file === null);
+    setIsFullscreen(false);
   }, [file]);
 
   // Lock scroll on background body when the dialog is mounted
@@ -172,12 +175,53 @@ export const FileViewDialog = React.memo<{
       open={true}
       onOpenChange={onClose}
     >
-      <DialogContent className="!max-w-none flex h-[80vh] max-h-[80vh] w-[90vw] flex-col p-6">
+      <DialogContent
+        showCloseButton={false}
+        className={cn(
+          "!max-w-none flex flex-col p-6 transition-all duration-300 ease-in-out border border-border shadow-2xl backdrop-blur-md bg-background/95",
+          isFullscreen
+            ? "h-screen max-h-screen w-screen rounded-none border-none p-6"
+            : "h-[80vh] max-h-[80vh] w-[90vw] rounded-xl"
+        )}
+      >
         <DialogTitle className="sr-only">
           {file?.path || "New File"}
         </DialogTitle>
-        <div className="mb-4 flex items-center justify-between border-b border-border pb-4">
+        <div className="mb-4 flex items-center justify-between border-b border-border pb-4 select-none">
           <div className="flex min-w-0 items-center gap-2">
+            {/* macOS-style Window Control Dots */}
+            <div className="flex items-center gap-[6px] mr-2 shrink-0 group/dots py-1 px-1">
+              <button
+                onClick={onClose}
+                className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#FF5F56] border border-[#E0443E] active:bg-[#BF403A] focus:outline-none transition-colors"
+                aria-label="Close"
+              >
+                <svg className="absolute h-[5px] w-[5px] text-[#4C0002] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100" viewBox="0 0 6 6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+                  <path d="M1 1l4 4M5 1L1 5" />
+                </svg>
+              </button>
+              <button
+                onClick={() => toast.info("Minimize is not supported in browser dialog")}
+                className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#FFBD2E] border border-[#DFA023] active:bg-[#C08E1A] focus:outline-none transition-colors"
+                aria-label="Minimize"
+              >
+                <svg className="absolute h-[5px] w-[5px] text-[#5C3E00] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100" viewBox="0 0 6 6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+                  <path d="M1 3h4" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setIsFullscreen(prev => !prev)}
+                className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#27C93F] border border-[#1AAB29] active:bg-[#12821B] focus:outline-none transition-colors"
+                aria-label="Toggle Fullscreen"
+              >
+                <svg className="absolute h-[5px] w-[5px] text-[#003300] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100" viewBox="0 0 6 6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+                  <path d="M1.5 4.5l3-3 M1.5 2.5v2h2 M4.5 3.5v-2h-2" />
+                </svg>
+              </button>
+            </div>
+            {/* Divider */}
+            <div className="h-4 w-[1px] bg-border mr-2 shrink-0" />
+
             <FileText className="text-primary/50 h-5 w-5 shrink-0" />
             {isEditingMode && file === null ? (
               <Input

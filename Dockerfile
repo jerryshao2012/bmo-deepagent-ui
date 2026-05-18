@@ -18,7 +18,9 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/.env.docker ./.env
+COPY --from=builder /app/server.cjs ./server.cjs
+COPY --from=builder /app/node_modules/ws ./node_modules/ws
 
 EXPOSE 3000
 ENV PORT=3000
-CMD ["node", "server.js"]
+CMD ["node", "server.cjs"]

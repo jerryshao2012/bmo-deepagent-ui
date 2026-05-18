@@ -24,6 +24,7 @@ import {
   FolderTree,
   Lock,
   ArrowUpRight,
+  MessageSquare,
   Trash2,
   ClipboardPaste,
   Copy,
@@ -375,10 +376,10 @@ function IntroPageContent() {
           </span>
           <a 
             href={`/chat?threadId=${threadId}`}
-            className="flex items-center gap-1.5 rounded-full bg-[#0071e3] px-3.5 py-1 text-xs font-semibold text-white hover:bg-[#147fe5] transition shadow-md shadow-blue-500/20"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0071e3] text-white hover:bg-[#147fe5] transition shadow-md shadow-blue-500/20"
+            title="Launch Chat"
           >
-            Launch Chat
-            <ArrowUpRight className="h-3.5 w-3.5" />
+            <MessageSquare className="h-4 w-4" />
           </a>
         </div>
       </header>
@@ -840,7 +841,15 @@ function IntroPageContent() {
           </div>
 
           <div className="mt-12 text-xs text-white/30 font-mono tracking-widest uppercase">
-            Harness Engine HE-1 • Thread Allocation: {threadId}
+            <a 
+              href="https://medium.com/@jerry.shao/harness-engineering-building-production-grade-ai-systems-beyond-prompts-and-context-5fcdffdd6b4c"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-white border-b border-white/10 hover:border-white/40 transition-colors duration-200 pb-0.5 inline-flex items-center gap-1"
+            >
+              Harness Engineering: Building Production-Grade AI Systems Beyond Prompts and Context
+              <ArrowUpRight className="h-3 w-3" />
+            </a>
           </div>
         </div>
       </section>

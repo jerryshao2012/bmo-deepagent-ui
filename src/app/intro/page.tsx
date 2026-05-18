@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MarkdownContent } from "@/app/components/MarkdownContent";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -50,6 +50,7 @@ function IntroPageContent() {
   });
   
   const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [wsStatus, setWsStatus] = useState<"connected" | "disconnected" | "connecting">("disconnected");
   const [sharedText, setSharedText] = useState<string>("");
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
   const [isTelemetryFullscreen, setIsTelemetryFullscreen] = useState<boolean>(false);
@@ -57,6 +58,9 @@ function IntroPageContent() {
   const [copiedHtml, setCopiedHtml] = useState<boolean>(false);
   const [activeTelemetryTab, setActiveTelemetryTab] = useState<string>("edit");
   const previewRef = useRef<HTMLDivElement>(null);
+
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   // Prevent background body scroll when the telemetry dialog is open
   useEffect(() => {
@@ -71,19 +75,33 @@ function IntroPageContent() {
     };
   }, [isDialogOpen]);
 
-  // WebSocket Connection for real-time telemetry updates
-  useEffect(() => {
+  const connectWS = useCallback(() => {
     if (!threadId) return;
+    
+    // If socket is already open or currently connecting, skip
+    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    setWsStatus("connecting");
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
     const wsUrl = `${protocol}//${host}/api/ws?threadId=${threadId}`;
 
+    console.log("Attempting WebSocket connection for thread:", threadId);
     const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
 
     ws.onopen = () => {
       console.log("WebSocket connected for thread:", threadId);
       setSocket(ws);
+      setWsStatus("connected");
     };
 
     ws.onmessage = (event) => {
@@ -100,16 +118,50 @@ function IntroPageContent() {
     ws.onclose = () => {
       console.log("WebSocket closed");
       setSocket(null);
+      setWsStatus("disconnected");
+      wsRef.current = null;
+
+      // Automatically try to reconnect after 5 seconds
+      if (!reconnectTimeoutRef.current) {
+        console.log("Scheduling automatic WebSocket reconnect in 5 seconds...");
+        reconnectTimeoutRef.current = setTimeout(() => {
+          reconnectTimeoutRef.current = null;
+          connectWS();
+        }, 5000);
+      }
     };
 
     ws.onerror = (error) => {
       console.error("WebSocket error:", error);
     };
+  }, [threadId]);
+
+  // Main connection management effect
+  useEffect(() => {
+    connectWS();
 
     return () => {
-      ws.close();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      setSocket(null);
+      setWsStatus("disconnected");
     };
-  }, [threadId]);
+  }, [threadId, connectWS]);
+
+  // Trigger immediate reconnect when the telemetry dialog is opened if it's currently disconnected
+  useEffect(() => {
+    if (isDialogOpen && wsStatus === "disconnected") {
+      console.log("Telemetry dialog opened while disconnected. Triggering instant reconnect...");
+      connectWS();
+    }
+  }, [isDialogOpen, wsStatus, connectWS]);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -911,10 +963,46 @@ function IntroPageContent() {
 
                 <div className="flex items-center gap-3">
                   <h3 className="font-outfit text-xl font-bold text-white leading-none">Markdown Online Preview</h3>
-                  <span 
-                    className={`h-2.5 w-2.5 rounded-full shrink-0 ${socket ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-pulse" : "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]"}`}
-                    title={socket ? "Websocket Synced (Connected)" : "Websocket Not Synced (Disconnected)"}
-                  />
+                  <button
+                    onClick={() => {
+                      if (wsStatus === "disconnected") {
+                        toast.promise(
+                          new Promise<void>((resolve) => {
+                            connectWS();
+                            resolve();
+                          }),
+                          {
+                            loading: "Connecting to WebSocket...",
+                            success: "Reconnection attempt initiated!",
+                            error: "Failed to start reconnection.",
+                          }
+                        );
+                      }
+                    }}
+                    className={cn(
+                      "flex items-center gap-2 rounded-full px-2.5 py-1 text-[10px] font-mono font-bold tracking-wider transition-all duration-300 select-none",
+                      wsStatus === "connected" && "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 cursor-default",
+                      wsStatus === "connecting" && "bg-amber-500/10 text-amber-400 border border-amber-500/20 cursor-default animate-pulse",
+                      wsStatus === "disconnected" && "bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 cursor-pointer active:scale-95"
+                    )}
+                    title={
+                      wsStatus === "connected" 
+                        ? "Websocket Synced (Connected)" 
+                        : wsStatus === "connecting"
+                          ? "Websocket Connecting..."
+                          : "Websocket Disconnected (Click to Reconnect)"
+                    }
+                  >
+                    <span 
+                      className={cn(
+                        "h-2 w-2 rounded-full",
+                        wsStatus === "connected" && "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-pulse",
+                        wsStatus === "connecting" && "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)] animate-pulse",
+                        wsStatus === "disconnected" && "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]"
+                      )}
+                    />
+                    {wsStatus.toUpperCase()}
+                  </button>
                 </div>
               </div>
             </div>

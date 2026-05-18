@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { MarkdownContent } from "@/app/components/MarkdownContent";
 import type { FileItem } from "@/app/types/types";
 import useSWRMutation from "swr/mutation";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const LANGUAGE_MAP: Record<string, string> = {
   js: "javascript",
@@ -61,7 +62,7 @@ export const FileViewDialog = React.memo<{
   const [originalFileName, setOriginalFileName] = useState(String(file?.path || ""));
   // Display filename (stripped) for UI editing
   const [displayFileName, setDisplayFileName] = useState(
-    String(file?.path || "").replace(/^[\/\\]+/, "")
+    String(file?.path || "").replace(/^[/\\]+/, "")
   );
   const [fileContent, setFileContent] = useState(String(file?.content || ""));
 
@@ -80,12 +81,20 @@ export const FileViewDialog = React.memo<{
 
   useEffect(() => {
     const original = String(file?.path || "");
-    const display = original.replace(/^[\/\\]+/, "");
+    const display = original.replace(/^[/\\]+/, "");
     setOriginalFileName(original);
     setDisplayFileName(display);
     setFileContent(String(file?.content || ""));
     setIsEditingMode(file === null);
   }, [file]);
+
+  // Lock scroll on background body when the dialog is mounted
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
 
   const fileExtension = useMemo(() => {
     const fileNameStr = displayFileName || "";
@@ -233,12 +242,28 @@ export const FileViewDialog = React.memo<{
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
           {isEditingMode ? (
-            <Textarea
-              value={fileContent}
-              onChange={(e) => setFileContent(e.target.value)}
-              placeholder="Enter file content..."
-              className="h-full min-h-[400px] resize-none font-mono text-sm"
-            />
+            <Tabs defaultValue="edit" className="flex flex-col h-full w-full gap-4">
+              <TabsList className="grid w-full max-w-[400px] grid-cols-2 shrink-0">
+                <TabsTrigger value="edit">Markdown</TabsTrigger>
+                <TabsTrigger value="preview">Review Markdown</TabsTrigger>
+              </TabsList>
+              <TabsContent value="edit" className="flex-1 flex flex-col min-h-0 data-[state=inactive]:hidden">
+                <Textarea
+                  value={fileContent}
+                  onChange={(e) => setFileContent(e.target.value)}
+                  placeholder="Enter file content..."
+                  className="flex-1 w-full resize-none font-mono text-sm"
+                />
+              </TabsContent>
+              <TabsContent value="preview" className="flex-1 flex flex-col min-h-0 data-[state=inactive]:hidden">
+                <ScrollArea className="bg-surface flex-1 w-full rounded-md border border-border">
+                  <div className="p-6">
+                    <MarkdownContent content={fileContent} />
+                  </div>
+                  <ScrollBar orientation="horizontal" />
+                </ScrollArea>
+              </TabsContent>
+            </Tabs>
           ) : (
             <ScrollArea className="bg-surface h-full w-full rounded-md">
               <div className="p-4">

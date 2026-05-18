@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { MarkdownContent } from "@/app/components/MarkdownContent";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
 export const dynamic = "force-dynamic";
 import { useSearchParams } from "next/navigation";
@@ -47,6 +50,21 @@ function IntroPageContent() {
   const [sharedText, setSharedText] = useState<string>("");
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
+  const [copiedHtml, setCopiedHtml] = useState<boolean>(false);
+  const [activeTelemetryTab, setActiveTelemetryTab] = useState<string>("edit");
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  // Prevent background body scroll when the telemetry dialog is open
+  useEffect(() => {
+    if (isDialogOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isDialogOpen]);
 
   // WebSocket Connection for real-time telemetry updates
   useEffect(() => {
@@ -122,6 +140,18 @@ function IntroPageContent() {
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error("Failed to copy to clipboard:", err);
+    }
+  };
+
+  const handleCopyHtml = async () => {
+    try {
+      if (previewRef.current) {
+        await navigator.clipboard.writeText(previewRef.current.innerHTML);
+        setCopiedHtml(true);
+        setTimeout(() => setCopiedHtml(false), 2000);
+      }
+    } catch (err) {
+      console.error("Failed to copy HTML to clipboard:", err);
     }
   };
   
@@ -336,7 +366,13 @@ function IntroPageContent() {
         </nav>
 
         <div className="flex items-center gap-4">
-          <span className="font-mono text-xs text-white/40">Thread: #{threadId}</span>
+          <span 
+            onClick={() => setIsDialogOpen(true)}
+            className="font-mono text-xs text-white/40 hover:text-white cursor-pointer transition"
+            title="Click to open Markdown Online Preview"
+          >
+            Thread: #{threadId}
+          </span>
           <a 
             href={`/chat?threadId=${threadId}`}
             className="flex items-center gap-1.5 rounded-full bg-[#0071e3] px-3.5 py-1 text-xs font-semibold text-white hover:bg-[#147fe5] transition shadow-md shadow-blue-500/20"
@@ -358,11 +394,7 @@ function IntroPageContent() {
         className="relative flex min-h-screen flex-col items-center justify-center px-6 pt-24 text-center"
       >
         <div className={`apple-fade max-w-4xl ${visibleSections["hero"] ? "visible" : ""}`}>
-          <div 
-            onClick={() => setIsDialogOpen(true)}
-            className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/5 px-4 py-1 text-xs font-medium tracking-wide text-indigo-400 font-mono mb-6 backdrop-blur-md hover:bg-indigo-500/15 hover:border-indigo-500/60 hover:text-indigo-300 cursor-pointer transition-all active:scale-95 duration-200"
-            title="Click to open Real-Time Shared Telemetry dialog"
-          >
+          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/5 px-4 py-1 text-xs font-medium tracking-wide text-indigo-400 font-mono mb-6 backdrop-blur-md">
             <Zap className="h-3 w-3 animate-pulse" />
             AGENT = MODEL + HARNESS
           </div>
@@ -822,14 +854,13 @@ function IntroPageContent() {
             {/* Modal Header */}
             <div className="flex items-start justify-between mb-6">
               <div>
-                <div className="flex items-center gap-2.5">
-                  <h3 className="font-outfit text-2xl font-bold text-white">HE-1 Shared Telemetry</h3>
-                  <div className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[9px] font-bold text-emerald-400 font-mono">
-                    <span className={`h-1.5 w-1.5 rounded-full ${socket ? "bg-emerald-400 animate-pulse" : "bg-neutral-500"}`} />
-                    {socket ? "WEBSOCKET SYNCED" : "CONNECTING..."}
-                  </div>
+                <div className="flex items-center gap-3">
+                  <h3 className="font-outfit text-2xl font-bold text-white">Markdown Online Preview</h3>
+                  <span 
+                    className={`h-2.5 w-2.5 rounded-full ${socket ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-pulse" : "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]"}`}
+                    title={socket ? "Websocket Synced (Connected)" : "Websocket Not Synced (Disconnected)"}
+                  />
                 </div>
-
               </div>
               
               <button 
@@ -841,74 +872,112 @@ function IntroPageContent() {
             </div>
 
             {/* Custom Text Area Container - Stretches to fill remaining space */}
-            <div className="relative border border-white/10 rounded-2xl bg-black/40 focus-within:border-indigo-500/60 transition duration-300 flex-1 flex flex-col">
-              
-              {/* Text Area Toolbar */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 border-b border-white/5 bg-zinc-900/40 gap-2">
-                <span className="font-mono text-[10px] text-white/40 tracking-wider">REALTIME BUFFER</span>
-                
-                <div className="flex flex-wrap items-center gap-3">
-                  {/* Copy Button Container */}
-                  <div className="tooltip-wrapper">
-                    <button
-                      onClick={handleCopy}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 hover:bg-white/10 hover:text-white transition duration-200"
-                    >
-                      {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                    </button>
-                    {/* Tooltip */}
-                    <div className="tooltip-box">
-                      <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
-                        {copied ? "COPIED TO CLIPBOARD" : "COPY TO CLIPBOARD"}
+            <div className="relative border border-white/10 rounded-2xl bg-black/40 focus-within:border-indigo-500/60 transition duration-300 flex-1 flex flex-col overflow-hidden">
+              <Tabs value={activeTelemetryTab} onValueChange={setActiveTelemetryTab} className="flex flex-col h-full w-full gap-0">
+                <div className="flex items-center justify-between px-4 py-2 border-b border-white/10 bg-zinc-950/60 shrink-0">
+                  <TabsList className="grid w-full max-w-[320px] grid-cols-2">
+                    <TabsTrigger value="edit">Markdown</TabsTrigger>
+                    <TabsTrigger value="preview">Review Markdown</TabsTrigger>
+                  </TabsList>
+
+                  {/* Telemetry Action Icons Row */}
+                  <div className="flex items-center gap-3">
+                    {activeTelemetryTab === "edit" ? (
+                      <>
+                        {/* Copy Button */}
+                        <div className="tooltip-wrapper">
+                          <button
+                            onClick={handleCopy}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 hover:bg-white/10 hover:text-white transition duration-200"
+                          >
+                            {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                          </button>
+                          <div className="tooltip-box">
+                            <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
+                              {copied ? "COPIED TO CLIPBOARD" : "COPY TO CLIPBOARD"}
+                            </div>
+                            <div className="w-2 h-2 bg-zinc-900 border-r border-b border-white/10 rotate-45 -mt-1" />
+                          </div>
+                        </div>
+
+                        {/* Paste Button */}
+                        <div className="tooltip-wrapper">
+                          <button
+                            onClick={handlePaste}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 hover:bg-white/10 hover:text-white transition duration-200"
+                          >
+                            <ClipboardPaste className="h-3.5 w-3.5" />
+                          </button>
+                          <div className="tooltip-box">
+                            <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
+                              PASTE FROM CLIPBOARD
+                            </div>
+                            <div className="w-2 h-2 bg-zinc-900 border-r border-b border-white/10 rotate-45 -mt-1" />
+                          </div>
+                        </div>
+
+                        {/* Clear Button */}
+                        <div className="tooltip-wrapper">
+                          <button
+                            onClick={handleClear}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 hover:bg-rose-500/20 hover:text-rose-400 transition duration-200"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                          <div className="tooltip-box">
+                            <div className="bg-zinc-900 border border-rose-500/20 text-rose-400 font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
+                              CLEAR EDITOR CONTENT
+                            </div>
+                            <div className="w-2 h-2 bg-zinc-900 border-r border-b border-rose-500/20 rotate-45 -mt-1" />
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      /* Copy HTML Button (Matches the style of others) */
+                      <div className="tooltip-wrapper">
+                        <button
+                          onClick={handleCopyHtml}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 hover:bg-white/10 hover:text-white transition duration-200"
+                        >
+                          {copiedHtml ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                        </button>
+                        <div className="tooltip-box">
+                          <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
+                            {copiedHtml ? "COPIED PREVIEW HTML" : "COPY PREVIEW HTML"}
+                          </div>
+                          <div className="w-2 h-2 bg-zinc-900 border-r border-b border-white/10 rotate-45 -mt-1" />
+                        </div>
                       </div>
-                      <div className="w-2 h-2 bg-zinc-900 border-r border-b border-white/10 rotate-45 -mt-1" />
-                    </div>
-                  </div>
-                  
-                  {/* Paste Button Container */}
-                  <div className="tooltip-wrapper">
-                    <button
-                      onClick={handlePaste}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 hover:bg-white/10 hover:text-white transition duration-200"
-                    >
-                      <ClipboardPaste className="h-3.5 w-3.5" />
-                    </button>
-                    {/* Tooltip */}
-                    <div className="tooltip-box">
-                      <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
-                        PASTE FROM CLIPBOARD
-                      </div>
-                      <div className="w-2 h-2 bg-zinc-900 border-r border-b border-white/10 rotate-45 -mt-1" />
-                    </div>
-                  </div>
-                  
-                  {/* Clear Button Container */}
-                  <div className="tooltip-wrapper">
-                    <button
-                      onClick={handleClear}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 hover:bg-rose-500/20 hover:text-rose-400 transition duration-200"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                    {/* Tooltip */}
-                    <div className="tooltip-box">
-                      <div className="bg-zinc-900 border border-rose-500/20 text-rose-400 font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
-                        CLEAR EDITOR CONTENT
-                      </div>
-                      <div className="w-2 h-2 bg-zinc-900 border-r border-b border-rose-500/20 rotate-45 -mt-1" />
-                    </div>
+                    )}
                   </div>
                 </div>
-              </div>
 
-              {/* Textarea Input - Expanded height */}
-              <textarea
-                value={sharedText}
-                onChange={handleTextChange}
-                placeholder="Type, paste, or telemetry sync here..."
-                className="w-full flex-1 bg-transparent border-0 outline-none p-6 font-mono text-sm text-white/95 placeholder-white/20 resize-none focus:ring-0 leading-relaxed"
-              />
+                {/* Tab content area */}
+                <TabsContent value="edit" className="flex-1 flex flex-col min-h-0 data-[state=inactive]:hidden">
+                  <textarea
+                    value={sharedText}
+                    onChange={handleTextChange}
+                    placeholder="Type, paste, or telemetry sync here..."
+                    className="w-full flex-1 bg-transparent border-0 outline-none p-6 font-mono text-sm text-white/95 placeholder-white/20 resize-none focus:ring-0 leading-relaxed"
+                  />
+                </TabsContent>
 
+                <TabsContent value="preview" className="relative flex-1 flex flex-col min-h-0 bg-transparent data-[state=inactive]:hidden">
+                  {sharedText ? (
+                    <ScrollArea className="flex-1 min-h-0 bg-transparent w-full">
+                      <div ref={previewRef} className="p-6 text-left text-neutral-100">
+                        <MarkdownContent content={sharedText} />
+                      </div>
+                      <ScrollBar orientation="horizontal" />
+                    </ScrollArea>
+                  ) : (
+                    <div className="absolute top-0 left-0 right-0 p-6 text-left text-white/30 font-mono text-sm leading-relaxed">
+                      <p>No content to preview.</p>
+                      <p className="text-xs mt-1 text-white/20">Write or paste text in the Markdown tab first.</p>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </div>
 
           </div>

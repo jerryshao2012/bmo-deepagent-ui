@@ -17,7 +17,7 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
     return (
       <div
         className={cn(
-          "prose min-w-0 max-w-full overflow-hidden break-words text-sm leading-relaxed text-inherit [&_h1:first-child]:mt-0 [&_h1]:mb-4 [&_h1]:mt-6 [&_h1]:font-semibold [&_h2:first-child]:mt-0 [&_h2]:mb-4 [&_h2]:mt-6 [&_h2]:font-semibold [&_h3:first-child]:mt-0 [&_h3]:mb-4 [&_h3]:mt-6 [&_h3]:font-semibold [&_h4:first-child]:mt-0 [&_h4]:mb-4 [&_h4]:mt-6 [&_h4]:font-semibold [&_h5:first-child]:mt-0 [&_h5]:mb-4 [&_h5]:mt-6 [&_h5]:font-semibold [&_h6:first-child]:mt-0 [&_h6]:mb-4 [&_h6]:mt-6 [&_h6]:font-semibold [&_p:last-child]:mb-0 [&_p]:mb-4",
+          "prose dark:prose-invert min-w-0 max-w-full overflow-hidden break-words text-sm leading-relaxed text-inherit [&_h1:first-child]:mt-0 [&_h1]:mb-4 [&_h1]:mt-6 [&_h1]:font-semibold [&_h1]:text-white [&_h2:first-child]:mt-0 [&_h2]:mb-4 [&_h2]:mt-6 [&_h2]:font-semibold [&_h2]:text-white [&_h3:first-child]:mt-0 [&_h3]:mb-4 [&_h3]:mt-6 [&_h3]:font-semibold [&_h3]:text-white [&_h4:first-child]:mt-0 [&_h4]:mb-4 [&_h4]:mt-6 [&_h4]:font-semibold [&_h4]:text-white [&_h5:first-child]:mt-0 [&_h5]:mb-4 [&_h5]:mt-6 [&_h5]:font-semibold [&_h5]:text-white [&_h6:first-child]:mt-0 [&_h6]:mb-4 [&_h6]:mt-6 [&_h6]:font-semibold [&_h6]:text-white [&_p:last-child]:mb-0 [&_p]:mb-4 [&_code]:before:content-none [&_code]:after:content-none [&_code]:bg-white/10 [&_code]:text-indigo-300 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-md [&_code]:border [&_code]:border-white/5 [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:font-normal",
           className
         )}
       >
@@ -25,43 +25,16 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
           remarkPlugins={[remarkGfm]}
           components={{
             code({
-              inline,
               className,
               children,
               ...props
             }: {
-              inline?: boolean;
               className?: string;
               children?: React.ReactNode;
             }) {
-              const match = /language-(\w+)/.exec(className || "");
-              return !inline && match ? (
-                <SyntaxHighlighter
-                  style={oneDark}
-                  language={match[1]}
-                  PreTag="div"
-                  className="max-w-full rounded-md text-sm"
-                  wrapLines={true}
-                  wrapLongLines={true}
-                  lineProps={{
-                    style: {
-                      wordBreak: "break-all",
-                      whiteSpace: "pre-wrap",
-                      overflowWrap: "break-word",
-                    },
-                  }}
-                  customStyle={{
-                    margin: 0,
-                    maxWidth: "100%",
-                    overflowX: "auto",
-                    fontSize: "0.875rem",
-                  }}
-                >
-                  {String(children).replace(/\n$/, "")}
-                </SyntaxHighlighter>
-              ) : (
+              return (
                 <code
-                  className="bg-surface rounded-sm px-1 py-0.5 font-mono text-[0.9em]"
+                  className="bg-white/10 text-indigo-300 border border-white/5 rounded-md px-1.5 py-0.5 font-mono text-[0.9em] font-normal before:content-none after:content-none"
                   {...props}
                 >
                   {children}
@@ -69,6 +42,45 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
               );
             },
             pre({ children }: { children?: React.ReactNode }) {
+              const codeElement = React.Children.toArray(children).find(
+                (child) => React.isValidElement(child) && child.type === "code"
+              );
+
+              if (React.isValidElement(codeElement)) {
+                const codeProps = codeElement.props as any;
+                const className = codeProps.className || "";
+                const codeText = String(codeProps.children || "").replace(/\n$/, "");
+                const match = /language-(\w+)/.exec(className);
+
+                return (
+                  <div className="my-4 max-w-full overflow-hidden last:mb-0">
+                    <SyntaxHighlighter
+                      style={oneDark}
+                      language={match ? match[1] : "text"}
+                      PreTag="div"
+                      className="max-w-full rounded-md text-sm"
+                      wrapLines={true}
+                      wrapLongLines={true}
+                      lineProps={{
+                        style: {
+                          wordBreak: "break-all",
+                          whiteSpace: "pre-wrap",
+                          overflowWrap: "break-word",
+                        },
+                      }}
+                      customStyle={{
+                        margin: 0,
+                        maxWidth: "100%",
+                        overflowX: "auto",
+                        fontSize: "0.875rem",
+                      }}
+                    >
+                      {codeText}
+                    </SyntaxHighlighter>
+                  </div>
+                );
+              }
+
               return (
                 <div className="my-4 max-w-full overflow-hidden last:mb-0">
                   {children}

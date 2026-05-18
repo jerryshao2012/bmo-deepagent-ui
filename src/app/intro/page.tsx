@@ -212,6 +212,8 @@ function IntroPageContent() {
     }
   };
   
+  
+
   // Ref elements for interactive 3D mouse parallax
   const stackRef = useRef<HTMLDivElement>(null);
   const chipRef = useRef<HTMLDivElement>(null);
@@ -423,12 +425,15 @@ function IntroPageContent() {
         </nav>
 
         <div className="flex items-center gap-4">
-          <span 
-            onClick={() => setIsDialogOpen(true)}
-            className="font-mono text-xs text-white/40 hover:text-white cursor-pointer transition"
-            title="Click to open Markdown Online Preview"
-          >
-            Thread: #{threadId}
+          <span className="font-mono text-xs text-white/40 select-none">
+            <span 
+              onClick={() => setIsDialogOpen(true)}
+              className="cursor-pointer"
+              title="Click to open Markdown Online Preview"
+            >
+              T
+            </span>
+            hread: #{threadId}
           </span>
           <a 
             href={`/chat?threadId=${threadId}`}

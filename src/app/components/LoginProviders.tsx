@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useTransition } from "react";
 import { toast } from "sonner";
 
+
 interface LoginProvidersProps {
   onSignIn: (provider: string) => Promise<void>;
 }
@@ -54,7 +55,15 @@ export default function LoginProviders({ onSignIn }: LoginProvidersProps) {
     startTransition(async () => {
       try {
         await onSignIn(provider);
-      } catch (error) {
+      } catch (error: any) {
+        // If it is a Next.js redirect error (which is thrown to perform the redirection),
+        // let Next.js handle it and do not show an error toast to the user.
+        if (
+          error?.message === "NEXT_REDIRECT" ||
+          (error?.digest && typeof error.digest === "string" && error.digest.startsWith("NEXT_REDIRECT"))
+        ) {
+          return;
+        }
         toast.error(`Failed to sign in with ${provider}. Please try again.`);
         setActiveProvider(null);
       }

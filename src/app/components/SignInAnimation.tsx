@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface Particle {
   x: number;
@@ -32,7 +32,17 @@ interface InkWash {
 }
 
 export default function SignInAnimation() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  const [dimensions, setDimensions] = useState(() => {
+    if (typeof window !== "undefined") {
+      return { width: window.innerWidth, height: window.innerHeight };
+    }
+    return { width: 1200, height: 800 };
+  });
+  const cleanupRef = useRef<(() => void) | null>(null);
   const mouseRef = useRef({ x: -1000, y: -1000, tx: 0, ty: 0 });
   const animRef = useRef<number>(0);
   const particlesRef = useRef<Particle[]>([]);
@@ -193,20 +203,19 @@ export default function SignInAnimation() {
     return flowers;
   }, []);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
+  const canvasRefCallback = useCallback((canvas: HTMLCanvasElement | null) => {
+    if (cleanupRef.current) {
+      cleanupRef.current();
+      cleanupRef.current = null;
+    }
+
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) return;
 
     const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
-      canvas.style.width = `${window.innerWidth}px`;
-      canvas.style.height = `${window.innerHeight}px`;
-      ctx.scale(dpr, dpr);
+      setDimensions({ width: window.innerWidth, height: window.innerHeight });
 
       particlesRef.current = createParticles(
         window.innerWidth,
@@ -247,6 +256,9 @@ export default function SignInAnimation() {
       const w = window.innerWidth;
       const h = window.innerHeight;
       const time = timeRef.current;
+      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+      ctx.save();
+      ctx.scale(dpr, dpr);
 
       // Clear with rice paper feel (very faint warm tint)
       ctx.fillStyle = "rgba(250, 248, 245, 0.3)";
@@ -775,13 +787,16 @@ export default function SignInAnimation() {
         ctx.restore();
       }
 
+      ctx.restore();
+
       timeRef.current++;
       animRef.current = requestAnimationFrame(animate);
     };
 
     animate();
 
-    return () => {
+    // Store cleanup function for unmounting
+    cleanupRef.current = () => {
       cancelAnimationFrame(animRef.current);
       window.removeEventListener("resize", resize);
       window.removeEventListener("mousemove", handleMouseMove);
@@ -789,11 +804,17 @@ export default function SignInAnimation() {
     };
   }, [createParticles, createInkWashes, createInkFlowers]);
 
+  if (!mounted) return null;
+
+  const canvasDpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+
   return (
     <canvas
-      ref={canvasRef}
-      className="pointer-events-none fixed inset-0 z-0 opacity-100"
-      style={{ background: "transparent" }}
+      ref={canvasRefCallback}
+      width={dimensions.width * canvasDpr}
+      height={dimensions.height * canvasDpr}
+      className="pointer-events-none fixed inset-0 w-full h-full opacity-100"
+      style={{ background: "transparent", zIndex: 1 }}
     />
   );
 }

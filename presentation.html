@@ -1,0 +1,1964 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Harness Engineering — Building Production-Grade AI Systems</title>
+  
+  <!-- SEO Meta Tags -->
+  <meta name="description" content="An interactive presentation on Harness Engineering: building production-grade AI systems beyond prompts and context. Grounded in system-centric control loops.">
+  
+  <!-- Premium Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- MathJax for rendering equations -->
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+  <style>
+    /* CSS VARIABLES: premium theme design tokens */
+    :root {
+      --font-heading: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+      --font-body: 'Plus Jakarta Sans', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+
+      /* Dark Mode Palette (Default) */
+      --bg-gradient: linear-gradient(135deg, #090d16 0%, #0f172a 50%, #0b0f19 100%);
+      --bg-color: #090d16;
+      --card-bg: rgba(30, 41, 59, 0.45);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --card-hover-border: rgba(99, 102, 241, 0.4);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      
+      --primary: #6366f1; /* Violet-indigo */
+      --primary-glow: rgba(99, 102, 241, 0.15);
+      --secondary: #06b6d4; /* Teal-cyan */
+      --secondary-glow: rgba(6, 182, 212, 0.15);
+      --accent: #f59e0b; /* Amber */
+      --accent-glow: rgba(245, 158, 11, 0.15);
+      --success: #10b981; /* Emerald */
+      --success-glow: rgba(16, 185, 129, 0.15);
+      --danger: #ef4444;
+      
+      --gradient-text: linear-gradient(135deg, #a5b4fc 0%, #818cf8 50%, #06b6d4 100%);
+      --gradient-brand: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+      --glass-blur: blur(20px);
+      --transition-smooth: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Light Mode overrides */
+    [data-theme="light"] {
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --bg-color: #f8fafc;
+      --card-bg: rgba(255, 255, 255, 0.7);
+      --card-border: rgba(0, 0, 0, 0.06);
+      --card-hover-border: rgba(99, 102, 241, 0.3);
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      
+      --primary: #4f46e5;
+      --primary-glow: rgba(79, 70, 229, 0.1);
+      --secondary: #0891b2;
+      --secondary-glow: rgba(8, 145, 178, 0.1);
+      --accent: #d97706;
+      --accent-glow: rgba(217, 119, 6, 0.1);
+      
+      --gradient-text: linear-gradient(135deg, #312e81 0%, #4f46e5 50%, #0891b2 100%);
+      --glass-blur: blur(12px);
+    }
+
+    /* Reset & Core Styling */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      scrollbar-width: thin;
+      scrollbar-color: var(--primary) transparent;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background-color: var(--bg-color);
+      background-image: var(--bg-gradient);
+      color: var(--text-main);
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      transition: background 0.5s ease, color 0.3s ease;
+      position: relative;
+    }
+
+    /* Dynamic background canvas */
+    #background-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+      opacity: 0.6;
+    }
+
+    /* Core Layout */
+    .app-container {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      width: 100%;
+      z-index: 2;
+    }
+
+    /* Header Panel */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.5rem 3rem;
+      border-bottom: 1px solid var(--card-border);
+      backdrop-filter: var(--glass-blur);
+      background: rgba(15, 23, 42, 0.15);
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-family: var(--font-heading);
+      font-weight: 800;
+      font-size: 1.25rem;
+      letter-spacing: -0.5px;
+      color: var(--text-main);
+    }
+
+    .brand span {
+      background: var(--gradient-brand);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    /* Action Buttons styling */
+    .btn-icon {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+      position: relative;
+    }
+
+    .btn-icon:hover {
+      border-color: var(--primary);
+      box-shadow: 0 0 12px var(--primary-glow);
+      transform: translateY(-2px);
+    }
+
+    .btn-icon svg {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+    }
+
+    /* Tooltips */
+    .btn-icon::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: -40px;
+      left: 50%;
+      transform: translateX(-50%) translateY(5px);
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #fff;
+      font-size: 0.75rem;
+      padding: 0.35rem 0.6rem;
+      border-radius: 6px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: var(--transition-smooth);
+      z-index: 100;
+    }
+
+    .btn-icon:hover::after {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Progress bar */
+    .progress-bar-container {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.05);
+      z-index: 10;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--gradient-brand);
+      box-shadow: 0 0 8px var(--primary);
+      transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Presentation Screen Area */
+    .viewport {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 4rem;
+    }
+
+    /* Slide Container */
+    .slide-wrapper {
+      position: relative;
+      width: 100%;
+      max-width: 1280px;
+      height: 100%;
+      max-height: 720px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* The individual slide structure */
+    .slide {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      opacity: 0;
+      transform: translateX(100px) scale(0.95);
+      pointer-events: none;
+      transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), 
+                  transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 2;
+    }
+
+    .slide.active {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+      pointer-events: auto;
+      z-index: 5;
+    }
+
+    .slide.previous {
+      transform: translateX(-100px) scale(0.95);
+      opacity: 0;
+    }
+
+    /* Slide Layouts & Elements */
+    .slide-grid-2 {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 3rem;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+    }
+
+    .slide-grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1.5rem;
+      width: 100%;
+    }
+
+    .slide-content-left {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .slide-visual-right {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      height: 100%;
+    }
+
+    /* Typography inside slides */
+    .slide-tag {
+      font-size: 0.85rem;
+      font-family: var(--font-mono);
+      color: var(--secondary);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 0.75rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .slide-tag::before {
+      content: '';
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: var(--secondary);
+      box-shadow: 0 0 8px var(--secondary);
+    }
+
+    .slide-title {
+      font-family: var(--font-heading);
+      font-size: 3.25rem;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -1.5px;
+      margin-bottom: 1.5rem;
+    }
+
+    .slide-title span {
+      background: var(--gradient-text);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .slide-description {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      color: var(--text-muted);
+      margin-bottom: 2rem;
+    }
+
+    /* Glassmorphism Card Design */
+    .glass-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 2.25rem;
+      backdrop-filter: var(--glass-blur);
+      transition: var(--transition-smooth);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .glass-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: transparent;
+      transition: var(--transition-smooth);
+    }
+
+    .glass-card:hover {
+      border-color: var(--card-hover-border);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+      transform: translateY(-5px);
+    }
+
+    .glass-card:hover::before {
+      background: var(--gradient-brand);
+    }
+
+    /* Interactive Elements: COMPARISON SLIDER (Slide 2) */
+    .comp-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      width: 100%;
+    }
+
+    .comp-box {
+      border-radius: 16px;
+      padding: 1.75rem;
+      background: rgba(30, 41, 59, 0.3);
+      border: 1px solid var(--card-border);
+      transition: var(--transition-smooth);
+    }
+
+    .comp-box.active {
+      background: rgba(99, 102, 241, 0.08);
+      border-color: var(--primary);
+      box-shadow: 0 8px 30px rgba(99, 102, 241, 0.1);
+    }
+
+    .comp-header {
+      font-family: var(--font-heading);
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .comp-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .comp-box-probabilistic .comp-icon {
+      background: var(--secondary-glow);
+      color: var(--secondary);
+    }
+
+    .comp-box-deterministic .comp-icon {
+      background: var(--primary-glow);
+      color: var(--primary);
+    }
+
+    .comp-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .comp-list li {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .comp-list li::before {
+      content: '⚡';
+      font-size: 0.85rem;
+    }
+
+    /* Slide 3: 6 Components Grid */
+    .components-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+      width: 100%;
+    }
+
+    .component-item {
+      padding: 1.5rem;
+      border-radius: 16px;
+      background: rgba(30, 41, 59, 0.35);
+      border: 1px solid var(--card-border);
+      transition: var(--transition-smooth);
+      cursor: pointer;
+      position: relative;
+    }
+
+    .component-item:hover {
+      border-color: var(--primary);
+      transform: translateY(-4px);
+      background: rgba(30, 41, 59, 0.55);
+    }
+
+    .component-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--primary-glow);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1rem;
+      font-weight: bold;
+    }
+
+    .component-title {
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 1.15rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .component-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* Modal for Detailed View */
+    .detail-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(9, 13, 22, 0.8);
+      backdrop-filter: blur(12px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .detail-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .detail-modal {
+      width: 90%;
+      max-width: 600px;
+      background: #0f172a;
+      border: 1px solid var(--card-hover-border);
+      border-radius: 24px;
+      padding: 2.5rem;
+      position: relative;
+      transform: scale(0.9);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    .detail-overlay.active .detail-modal {
+      transform: scale(1);
+    }
+
+    .close-modal {
+      position: absolute;
+      top: 1.5rem;
+      right: 1.5rem;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1.5rem;
+      transition: var(--transition-smooth);
+    }
+
+    .close-modal:hover {
+      color: #fff;
+    }
+
+    /* Slide 4: Four Quadrants Grid */
+    .quadrant-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 1.5rem;
+      width: 100%;
+      height: 480px;
+    }
+
+    .quadrant-box {
+      border-radius: 16px;
+      padding: 2rem;
+      background: rgba(30, 41, 59, 0.3);
+      border: 1px solid var(--card-border);
+      cursor: pointer;
+      transition: var(--transition-smooth);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .quadrant-box:hover {
+      transform: scale(1.02);
+      border-color: var(--primary);
+      box-shadow: 0 10px 30px rgba(99, 102, 241, 0.12);
+    }
+
+    .quadrant-title {
+      font-family: var(--font-heading);
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .quadrant-meta {
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      color: var(--secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .quadrant-body {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-top: 1rem;
+    }
+
+    /* Slide 5: The Seven Pillars */
+    .pillars-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      width: 100%;
+    }
+
+    .pillar-row {
+      display: flex;
+      align-items: center;
+      padding: 0.85rem 1.5rem;
+      border-radius: 12px;
+      background: rgba(30, 41, 59, 0.3);
+      border: 1px solid var(--card-border);
+      transition: var(--transition-smooth);
+      cursor: pointer;
+    }
+
+    .pillar-row:hover {
+      background: rgba(99, 102, 241, 0.1);
+      border-color: var(--primary);
+      transform: translateX(10px);
+    }
+
+    .pillar-num {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--secondary);
+      width: 40px;
+      font-size: 1.1rem;
+    }
+
+    .pillar-title {
+      font-family: var(--font-heading);
+      font-weight: 600;
+      font-size: 1.05rem;
+      width: 250px;
+    }
+
+    .pillar-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      flex: 1;
+    }
+
+    /* Slide 6: Case Study Stages */
+    .stages-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      width: 100%;
+    }
+
+    .stage-row {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      position: relative;
+    }
+
+    .stage-num-badge {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--gradient-brand);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+      z-index: 2;
+    }
+
+    .stage-content-card {
+      flex: 1;
+      padding: 1.15rem 1.5rem;
+      border-radius: 14px;
+      background: rgba(30, 41, 59, 0.35);
+      border: 1px solid var(--card-border);
+      display: grid;
+      grid-template-columns: 1.2fr 2fr;
+      gap: 1.5rem;
+      align-items: center;
+    }
+
+    .stage-info h4 {
+      font-family: var(--font-heading);
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+
+    .stage-info p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .stage-details {
+      font-size: 0.85rem;
+      font-family: var(--font-mono);
+      color: var(--secondary);
+      border-left: 2px solid var(--card-border);
+      padding-left: 1.25rem;
+    }
+
+    /* Slide 7: Tabs Layout */
+    .tabs-nav {
+      display: flex;
+      gap: 0.5rem;
+      background: rgba(30, 41, 59, 0.3);
+      padding: 0.4rem;
+      border-radius: 12px;
+      border: 1px solid var(--card-border);
+      margin-bottom: 1.5rem;
+      width: 100%;
+    }
+
+    .tab-button {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.75rem 1rem;
+      font-family: var(--font-heading);
+      font-weight: 600;
+      font-size: 0.95rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+      text-align: center;
+    }
+
+    .tab-button.active {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+    }
+
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .tab-content.active {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+    }
+
+    /* Slide 8: Pitfalls Grid */
+    .pitfalls-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      width: 100%;
+    }
+
+    .pitfall-card {
+      border-radius: 16px;
+      padding: 1.5rem;
+      background: rgba(30, 41, 59, 0.3);
+      border: 1px solid var(--card-border);
+      display: flex;
+      align-items: flex-start;
+      gap: 1.5rem;
+      transition: var(--transition-smooth);
+    }
+
+    .pitfall-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+
+    .pitfall-badge {
+      background: var(--accent-glow);
+      color: var(--accent);
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+    }
+
+    .pitfall-info {
+      flex: 1;
+    }
+
+    .pitfall-title {
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 1.15rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .pitfall-desc {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .pitfall-solution {
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px dashed rgba(255, 255, 255, 0.08);
+      font-size: 0.85rem;
+      color: var(--success);
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Footer & Navigation Panel */
+    footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.5rem 3rem;
+      border-top: 1px solid var(--card-border);
+      backdrop-filter: var(--glass-blur);
+      background: rgba(15, 23, 42, 0.15);
+      z-index: 10;
+    }
+
+    .footer-info {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .nav-buttons {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn-nav {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 10px;
+      font-family: var(--font-heading);
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: var(--transition-smooth);
+      box-shadow: 0 4px 15px var(--primary-glow);
+    }
+
+    .btn-nav:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+    }
+
+    .btn-nav-outline {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+    }
+
+    .btn-nav-outline:hover {
+      border-color: var(--primary);
+      background: rgba(99, 102, 241, 0.05);
+      color: #fff;
+    }
+
+    /* Speaker Notes Drawer */
+    .notes-drawer {
+      position: absolute;
+      bottom: -300px;
+      left: 0;
+      width: 100%;
+      height: 250px;
+      background: rgba(15, 23, 42, 0.95);
+      border-top: 2px solid var(--primary);
+      backdrop-filter: blur(20px);
+      z-index: 20;
+      padding: 2rem 3rem;
+      box-shadow: 0 -15px 30px rgba(0, 0, 0, 0.4);
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .notes-drawer.active {
+      transform: translateY(-300px);
+    }
+
+    .notes-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .notes-title {
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: var(--primary);
+    }
+
+    .notes-content {
+      font-size: 1rem;
+      line-height: 1.6;
+      color: var(--text-main);
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    /* Slide Navigation Drawer */
+    .drawer-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(4px);
+      z-index: 500;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .drawer-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .slides-drawer {
+      position: fixed;
+      top: 0;
+      left: -320px;
+      width: 320px;
+      height: 100%;
+      background: #0b0f19;
+      border-right: 1px solid var(--card-border);
+      z-index: 600;
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      padding: 2rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      box-shadow: 15px 0 30px rgba(0,0,0,0.3);
+    }
+
+    .slides-drawer.active {
+      transform: translateX(320px);
+    }
+
+    .drawer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 1rem;
+    }
+
+    .drawer-title {
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 1.2rem;
+    }
+
+    .drawer-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .drawer-item {
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .drawer-item:hover {
+      background: rgba(99, 102, 241, 0.05);
+      border-color: var(--card-hover-border);
+    }
+
+    .drawer-item.active {
+      background: var(--primary-glow);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .drawer-num {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--secondary);
+    }
+
+    .drawer-name {
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+
+    /* Laser Pointer effect */
+    .laser-pointer {
+      position: fixed;
+      width: 15px;
+      height: 15px;
+      background: radial-gradient(circle, rgba(239, 68, 68, 1) 0%, rgba(239, 68, 68, 0.4) 60%, rgba(239, 68, 68, 0) 100%);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      display: none;
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.8);
+    }
+
+    /* Key bindings cheat sheet */
+    .keyboard-guide {
+      font-size: 0.8rem;
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    kbd {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 4px;
+      padding: 0.1rem 0.35rem;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+    }
+
+    /* General Animations */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 15px var(--primary-glow); }
+      50% { box-shadow: 0 0 25px rgba(99, 102, 241, 0.4); }
+    }
+
+    /* Equation styling */
+    .equation-display {
+      font-size: 1.8rem;
+      padding: 1.5rem;
+      border-radius: 12px;
+      background: rgba(30, 41, 59, 0.4);
+      border: 1px solid var(--card-border);
+      text-align: center;
+      margin: 1.5rem 0;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Background Canvas for Interactive Nodes (Harness Visualisation) -->
+  <canvas id="background-canvas"></canvas>
+
+  <!-- Laser Pointer overlay element -->
+  <div id="laser" class="laser-pointer"></div>
+
+  <!-- Slide Drawer Navigation -->
+  <div class="drawer-overlay" id="drawer-overlay"></div>
+  <div class="slides-drawer" id="slides-drawer">
+    <div class="drawer-header">
+      <h3 class="drawer-title">Slides Outline</h3>
+      <button class="btn-icon" id="close-drawer-btn" data-tooltip="Close Panel">
+        <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor"/></svg>
+      </button>
+    </div>
+    <div class="drawer-list" id="drawer-list">
+      <!-- Generated Dynamically -->
+    </div>
+  </div>
+
+  <!-- Detail Modal Overlay -->
+  <div class="detail-overlay" id="detail-overlay">
+    <div class="detail-modal">
+      <button class="close-modal" id="close-modal-btn">&times;</button>
+      <h3 id="modal-title" style="font-family: var(--font-heading); font-size: 1.8rem; font-weight: 800; margin-bottom: 1rem; color: var(--primary);">Details</h3>
+      <div id="modal-content" style="font-size: 1rem; line-height: 1.6; color: var(--text-muted);">
+        Detailed text goes here...
+      </div>
+    </div>
+  </div>
+
+  <!-- Master App Grid -->
+  <div class="app-container">
+    
+    <!-- Top Navigation Header -->
+    <header>
+      <div class="brand">
+        <svg width="28" height="28" viewBox="0 0 32 32" fill="none" style="color: var(--primary);">
+          <path d="M16 2L2 9L16 16L30 9L16 2Z" fill="currentColor" opacity="0.8"/>
+          <path d="M2 16L16 23L30 16" stroke="currentColor" stroke-width="2"/>
+          <path d="M2 23L16 30L30 23" stroke="currentColor" stroke-width="2"/>
+        </svg>
+        <span>Harness Engineering</span>
+      </div>
+      
+      <div class="header-controls">
+        <div class="keyboard-guide">
+          <kbd>←</kbd> <kbd>→</kbd> Navigate | <kbd>L</kbd> Laser | <kbd>S</kbd> Notes
+        </div>
+        <button class="btn-icon" id="drawer-toggle" data-tooltip="Outline">
+          <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor"/></svg>
+        </button>
+        <button class="btn-icon" id="laser-toggle" data-tooltip="Laser Pointer">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor"/></svg>
+        </button>
+        <button class="btn-icon" id="theme-toggle" data-tooltip="Toggle Mode">
+          <svg viewBox="0 0 24 24"><path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m11.314 11.314l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z" stroke="currentColor"/></svg>
+        </button>
+        <button class="btn-icon" id="fullscreen-toggle" data-tooltip="Fullscreen">
+          <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" stroke="currentColor"/></svg>
+        </button>
+      </div>
+
+      <!-- Top Progress tracker -->
+      <div class="progress-bar-container">
+        <div class="progress-bar-fill" id="progress-bar"></div>
+      </div>
+    </header>
+
+    <!-- Presentation viewport -->
+    <main class="viewport">
+      <div class="slide-wrapper">
+
+        <!-- SLIDE 1: COVER -->
+        <section class="slide active" data-notes="Welcome everyone. Today we are talking about Harness Engineering - a fundamental transition in how we build enterprise AI applications. Moving from model-centric prompt hacking to deterministic system engineering.">
+          <div class="slide-grid-2">
+            <div class="slide-content-left">
+              <div class="slide-tag">Industrializing AI</div>
+              <h1 class="slide-title">Harness Engineering: <span>Beyond Prompts and Context</span></h1>
+              <p class="slide-description">
+                As models grow in raw reasoning, system control replaces core capability as the key AI bottleneck. Learn the architecture of production-grade AI harnesses.
+              </p>
+              <div style="display: flex; gap: 1rem;">
+                <button class="btn-nav" onclick="nextSlide()">
+                  Start Presentation 
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="slide-visual-right">
+              <div class="glass-card" style="width: 85%; animation: pulse-glow 3s infinite; text-align: center;">
+                <div style="font-size: 4rem; margin-bottom: 1rem;">⚙️</div>
+                <h3 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.6rem; margin-bottom: 0.5rem; background: var(--gradient-brand); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Agent = Model + Harness</h3>
+                <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5;">
+                  Stateless models provide probabilistic intelligence; the harness acts as the deterministic governance & execution plane.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SLIDE 2: THE CORE PARADIGM SHIFT -->
+        <section class="slide" data-notes="This is the central thesis. Mitchell Hashimoto coined 'engineering the harness'. We represent agents as Model + Harness. If we look at the AI stack, Harness Engineering encapsulates Context and Prompt engineering. A localized mistake is usually a prompt defect. Execution drift is a harness defect.">
+          <div class="slide-grid-2">
+            <div class="slide-content-left">
+              <div class="slide-tag">Core Philosophy</div>
+              <h2 class="slide-title">The Paradigm Shift: <span>Model vs. Harness</span></h2>
+              <p class="slide-description">
+                Applying Sutton's <em>Bitter Lesson</em> to UI/UX and workflows: System-centric control loops consistently defeat model-centric prompt tuning.
+              </p>
+              <div class="equation-display">
+                $$\text{Agent} = \text{Model} + \text{Harness}$$
+              </div>
+            </div>
+            <div class="slide-visual-right">
+              <div class="comp-container">
+                <div class="comp-box comp-box-probabilistic active">
+                  <div class="comp-header">
+                    <div class="comp-icon">🌐</div>
+                    <span>Probabilistic Model</span>
+                  </div>
+                  <ul class="comp-list">
+                    <li>Core Reasoning & Intuition</li>
+                    <li>Text completion & comprehension</li>
+                    <li>Highly variables outcomes</li>
+                    <li>Stateless, ephemeral logic</li>
+                  </ul>
+                </div>
+                <div class="comp-box comp-box-deterministic active">
+                  <div class="comp-header">
+                    <div class="comp-icon">🛡️</div>
+                    <span>Deterministic Harness</span>
+                  </div>
+                  <ul class="comp-list">
+                    <li>Strict tool and API contracts</li>
+                    <li>Secure execution isolation</li>
+                    <li>Durable state & memory</li>
+                    <li>Structured, validation loops</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SLIDE 3: SIX LAYERS OF A PRODUCTION HARNESS -->
+        <section class="slide" data-notes="A comprehensive production harness requires coordinating these six execution layers. We provide a workspace, bash sandbox execution, persistent instructions in memory, standardized integrations via MCP, context decomposition, and orchestration middleware. Click on any block to dive deeper.">
+          <div style="width: 100%;">
+            <div class="slide-tag">Harness Architecture</div>
+            <h2 class="slide-title" style="margin-bottom: 1rem;">The Six <span>Execution Layers</span></h2>
+            <p class="slide-description" style="margin-bottom: 2rem;">A standard harness coordinates six critical components to transform stateless endpoints into durable corporate operators.</p>
+            
+            <div class="components-grid">
+              <div class="component-item" onclick="showDetail('Filesystem', 'Provides the agent with a dedicated workspace, persisting raw inputs, progress TODOs, and intermediate outputs. Enabling checkpointing and versioning.')">
+                <div class="component-icon">📁</div>
+                <h4 class="component-title">1. Filesystem</h4>
+                <p class="component-desc">Durable state & workspace memory. Stores notes, drafts, and tracking documents.</p>
+              </div>
+              <div class="component-item" onclick="showDetail('Bash + Sandbox', 'An isolated runtime environment (WASM, Docker, or uv venv) where agents run code and bash commands securely. Implements a Write -> Run -> Inspect -> Fix loop.')">
+                <div class="component-icon">💻</div>
+                <h4 class="component-title">2. Bash Sandbox</h4>
+                <p class="component-desc">Safe action layer. Runs scripts, tests logic, and recovers from errors autonomously.</p>
+              </div>
+              <div class="component-item" onclick="showDetail('Memory Layer', 'Encapsulates system regulations and behavioral policies (like AGENTS.md instructions) that are consistently fed to the context without cluttering active loops.')">
+                <div class="component-icon">🧠</div>
+                <h4 class="component-title">3. Memory & Policy</h4>
+                <p class="component-desc">Durable behavior guides. Retains constraints and system policy configurations.</p>
+              </div>
+              <div class="component-item" onclick="showDetail('Web Search + MCP', 'Model Context Protocol (MCP) provides standardized contracts. The harness restricts and translates external APIs into strictly typed local operations.')">
+                <div class="component-icon">🌐</div>
+                <h4 class="component-title">4. Web Search + MCP</h4>
+                <p class="component-desc">Dynamic tooling plane. Connects safe external search and API contracts dynamically.</p>
+              </div>
+              <div class="component-item" onclick="showDetail('Context Engineering', 'Actively prunes, compresses, and decomposes information to preserve the agent\'s focus. Avoids context window bloat and attention degradation.')">
+                <div class="component-icon">🔎</div>
+                <h4 class="component-title">5. Context Engineering</h4>
+                <p class="component-desc">Focused attention. Dynamic compression and planning layers to direct attention.</p>
+              </div>
+              <div class="component-item" onclick="showDetail('Orchestration + Hooks', 'The control loop (e.g. LangGraph) executing workflows. Integrates middleware filters and approval gates (interrupts) for humans in the loop.')">
+                <div class="component-icon">⚙️</div>
+                <h4 class="component-title">6. Orchestration & Hooks</h4>
+                <p class="component-desc">The governance plane. Defines state machines, execution budgets, and human gates.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SLIDE 4: THE FOUR QUADRANTS FRAMEWORK -->
+        <section class="slide" data-notes="To systematically design a harness, we use two frameworks. This first is the Four Quadrants. It breaks down behavior over time across two axes: Constraints vs. Feedback, and Workflow vs. Improvement. Architecture constraints keep it correct by design; feedback loops correct errors instantly. Workflow control prevents runaway; improvement loops clear entropy.">
+          <div class="slide-grid-2">
+            <div class="slide-content-left">
+              <div class="slide-tag">Governance Framework</div>
+              <h2 class="slide-title">The Four <span>Quadrants</span> of Harness Control</h2>
+              <p class="slide-description">
+                A blueprint to govern autonomous agents, grouping structural safety, active monitoring, execution runtime boundaries, and long-term optimization.
+              </p>
+              <div class="glass-card" style="padding: 1.25rem;">
+                <p style="font-size: 0.85rem; font-family: var(--font-mono); color: var(--secondary);">✨ Interaction Hint: Click on any quadrant box on the right to examine its concrete engineering specifications.</p>
+              </div>
+            </div>
+            <div class="slide-visual-right">
+              <div class="quadrant-grid">
+                <div class="quadrant-box" onclick="showDetail('Architecture Constraints', 'Engineering strict rules into code rather than prompts. E.g., linting output formats, code syntax checks, type safety validation, and structural directory bounds. Forces the agent to be correct-by-design.')">
+                  <div>
+                    <span class="quadrant-meta">Quadrant 01</span>
+                    <h3 class="quadrant-title" style="color: var(--primary);">Architecture Constraints</h3>
+                  </div>
+                  <p class="quadrant-body">Correctness-by-design. Linters, schema checkers, structural bounds, and type enforcements.</p>
+                </div>
+                <div class="quadrant-box" onclick="showDetail('Feedback Loops', 'Active verification hooks executing on every tool call and model output. If a validation gate fails (e.g., test fails or API returns error), it provides a trace back to the agent loop for instant correction.')">
+                  <div>
+                    <span class="quadrant-meta">Quadrant 02</span>
+                    <h3 class="quadrant-title" style="color: var(--secondary);">Feedback Loops</h3>
+                  </div>
+                  <p class="quadrant-body">Rapid runtime correction. Telemetry traces, automated validators, and post-tool checkpoints.</p>
+                </div>
+                <div class="quadrant-box" onclick="showDetail('Workflow Control', 'Governing the bounds of active loops. Restricting maximum execution steps (e.g., max 10 steps), bounding token spend, capping concurrency, and applying Human-In-The-Loop approvals.')">
+                  <div>
+                    <span class="quadrant-meta">Quadrant 03</span>
+                    <h3 class="quadrant-title" style="color: var(--accent);">Workflow Control</h3>
+                  </div>
+                  <p class="quadrant-body">Autonomy governance. Planned execution paths, concurrent limits, and approval gateways.</p>
+                </div>
+                <div class="quadrant-box" onclick="showDetail('Improvement Cycles', 'Proactively auditing and cleaning up the agent ecosystem. Trimming stale prompt logs, refactoring guidelines in AGENTS.md, deprecating unneeded tools, and rebuilding index vectors.')">
+                  <div>
+                    <span class="quadrant-meta">Quadrant 04</span>
+                    <h3 class="quadrant-title" style="color: var(--success);">Improvement Cycles</h3>
+                  </div>
+                  <p class="quadrant-body">Managing entropy. Periodic configuration refactoring, instruction cleaning, and memory pruning.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SLIDE 5: THE SEVEN PILLARS -->
+        <section class="slide" data-notes="The second framework is the Seven Pillars. These are the functional blocks of code that must be implemented. An intent compiler to parse unstructured user inputs, a dynamic index to inject workspace changes, tool pruner to reduce distractions, the central brain stem orchestrator, verification hooks, telemetry traces like LangSmith, and safe sandboxing.">
+          <div class="slide-grid-2">
+            <div class="slide-content-left">
+              <div class="slide-tag">Implementation Pillars</div>
+              <h2 class="slide-title">The Seven <span>Pillars</span> of Harness Execution</h2>
+              <p class="slide-description">
+                Building a production-grade system requires establishing seven core functions around the AI runtime. Hover over any pillar to see how it operates.
+              </p>
+            </div>
+            <div class="slide-visual-right" style="flex-direction: column; justify-content: center;">
+              <div class="pillars-container">
+                <div class="pillar-row" onclick="showDetail('1. Intent Compiler', 'Converts highly ambiguous natural language requests into structured, machine-executable specifications.')">
+                  <div class="pillar-num">01</div>
+                  <div class="pillar-title">Intent Compiler</div>
+                  <div class="pillar-desc">Unstructured query → Schema specs</div>
+                </div>
+                <div class="pillar-row" onclick="showDetail('2. Context Indexing', 'Performs dynamic workspace mapping, injecting change-logs and minimized file summaries instead of raw dumps.')">
+                  <div class="pillar-num">02</div>
+                  <div class="pillar-title">Context Indexing</div>
+                  <div class="pillar-desc">Workspace state mapping</div>
+                </div>
+                <div class="pillar-row" onclick="showDetail('3. Tool Pruning', 'Automatically hides irrelevant tools depending on the current stage of execution to reduce confusion.')">
+                  <div class="pillar-num">03</div>
+                  <div class="pillar-title">Tool Pruning & Wrappers</div>
+                  <div class="pillar-desc">Deterministic API contracts</div>
+                </div>
+                <div class="pillar-row" onclick="showDetail('4. Orchestration Brain Stem', 'Drives the state machine loops (Plan -> Act -> Verify) through dedicated libraries like LangGraph.')">
+                  <div class="pillar-num">04</div>
+                  <div class="pillar-title">Orchestration Brain Stem</div>
+                  <div class="pillar-desc">Drives Plan-Act-Verify loops</div>
+                </div>
+                <div class="pillar-row" onclick="showDetail('5. Verification Hooks', 'Invokes rule-based, syntactic, and structural grading checkers on final deliverables prior to release.')">
+                  <div class="pillar-num">05</div>
+                  <div class="pillar-title">Verification Hooks</div>
+                  <div class="pillar-desc">Validation and grading gates</div>
+                </div>
+                <div class="pillar-row" onclick="showDetail('6. Trace-Driven Telemetry', 'Captures entire agent execution graphs, metrics, token costs, and API latency for deep evaluation.')">
+                  <div class="pillar-num">06</div>
+                  <div class="pillar-title">Trace-Driven Telemetry</div>
+                  <div class="pillar-desc">Token, speed, and pathway tracking</div>
+                </div>
+                <div class="pillar-row" onclick="showDetail('7. Safety Sandbox', 'Runs agents in completely sandboxed hosts with restricted operations and strict execution budgets.')">
+                  <div class="pillar-num">07</div>
+                  <div class="pillar-title">Safety Sandbox</div>
+                  <div class="pillar-desc">Containerized containment limits</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SLIDE 6: CASE STUDY - DEEP RESEARCH AGENT -->
+        <section class="slide" data-notes="Let's ground this theory in a real-world case study: the Deep Research Agent. It leverages these layers in a progressive 5-stage workflow. When sub-agents are spawned, they are strictly throttled. Limits are coded directly into the harness: maximum 3 concurrent threads, and 3 rounds of sub-delegation to prevent massive billing.">
+          <div class="slide-grid-2">
+            <div class="slide-content-left">
+              <div class="slide-tag">Case Study</div>
+              <h2 class="slide-title">Case Study: The <span>Deep Research Agent</span></h2>
+              <p class="slide-description">
+                How a production system implements the harness architecture in code using structured workflows and defensive control loops.
+              </p>
+              <div class="glass-card">
+                <h4 style="font-family: var(--font-heading); font-weight: 700; font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--accent);">Strategic Guardrails in Code:</h4>
+                <ul class="comp-list" style="font-size: 0.85rem;">
+                  <li><strong>Limited Delegation:</strong> Capped at max 3 concurrent sub-agents.</li>
+                  <li><strong>Cycle Bounds:</strong> Maximum 3 refinement iterations.</li>
+                  <li><strong>Contradiction Audit:</strong> Auto-flags conflicting search data.</li>
+                </ul>
+              </div>
+            </div>
+            <div class="slide-visual-right">
+              <div class="stages-container">
+                <div class="stage-row">
+                  <div class="stage-num-badge">01</div>
+                  <div class="stage-content-card">
+                    <div class="stage-info">
+                      <h4>Ingest Query</h4>
+                      <p>Workspace Setup</p>
+                    </div>
+                    <div class="stage-details">Saves initial request; initialises isolated environment.</div>
+                  </div>
+                </div>
+                <div class="stage-row">
+                  <div class="stage-num-badge">02</div>
+                  <div class="stage-content-card">
+                    <div class="stage-info">
+                      <h4>Decompose & Plan</h4>
+                      <p>Checkbox Strategy</p>
+                    </div>
+                    <div class="stage-details">Writes explicit tracker.md file checklist.</div>
+                  </div>
+                </div>
+                <div class="stage-row">
+                  <div class="stage-num-badge">03</div>
+                  <div class="stage-content-card">
+                    <div class="stage-info">
+                      <h4>Delegate Sub-Tasks</h4>
+                      <p>Throttled Execution</p>
+                    </div>
+                    <div class="stage-details">Spawns parallel search sub-agents (Max 3 threads).</div>
+                  </div>
+                </div>
+                <div class="stage-row">
+                  <div class="stage-num-badge">04</div>
+                  <div class="stage-content-card">
+                    <div class="stage-info">
+                      <h4>Synthesis & Audit</h4>
+                      <p>Fact-checking layer</p>
+                    </div>
+                    <div class="stage-details">Cross-references sources; builds solid markdown structure.</div>
+                  </div>
+                </div>
+                <div class="stage-row">
+                  <div class="stage-num-badge">05</div>
+                  <div class="stage-content-card">
+                    <div class="stage-info">
+                      <h4>Release Artifact</h4>
+                      <p>Durable Output</p>
+                    </div>
+                    <div class="stage-details">Saves final report to final_report.md; cleans sandbox.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SLIDE 7: ARCHITECTURAL PATTERNS -->
+        <section class="slide" data-notes="Depending on your organization\'s maturity, you will implement the harness using different architectures. A monolithic harness embeds control directly into one app - quick to build, hard to scale. Modular splits components into separate services with contracts. Event-driven scales asynchronously with queues. Platform-based uses a centralized control plane.">
+          <div style="width: 100%;">
+            <div class="slide-tag">Implementation Patterns</div>
+            <h2 class="slide-title" style="margin-bottom: 1.5rem;">Choosing Your <span>Harness Architecture</span></h2>
+            
+            <div class="tabs-nav">
+              <button class="tab-button active" onclick="switchTab(0)">Monolithic / Embedded</button>
+              <button class="tab-button" onclick="switchTab(1)">Modular Architecture</button>
+              <button class="tab-button" onclick="switchTab(2)">Event-Driven / Reactive</button>
+              <button class="tab-button" onclick="switchTab(3)">Platform Control Plane</button>
+            </div>
+
+            <div id="tab-contents-container">
+              <!-- Tab 0 -->
+              <div class="tab-content active">
+                <div class="glass-card">
+                  <h4 style="font-family: var(--font-heading); font-weight: 700; margin-bottom: 0.75rem; color: var(--primary);">Embedded Control Model</h4>
+                  <p style="font-size: 0.95rem; line-height: 1.5; color: var(--text-muted);">
+                    All components (prompts, tool wrappers, orchestration loops) sit directly within a single monolithic codebase. Highly simple, quick to prototype, but becomes rigid and hard to adapt.
+                  </p>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                  <div style="border-left: 3px solid var(--success); padding-left: 1rem;">
+                    <strong style="color: var(--success);">Pros:</strong>
+                    <p style="font-size: 0.85rem; color: var(--text-muted);">Extremely agile initial delivery, low infrastructure setup, high speed-to-market.</p>
+                  </div>
+                  <div style="border-left: 3px solid var(--danger); padding-left: 1rem;">
+                    <strong style="color: var(--danger);">Cons:</strong>
+                    <p style="font-size: 0.85rem; color: var(--text-muted);">Tightly coupled; swapping a model or changing system prompts risks breaking tool integration loops.</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tab 1 -->
+              <div class="tab-content">
+                <div class="glass-card">
+                  <h4 style="font-family: var(--font-heading); font-weight: 700; margin-bottom: 0.75rem; color: var(--secondary);">Decoupled Service Model</h4>
+                  <p style="font-size: 0.95rem; line-height: 1.5; color: var(--text-muted);">
+                    Decouples the core orchestration state machine from tool API services and memory layers. Relies on clean API interfaces and strict contracts.
+                  </p>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                  <div style="border-left: 3px solid var(--success); padding-left: 1rem;">
+                    <strong style="color: var(--success);">Pros:</strong>
+                    <p style="font-size: 0.85rem; color: var(--text-muted);">Teams can work on prompts, code tools, and models independently. Seamless upgrades without service rewrites.</p>
+                  </div>
+                  <div style="border-left: 3px solid var(--danger); padding-left: 1rem;">
+                    <strong style="color: var(--danger);">Cons:</strong>
+                    <p style="font-size: 0.85rem; color: var(--text-muted);">Slight increase in initial API contract design and network coordination overhead.</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tab 2 -->
+              <div class="tab-content">
+                <div class="glass-card">
+                  <h4 style="font-family: var(--font-heading); font-weight: 700; margin-bottom: 0.75rem; color: var(--accent);">Reactive Queue Workflows</h4>
+                  <p style="font-size: 0.95rem; line-height: 1.5; color: var(--text-muted);">
+                    Agents operate as distributed workers subscribing to enterprise queue streams (Kafka, RabbitMQ). They react asynchronously to events and publish execution steps.
+                  </p>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                  <div style="border-left: 3px solid var(--success); padding-left: 1rem;">
+                    <strong style="color: var(--success);">Pros:</strong>
+                    <p style="font-size: 0.85rem; color: var(--text-muted);">Infinite horizontal scalability, durable retries, outstanding for large multi-agent setups.</p>
+                  </div>
+                  <div style="border-left: 3px solid var(--danger); padding-left: 1rem;">
+                    <strong style="color: var(--danger);">Cons:</strong>
+                    <p style="font-size: 0.85rem; color: var(--text-muted);">Operational complexity overhead is extremely high. Monitoring async traces requires dedicated infra.</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tab 3 -->
+              <div class="tab-content">
+                <div class="glass-card">
+                  <h4 style="font-family: var(--font-heading); font-weight: 700; margin-bottom: 0.75rem; color: var(--success);">Enterprise AI Platform Plane</h4>
+                  <p style="font-size: 0.95rem; line-height: 1.5; color: var(--text-muted);">
+                    A dedicated internal platform engineering team maintains shared sandboxes, tool registries, verification hooks, and safety firewalls as a managed service.
+                  </p>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                  <div style="border-left: 3px solid var(--success); padding-left: 1rem;">
+                    <strong style="color: var(--success);">Pros:</strong>
+                    <p style="font-size: 0.85rem; color: var(--text-muted);">Centralized compliance, safety constraints, uniform cost billing, and fast deployment for application teams.</p>
+                  </div>
+                  <div style="border-left: 3px solid var(--danger); padding-left: 1rem;">
+                    <strong style="color: var(--danger);">Cons:</strong>
+                    <p style="font-size: 0.85rem; color: var(--text-muted);">Requires substantial long-term investment, dedicated platform engineering squad.</p>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        <!-- SLIDE 8: PITFALLS & ANTI-PATTERNS -->
+        <section class="slide" data-notes="We must avoid three common anti-patterns. First, the Megalithic Prompt - throwing all instructions, guidelines, and formats into one mega prompt. Instead, we split them. Second, hardcoding tool endpoints - use MCP instead. Third, open-ended runaway reasoning loops - enforce token and loop limits to avoid unexpected bills.">
+          <div style="width: 100%;">
+            <div class="slide-tag">Defensive Engineering</div>
+            <h2 class="slide-title" style="margin-bottom: 1.5rem;">Critical <span>Anti-Patterns</span> to Avoid</h2>
+            
+            <div class="pitfalls-container">
+              <div class="pitfall-card">
+                <div class="pitfall-badge" style="color: var(--accent); background: var(--accent-glow);">Anti-Pattern 01</div>
+                <div class="pitfall-info">
+                  <h4 class="pitfall-title">The Megalithic Prompt</h4>
+                  <p class="pitfall-desc">Jamming system guidelines, safety boundaries, formatting details, and tools into one huge system instruction, causing context dilution.</p>
+                  <div class="pitfall-solution">
+                    <span>💡 Harness Solution:</span> Split policies into dynamic workspace files (e.g. AGENTS.md) and load them progressively.
+                  </div>
+                </div>
+              </div>
+              <div class="pitfall-card">
+                <div class="pitfall-badge" style="color: var(--accent); background: var(--accent-glow);">Anti-Pattern 02</div>
+                <div class="pitfall-info">
+                  <h4 class="pitfall-title">Hardcoded Tool Connections</h4>
+                  <p class="pitfall-desc">Coupling agent code directly to static API schemas. Swapping a service requires rewriting the entire core orchestration code.</p>
+                  <div class="pitfall-solution">
+                    <span>💡 Harness Solution:</span> Implement Model Context Protocol (MCP) to resolve schemas dynamically under strict contracts.
+                  </div>
+                </div>
+              </div>
+              <div class="pitfall-card">
+                <div class="pitfall-badge" style="color: var(--accent); background: var(--accent-glow);">Anti-Pattern 03</div>
+                <div class="pitfall-info">
+                  <h4 class="pitfall-title">Infinite Execution Runaway</h4>
+                  <p class="pitfall-desc">Designing open-ended reasoning loops that have no exit criteria or spending limits. Risks running up thousands of dollars in tokens.</p>
+                  <div class="pitfall-solution">
+                    <span>💡 Harness Solution:</span> Programmatically enforce loop count boundaries and token expenditure limits in code.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SLIDE 9: KEY TAKEAWAYS -->
+        <section class="slide" data-notes="To close, here are five takeaways for industrializing AI. Stop tweaking prompts; write verification layers. Speed up your feedback loops, that is what drives success. Make the harness model-agnostic. Isolate agents in secure sandboxes. And build in robust telemetry from Day One. Thank you, I'd love to take your questions.">
+          <div class="slide-grid-2">
+            <div class="slide-content-left">
+              <div class="slide-tag">Summary Guidelines</div>
+              <h2 class="slide-title">Industrializing AI: <span>Key Takeaways</span></h2>
+              <p class="slide-description">
+                Follow these five principles to scale autonomous systems with determinism and reliability.
+              </p>
+            </div>
+            <div class="slide-visual-right" style="flex-direction: column; gap: 1rem; align-items: stretch; justify-content: center;">
+              <div class="glass-card" style="padding: 1.25rem 2rem; display: flex; align-items: center; gap: 1.5rem;">
+                <div style="font-size: 1.5rem;">🚀</div>
+                <div>
+                  <h4 style="font-family: var(--font-heading); font-weight: 700; font-size: 1.05rem;">Stop Tweaking Prompts; Build Control Systems</h4>
+                  <p style="font-size: 0.85rem; color: var(--text-muted);">Use verification layers, filesystem bounds, and code gates to correct deviations.</p>
+                </div>
+              </div>
+              <div class="glass-card" style="padding: 1.25rem 2rem; display: flex; align-items: center; gap: 1.5rem;">
+                <div style="font-size: 1.5rem;">🔄</div>
+                <div>
+                  <h4 style="font-family: var(--font-heading); font-weight: 700; font-size: 1.05rem;">Prioritize Speed of Feedback over Prompt Elegance</h4>
+                  <p style="font-size: 0.85rem; color: var(--text-muted);">Accelerate optimization with automated quality checks and regression suites.</p>
+                </div>
+              </div>
+              <div class="glass-card" style="padding: 1.25rem 2rem; display: flex; align-items: center; gap: 1.5rem;">
+                <div style="font-size: 1.5rem;">🧩</div>
+                <div>
+                  <h4 style="font-family: var(--font-heading); font-weight: 700; font-size: 1.05rem;">Decouple the Harness from the Model</h4>
+                  <p style="font-size: 0.85rem; color: var(--text-muted);">Ensure orchestrations, tool schemas, and configurations remain model-agnostic.</p>
+                </div>
+              </div>
+              <div class="glass-card" style="padding: 1.25rem 2rem; display: flex; align-items: center; gap: 1.5rem;">
+                <div style="font-size: 1.5rem;">🔒</div>
+                <div>
+                  <h4 style="font-family: var(--font-heading); font-weight: 700; font-size: 1.05rem;">Enforce Safety inside Sandboxes</h4>
+                  <p style="font-size: 0.85rem; color: var(--text-muted);">Never let autonomous code execute on bare hosts; isolate in containers.</p>
+                </div>
+              </div>
+              <div class="glass-card" style="padding: 1.25rem 2rem; display: flex; align-items: center; gap: 1.5rem;">
+                <div style="font-size: 1.5rem;">📊</div>
+                <div>
+                  <h4 style="font-family: var(--font-heading); font-weight: 700; font-size: 1.05rem;">Implement Traceability from Day One</h4>
+                  <p style="font-size: 0.85rem; color: var(--text-muted);">Capture complete traces (e.g. LangSmith) to audit, debug, and justify actions.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <!-- Bottom Controls & Speaker Notes Drawer -->
+    <footer>
+      <div class="footer-info">
+        <span id="slide-number">Slide 1 of 9</span>
+        <span style="color: var(--card-border);">|</span>
+        <span id="timer-display">Elapsed: 00:00</span>
+      </div>
+
+      <div class="nav-buttons">
+        <button class="btn-nav btn-nav-outline" onclick="prevSlide()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2"/></svg>
+          Back
+        </button>
+        <button class="btn-nav btn-nav-outline" id="speaker-notes-btn" data-tooltip="Presenter Notes">
+          Speaker Notes
+        </button>
+        <button class="btn-nav" onclick="nextSlide()">
+          Next
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2"/></svg>
+        </button>
+      </div>
+    </footer>
+
+    <!-- Expandable Speaker Notes Panel -->
+    <div class="notes-drawer" id="notes-drawer">
+      <div class="notes-header">
+        <h4 class="notes-title">Presenter Guidelines</h4>
+        <button class="btn-icon" id="close-notes-btn" data-tooltip="Close Notes">
+          <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor"/></svg>
+        </button>
+      </div>
+      <div class="notes-content" id="notes-content-area">
+        Presenter instructions loaded dynamically...
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Presenter Slides controller
+    let currentSlideIndex = 0;
+    const slides = document.querySelectorAll('.slide');
+    const slideNumberText = document.getElementById('slide-number');
+    const progressBar = document.getElementById('progress-bar');
+    const notesContentArea = document.getElementById('notes-content-area');
+    const notesDrawer = document.getElementById('notes-drawer');
+    const slidesDrawer = document.getElementById('slides-drawer');
+    const drawerList = document.getElementById('drawer-list');
+
+    // Populate Slide Drawer Panel
+    function buildDrawer() {
+      drawerList.innerHTML = '';
+      slides.forEach((slide, index) => {
+        let tag = slide.querySelector('.slide-tag') ? slide.querySelector('.slide-tag').innerText : 'Cover';
+        let title = slide.querySelector('.slide-title') ? slide.querySelector('.slide-title').innerText : 'Introduction';
+        title = title.replace(/\n/g, ' ').substring(0, 30) + '...';
+
+        const item = document.createElement('div');
+        item.className = `drawer-item ${index === currentSlideIndex ? 'active' : ''}`;
+        item.onclick = () => {
+          goToSlide(index);
+          toggleDrawer();
+        };
+
+        item.innerHTML = `
+          <span class="drawer-num">${String(index + 1).padStart(2, '0')}</span>
+          <div style="display: flex; flex-direction: column;">
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono);">${tag}</span>
+            <span class="drawer-name">${title}</span>
+          </div>
+        `;
+        drawerList.appendChild(item);
+      });
+    }
+
+    // Slide Switcher Function
+    function goToSlide(index) {
+      if (index < 0 || index >= slides.length) return;
+      
+      // Update states
+      slides[currentSlideIndex].classList.remove('active');
+      slides[currentSlideIndex].classList.add('previous');
+      
+      // Reset forward elements
+      if (index < currentSlideIndex) {
+        slides[index].classList.remove('previous');
+      }
+
+      currentSlideIndex = index;
+      slides[currentSlideIndex].classList.remove('previous');
+      slides[currentSlideIndex].classList.add('active');
+
+      // Update HUD
+      slideNumberText.innerText = `Slide ${currentSlideIndex + 1} of ${slides.length}`;
+      progressBar.style.width = `${((currentSlideIndex) / (slides.length - 1)) * 100}%`;
+
+      // Update Speaker notes
+      const notes = slides[currentSlideIndex].getAttribute('data-notes');
+      notesContentArea.innerHTML = notes || "No presenter notes documented for this slide.";
+
+      // Update drawer highlights
+      document.querySelectorAll('.drawer-item').forEach((item, idx) => {
+        if (idx === currentSlideIndex) item.classList.add('active');
+        else item.classList.remove('active');
+      });
+    }
+
+    function nextSlide() {
+      if (currentSlideIndex < slides.length - 1) {
+        goToSlide(currentSlideIndex + 1);
+      }
+    }
+
+    function prevSlide() {
+      if (currentSlideIndex > 0) {
+        goToSlide(currentSlideIndex - 1);
+      }
+    }
+
+    // Modal detailed triggers
+    function showDetail(title, content) {
+      document.getElementById('modal-title').innerText = title;
+      document.getElementById('modal-content').innerText = content;
+      document.getElementById('detail-overlay').classList.add('active');
+    }
+
+    document.getElementById('close-modal-btn').addEventListener('click', () => {
+      document.getElementById('detail-overlay').classList.remove('active');
+    });
+
+    document.getElementById('detail-overlay').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('detail-overlay')) {
+        document.getElementById('detail-overlay').classList.remove('active');
+      }
+    });
+
+    // Theme Toggle
+    const themeToggleBtn = document.getElementById('theme-toggle');
+    themeToggleBtn.addEventListener('click', () => {
+      const currentTheme = document.body.getAttribute('data-theme');
+      if (currentTheme === 'light') {
+        document.body.removeAttribute('data-theme');
+      } else {
+        document.body.setAttribute('data-theme', 'light');
+      }
+    });
+
+    // Drawer Toggles
+    function toggleDrawer() {
+      slidesDrawer.classList.toggle('active');
+      document.getElementById('drawer-overlay').classList.toggle('active');
+    }
+
+    document.getElementById('drawer-toggle').addEventListener('click', toggleDrawer);
+    document.getElementById('close-drawer-btn').addEventListener('click', toggleDrawer);
+    document.getElementById('drawer-overlay').addEventListener('click', toggleDrawer);
+
+    // Notes Toggles
+    const notesBtn = document.getElementById('speaker-notes-btn');
+    const closeNotesBtn = document.getElementById('close-notes-btn');
+    notesBtn.addEventListener('click', () => notesDrawer.classList.toggle('active'));
+    closeNotesBtn.addEventListener('click', () => notesDrawer.classList.remove('active'));
+
+    // Laser pointer toggle
+    let laserActive = false;
+    const laserElement = document.getElementById('laser');
+    const laserToggleBtn = document.getElementById('laser-toggle');
+
+    laserToggleBtn.addEventListener('click', () => {
+      laserActive = !laserActive;
+      if (laserActive) {
+        laserElement.style.display = 'block';
+        laserToggleBtn.style.color = 'var(--danger)';
+        laserToggleBtn.style.borderColor = 'var(--danger)';
+      } else {
+        laserElement.style.display = 'none';
+        laserToggleBtn.style.color = '';
+        laserToggleBtn.style.borderColor = '';
+      }
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (laserActive) {
+        laserElement.style.left = `${e.clientX}px`;
+        laserElement.style.top = `${e.clientY}px`;
+      }
+    });
+
+    // Fullscreen action
+    const fullscreenBtn = document.getElementById('fullscreen-toggle');
+    fullscreenBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.error(`Error enabling fullscreen: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    });
+
+    // Sub-Tabs Switcher (Slide 7)
+    function switchTab(tabIndex) {
+      const contents = document.querySelectorAll('.tab-content');
+      const buttons = document.querySelectorAll('.tab-button');
+
+      contents.forEach((content, idx) => {
+        if (idx === tabIndex) content.classList.add('active');
+        else content.classList.remove('active');
+      });
+
+      buttons.forEach((btn, idx) => {
+        if (idx === tabIndex) btn.classList.add('active');
+        else btn.classList.remove('active');
+      });
+    }
+
+    // Keyboard controls
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ') {
+        nextSlide();
+      } else if (e.key === 'ArrowLeft') {
+        prevSlide();
+      } else if (e.key.toLowerCase() === 'l') {
+        laserToggleBtn.click();
+      } else if (e.key.toLowerCase() === 's') {
+        notesBtn.click();
+      } else if (e.key === 'Escape') {
+        document.getElementById('detail-overlay').classList.remove('active');
+        slidesDrawer.classList.remove('active');
+        document.getElementById('drawer-overlay').classList.remove('active');
+      }
+    });
+
+    // Timer Logic
+    let startTime = Date.now();
+    const timerDisplay = document.getElementById('timer-display');
+    setInterval(() => {
+      const elapsedMs = Date.now() - startTime;
+      const totalSecs = Math.floor(elapsedMs / 1000);
+      const mins = String(Math.floor(totalSecs / 60)).padStart(2, '0');
+      const secs = String(totalSecs % 60).padStart(2, '0');
+      timerDisplay.innerText = `Elapsed: ${mins}:${secs}`;
+    }, 1000);
+
+    // Initializer
+    goToSlide(0);
+    buildDrawer();
+
+    /* --- Interactive Background Canvas Animation --- */
+    const canvas = document.getElementById('background-canvas');
+    const ctx = canvas.getContext('2d');
+    let width = canvas.width = window.innerWidth;
+    let height = canvas.height = window.innerHeight;
+
+    window.addEventListener('resize', () => {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    });
+
+    // Node particle class mimicking structural controls
+    class NodeParticle {
+      constructor() {
+        this.x = Math.random() * width;
+        this.y = Math.random() * height;
+        this.vx = (Math.random() - 0.5) * 0.4;
+        this.vy = (Math.random() - 0.5) * 0.4;
+        this.radius = Math.random() * 2 + 1;
+        this.color = Math.random() > 0.5 ? '#6366f1' : '#06b6d4';
+      }
+
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Bounded boundaries
+        if (this.x < 0 || this.x > width) this.vx *= -1;
+        if (this.y < 0 || this.y > height) this.vy *= -1;
+      }
+
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+      }
+    }
+
+    const particles = Array.from({ length: 45 }, () => new NodeParticle());
+
+    function animate() {
+      ctx.clearRect(0, 0, width, height);
+      
+      // Draw links between close nodes (harness structures)
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < 120) {
+            ctx.beginPath();
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.strokeStyle = `rgba(99, 102, 241, ${0.12 * (1 - dist / 120)})`;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+      }
+
+      particles.forEach(p => {
+        p.update();
+        p.draw();
+      });
+
+      requestAnimationFrame(animate);
+    }
+
+    animate();
+  </script>
+</body>
+</html>

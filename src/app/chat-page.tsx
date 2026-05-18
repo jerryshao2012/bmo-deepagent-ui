@@ -215,7 +215,7 @@ function HomePageInner({
                     <div className="font-medium">{user.name}</div>
                     <div className="text-xs text-muted-foreground">{user.email}</div>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => signOut()}>
+                  <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/" })}>
                     Sign out
                   </DropdownMenuItem>
                 </DropdownMenuContent>

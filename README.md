@@ -13,6 +13,18 @@ yarn install
 yarn dev
 ```
 
+**Stop the server**
+
+To stop the server running on port 3000, use one of the following commands:
+
+```bash
+# Find and kill the process using port 3000
+lsof -ti:3000 | xargs kill -9
+
+# Or use fuser to kill the process
+fuser -k 3000/tcp
+```
+
 **Setup OAuth**
 
 1. Set up GitHub OAuth

@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { ThreadItem } from "@/app/hooks/useThreads";
-import { useThreads, deleteThread } from "@/app/hooks/useThreads";
+import { useThreads, deleteThread, cleanupOldThreads } from "@/app/hooks/useThreads";
 
 type StatusFilter = "all" | "idle" | "busy" | "interrupted" | "error";
 
@@ -133,6 +133,24 @@ export function ThreadList({
     status: statusFilter === "all" ? undefined : statusFilter,
     limit: 20,
   });
+
+  // Run cleanup once when component mounts and threads are loaded
+  useEffect(() => {
+    if (threads.data && threads.data.length > 0) {
+      // Only run cleanup once per session
+      const lastCleanup = sessionStorage.getItem("last_thread_cleanup");
+      const now = Date.now();
+      const oneDay = 24 * 60 * 60 * 1000;
+
+      if (!lastCleanup || now - parseInt(lastCleanup) > oneDay) {
+        cleanupOldThreads(7).then(() => {
+          sessionStorage.setItem("last_thread_cleanup", now.toString());
+          // Refresh thread list after cleanup
+          threads.mutate();
+        });
+      }
+    }
+  }, [threads.data, threads.mutate]);
 
   const flattened = useMemo(() => {
     return threads.data?.flat() ?? [];

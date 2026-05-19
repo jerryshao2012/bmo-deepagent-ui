@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { signOut } from "next-auth/react";
+import { cleanupOldThreads } from "@/app/hooks/useThreads";
 
 interface HomePageInnerProps {
   config: StandaloneConfig;
@@ -136,6 +137,19 @@ function HomePageInner({
   useEffect(() => {
     fetchAssistant();
   }, [fetchAssistant]);
+
+  // Run thread cleanup on mount and every 24 hours
+  useEffect(() => {
+    // Initial cleanup on mount
+    cleanupOldThreads(7);
+
+    // Schedule cleanup every 24 hours (86400000 ms)
+    const cleanupInterval = setInterval(() => {
+      cleanupOldThreads(7);
+    }, 24 * 60 * 60 * 1000);
+
+    return () => clearInterval(cleanupInterval);
+  }, []);
 
   return (
     <>

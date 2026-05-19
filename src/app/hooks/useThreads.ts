@@ -309,3 +309,85 @@ export async function deleteThread(threadId: string): Promise<void> {
 
   await client.threads.delete(threadId);
 }
+
+/**
+ * Delete threads older than the specified number of days
+ * @param days - Number of days to retain threads (default: 7)
+ */
+export async function cleanupOldThreads(days: number = 7): Promise<void> {
+  const config = getConfig();
+  if (!config) return;
+
+  const apiKey =
+    config.langsmithApiKey ||
+    process.env.NEXT_PUBLIC_LANGSMITH_API_KEY ||
+    "";
+
+  let apiUrl: string;
+  const defaultHeaders: Record<string, string> = {};
+  
+  if (typeof window !== "undefined") {
+    apiUrl = `${window.location.origin}/api/proxy`;
+    defaultHeaders["X-Deployment-URL"] = config.deploymentUrl;
+    if (apiKey) {
+      defaultHeaders["X-Api-Key"] = apiKey;
+    }
+  } else {
+    apiUrl = config.deploymentUrl;
+    if (apiKey) {
+      defaultHeaders["X-Api-Key"] = apiKey;
+    }
+  }
+
+  const client = new Client({
+    apiUrl,
+    defaultHeaders,
+  });
+
+  try {
+    // Fetch all threads to check their age
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+
+    // Search threads in batches to handle pagination
+    let offset = 0;
+    const batchSize = 100;
+    let hasMore = true;
+
+    while (hasMore) {
+      const threads = await client.threads.search({
+        limit: batchSize,
+        offset,
+        sortBy: "updated_at" as const,
+        sortOrder: "desc" as const,
+      });
+
+      if (threads.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      // Check each thread's updated_at timestamp
+      for (const thread of threads) {
+        const updatedAt = new Date(thread.updated_at);
+        if (updatedAt < cutoffDate) {
+          try {
+            await client.threads.delete(thread.thread_id);
+            console.log(`[Cleanup] Deleted old thread: ${thread.thread_id}`);
+          } catch (error) {
+            console.error(`[Cleanup] Failed to delete thread ${thread.thread_id}:`, error);
+          }
+        }
+      }
+
+      offset += batchSize;
+      
+      // If we got fewer threads than requested, we've reached the end
+      if (threads.length < batchSize) {
+        hasMore = false;
+      }
+    }
+  } catch (error) {
+    console.error("[Cleanup] Error during thread cleanup:", error);
+  }
+}

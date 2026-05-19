@@ -459,8 +459,16 @@ function IntroPageContent() {
     if (tid && /^\d{6}$/.test(tid)) {
       setThreadId(tid);
     } else {
-      const generatedId = String(Math.floor(100000 + Math.random() * 900000));
+      // Check localStorage for existing thread ID first
+      const savedThreadId = localStorage.getItem("last_thread_id");
+      const generatedId = savedThreadId && /^\d{6}$/.test(savedThreadId) 
+        ? savedThreadId 
+        : String(Math.floor(100000 + Math.random() * 900000));
+      
       setThreadId(generatedId);
+      
+      // Save to localStorage for persistence across refreshes
+      localStorage.setItem("last_thread_id", generatedId);
       
       // Update URL search parameters without reloading
       const url = new URL(window.location.href);

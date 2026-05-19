@@ -231,12 +231,219 @@ function IntroPageContent() {
   const handleCopyHtml = async () => {
     try {
       if (previewRef.current) {
-        await navigator.clipboard.writeText(previewRef.current.innerHTML);
+        const rawHtml = previewRef.current.innerHTML;
+
+        // Create a temporary element to inline styles
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = rawHtml;
+
+        // Convert SVG to PNG helper to ensure Microsoft Word handles it as a standard static image
+        const svgToPng = (svgElement: SVGSVGElement): Promise<{ pngDataUrl: string; width: number; height: number } | null> => {
+          return new Promise((resolve) => {
+            try {
+              const rect = svgElement.getBoundingClientRect();
+              let width = rect.width || svgElement.clientWidth;
+              let height = rect.height || svgElement.clientHeight;
+              
+              if (!width || !height) {
+                const viewBox = svgElement.getAttribute("viewBox");
+                if (viewBox) {
+                  const parts = viewBox.split(" ").map(Number);
+                  if (parts.length === 4) {
+                    width = parts[2];
+                    height = parts[3];
+                  }
+                }
+              }
+              
+              if (!width) width = 800;
+              if (!height) height = 600;
+              
+              const svgString = new XMLSerializer().serializeToString(svgElement);
+              
+              // Safe base64 encoding for UTF-8 SVG string
+              const utf8Bytes = new TextEncoder().encode(svgString);
+              let binary = "";
+              for (let idx = 0; idx < utf8Bytes.length; idx++) {
+                binary += String.fromCharCode(utf8Bytes[idx]);
+              }
+              const base64Data = window.btoa(binary);
+              const dataUrl = `data:image/svg+xml;base64,${base64Data}`;
+              
+              const img = new Image();
+              img.onload = () => {
+                try {
+                  const canvas = document.createElement("canvas");
+                  const scale = 2; // Render at 2x scale for Retina/HD quality
+                  canvas.width = width * scale;
+                  canvas.height = height * scale;
+                  
+                  const ctx = canvas.getContext("2d");
+                  if (ctx) {
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = "high";
+                    
+                    // Draw a dark background matching the container (#18181b)
+                    ctx.fillStyle = "#18181b";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Draw the SVG image scaled
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    
+                    const pngDataUrl = canvas.toDataURL("image/png");
+                    resolve({ pngDataUrl, width, height });
+                  } else {
+                    resolve(null);
+                  }
+                } catch (e) {
+                  console.error("Canvas draw error:", e);
+                  resolve(null);
+                }
+              };
+              
+              img.onerror = (e) => {
+                console.error("Image load error:", e);
+                resolve(null);
+              };
+              
+              img.src = dataUrl;
+            } catch (err) {
+              console.error("SVG to PNG conversion error:", err);
+              resolve(null);
+            }
+          });
+        };
+
+        // Convert all rendered SVGs inside tempDiv to static PNGs for Word clipboard compatibility
+        const liveContainers = previewRef.current.querySelectorAll(".mermaid-svg-container");
+        const tempContainers = tempDiv.querySelectorAll(".mermaid-svg-container");
+        
+        for (let i = 0; i < liveContainers.length; i++) {
+          const liveContainer = liveContainers[i];
+          const tempContainer = tempContainers[i];
+          if (!liveContainer || !tempContainer) continue;
+          
+          const svgEl = liveContainer.querySelector("svg");
+          if (svgEl) {
+            const result = await svgToPng(svgEl as any);
+            if (result && result.pngDataUrl) {
+              // Store the image on the local dev server so that Word can retrieve it over HTTP
+              try {
+                const response = await fetch("/api/store-mermaid-image", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ image: result.pngDataUrl })
+                });
+                const storeResult = await response.json();
+                if (storeResult && storeResult.success && storeResult.id) {
+                  // Get current origin (e.g., http://localhost:3000)
+                  const origin = window.location.origin;
+                  const imageUrl = `${origin}/api/mermaid-image/${storeResult.id}.png`;
+                  tempContainer.innerHTML = `<img src="${imageUrl}" width="${result.width}" height="${result.height}" style="display: block; margin: 0 auto; max-width: 100%; height: auto; border-radius: 8px;" />`;
+                } else {
+                  // Fallback to local Data URI if server endpoint fails
+                  tempContainer.innerHTML = `<img src="${result.pngDataUrl}" width="${result.width}" height="${result.height}" style="display: block; margin: 0 auto; max-width: 100%; height: auto; border-radius: 8px;" />`;
+                }
+              } catch (e) {
+                console.error("Failed to store image on dev server:", e);
+                // Fallback to local Data URI if upload fails
+                tempContainer.innerHTML = `<img src="${result.pngDataUrl}" width="${result.width}" height="${result.height}" style="display: block; margin: 0 auto; max-width: 100%; height: auto; border-radius: 8px;" />`;
+              }
+            }
+          }
+        }
+
+        // Inline CSS styling rules for Markdown components to preserve formatting when pasted (light theme: white background, black text)
+        const h1s = tempDiv.querySelectorAll("h1");
+        h1s.forEach(el => el.setAttribute("style", "color: #09090b; font-size: 1.8em; font-weight: 700; margin-top: 24px; margin-bottom: 16px; border-bottom: 1px solid #e4e4e7; padding-bottom: 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+
+        const h2s = tempDiv.querySelectorAll("h2");
+        h2s.forEach(el => el.setAttribute("style", "color: #18181b; font-size: 1.5em; font-weight: 600; margin-top: 20px; margin-bottom: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+
+        const h3s = tempDiv.querySelectorAll("h3");
+        h3s.forEach(el => el.setAttribute("style", "color: #27272a; font-size: 1.25em; font-weight: 600; margin-top: 16px; margin-bottom: 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+
+        const paragraphs = tempDiv.querySelectorAll("p");
+        paragraphs.forEach(el => el.setAttribute("style", "color: #3f3f46; font-size: 14px; line-height: 1.6; margin-top: 0; margin-bottom: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+
+        const links = tempDiv.querySelectorAll("a");
+        links.forEach(el => el.setAttribute("style", "color: #2563eb; text-decoration: underline; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+
+        const blockquotes = tempDiv.querySelectorAll("blockquote");
+        blockquotes.forEach(el => el.setAttribute("style", "color: #71717a; border-left: 4px solid #d4d4d8; background-color: #fafafa; padding: 8px 16px; margin: 16px 0; font-style: italic; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+
+        const inlineCodes = tempDiv.querySelectorAll("code");
+        inlineCodes.forEach(el => {
+          const isCodeBlock = el.parentElement && el.parentElement.tagName.toLowerCase() === "div";
+          if (isCodeBlock) {
+            // Style the parent div of the code block to have a dark background (so syntax highlighting remains readable)
+            el.parentElement.setAttribute("style", "background-color: #282c34; border: 1px solid rgba(0, 0, 0, 0.15); border-radius: 8px; padding: 16px; margin: 16px 0; overflow-x: auto; font-family: monospace; font-size: 14px; color: #abb2bf; line-height: 1.5; text-align: left;");
+            el.setAttribute("style", "background: transparent; color: inherit; border: none; padding: 0; font-family: monospace; font-size: inherit;");
+          } else {
+            // Style inline code with light theme
+            el.setAttribute("style", "background-color: #f4f4f5; color: #b700b7; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; border: 1px solid #e4e4e7;");
+          }
+        });
+
+        // Inline CSS styling for Mermaid diagrams when pasted
+        const mermaidContainers = tempDiv.querySelectorAll(".mermaid-svg-container");
+        mermaidContainers.forEach(el => {
+          el.setAttribute("style", "display: block; padding: 24px; background-color: #18181b; border-radius: 12px; border: 1px solid #27272a; margin: 16px 0; overflow-x: auto;");
+          const svgEl = el.querySelector("svg");
+          if (svgEl) {
+            svgEl.setAttribute("style", "max-width: none; height: auto; display: block; margin: 0 auto;");
+          }
+        });
+
+        const uls = tempDiv.querySelectorAll("ul");
+        uls.forEach(el => el.setAttribute("style", "margin: 16px 0; padding-left: 24px; list-style-type: disc; color: #3f3f46; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+
+        const ols = tempDiv.querySelectorAll("ol");
+        ols.forEach(el => el.setAttribute("style", "margin: 16px 0; padding-left: 24px; list-style-type: decimal; color: #3f3f46; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+
+        const lis = tempDiv.querySelectorAll("li");
+        lis.forEach(el => el.setAttribute("style", "margin-bottom: 6px; font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+
+        const tables = tempDiv.querySelectorAll("table");
+        tables.forEach(el => el.setAttribute("style", "width: 100%; border-collapse: collapse; margin: 16px 0; border: 1px solid #e4e4e7; color: #3f3f46; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+
+        const ths = tempDiv.querySelectorAll("th");
+        ths.forEach(el => el.setAttribute("style", "border: 1px solid #e4e4e7; padding: 8px 12px; font-weight: 600; text-align: left; background-color: #f4f4f5; color: #09090b;"));
+
+        const tds = tempDiv.querySelectorAll("td");
+        tds.forEach(el => el.setAttribute("style", "border: 1px solid #e4e4e7; padding: 8px 12px;"));
+
+        const contentHtml = tempDiv.innerHTML;
+
+        // Wrap/cover the HTML inside a clean white block container
+        const blockHtml = `
+<div style="background-color: #ffffff; color: #18181b; padding: 24px; border: 1px solid #e4e4e7; border-radius: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; max-width: 100%; box-sizing: border-box; margin: 16px 0;">
+  ${contentHtml}
+</div>
+        `.trim();
+
+        // Write to clipboard as formatted text/html and fallback text/plain
+        if (typeof window !== "undefined" && window.ClipboardItem && navigator.clipboard) {
+          const htmlBlob = new Blob([blockHtml], { type: "text/html" });
+          const textBlob = new Blob([blockHtml], { type: "text/plain" });
+          
+          await navigator.clipboard.write([
+            new window.ClipboardItem({
+              "text/html": htmlBlob,
+              "text/plain": textBlob,
+            })
+          ]);
+        } else {
+          await navigator.clipboard.writeText(blockHtml);
+        }
+
         setCopiedHtml(true);
         setTimeout(() => setCopiedHtml(false), 2000);
+        toast.success("HTML rendering result copied as styled block!");
       }
     } catch (err) {
       console.error("Failed to copy HTML to clipboard:", err);
+      toast.error("Failed to copy HTML to clipboard.");
     }
   };
   
@@ -1516,9 +1723,9 @@ function IntroPageContent() {
                     <ScrollArea className="min-h-0 w-full flex-1 bg-transparent">
                       <div
                         ref={previewRef}
-                        className="p-6 text-left text-neutral-100"
+                        className="m-4 p-8 text-left bg-white text-zinc-900 rounded-2xl border border-zinc-200 shadow-lg min-h-[calc(100%-2rem)]"
                       >
-                        <MarkdownContent content={sharedText} />
+                        <MarkdownContent content={sharedText} light={true} />
                       </div>
                       <ScrollBar orientation="horizontal" />
                     </ScrollArea>

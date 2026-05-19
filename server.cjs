@@ -29,25 +29,73 @@ app.prepare().then(() => {
     return path.join(STORAGE_DIR, `${safeThreadId}.md`);
   }
 
-  function saveThreadContent(threadId, content) {
-    const filePath = getFilePath(threadId);
-    if (!content || content.trim() === "") {
-      if (fs.existsSync(filePath)) {
-        try {
-          fs.unlinkSync(filePath);
-          console.log(`[WS] Content removed. Deleted file for thread: ${threadId}`);
-        } catch (err) {
-          console.error(`[WS] Error deleting file for thread ${threadId}:`, err);
-        }
-      }
-    } else {
+  // Batch save mechanism - store pending updates and flush periodically
+  const pendingSaves = new Map(); // Map<threadId, { content: string, lastUpdated: number }>
+  const BATCH_SAVE_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+  function scheduleBatchSave(threadId, content) {
+    // Update or create pending save entry
+    pendingSaves.set(threadId, {
+      content,
+      lastUpdated: Date.now()
+    });
+  }
+
+  function flushPendingSaves() {
+    if (pendingSaves.size === 0) {
+      return;
+    }
+
+    console.log(`[WS Batch] Flushing ${pendingSaves.size} pending save(s)...`);
+    
+    const now = Date.now();
+    const savesToFlush = new Map(pendingSaves);
+    
+    for (const [threadId, data] of savesToFlush.entries()) {
       try {
-        fs.writeFileSync(filePath, content, "utf8");
-        console.log(`[WS] Content saved. Wrote file for thread: ${threadId}`);
+        const filePath = getFilePath(threadId);
+        const content = data.content;
+        
+        if (!content || content.trim() === "") {
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            console.log(`[WS Batch] Content removed. Deleted file for thread: ${threadId}`);
+          }
+        } else {
+          fs.writeFileSync(filePath, content, "utf8");
+          console.log(`[WS Batch] Content saved. Wrote file for thread: ${threadId}`);
+        }
+        
+        // Remove from pending if it hasn't been updated since we started flushing
+        const current = pendingSaves.get(threadId);
+        if (current && current.lastUpdated === data.lastUpdated) {
+          pendingSaves.delete(threadId);
+        }
       } catch (err) {
-        console.error(`[WS] Error writing file for thread ${threadId}:`, err);
+        console.error(`[WS Batch] Error writing file for thread ${threadId}:`, err);
       }
     }
+  }
+
+  // Set up periodic batch save interval
+  const batchSaveInterval = setInterval(flushPendingSaves, BATCH_SAVE_INTERVAL);
+  
+  // Also flush on graceful shutdown
+  process.on('SIGTERM', () => {
+    console.log('[WS] Graceful shutdown - flushing pending saves...');
+    flushPendingSaves();
+    clearInterval(batchSaveInterval);
+  });
+  
+  process.on('SIGINT', () => {
+    console.log('[WS] Graceful shutdown - flushing pending saves...');
+    flushPendingSaves();
+    clearInterval(batchSaveInterval);
+  });
+
+  function saveThreadContent(threadId, content) {
+    // Instead of immediate save, schedule for batch processing
+    scheduleBatchSave(threadId, content);
   }
 
   function loadThreadContent(threadId) {
@@ -157,7 +205,8 @@ app.prepare().then(() => {
           if (data.content && data.content.trim() !== "" && data.content !== currentContent) {
             currentContent = data.content;
             roomContent.set(threadId, currentContent);
-            saveThreadContent(threadId, currentContent);
+            // Schedule for batch save instead of immediate save
+            scheduleBatchSave(threadId, currentContent);
 
             // Broadcast the update to any other connected clients in the same thread
             const clients = rooms.get(threadId);
@@ -182,7 +231,8 @@ app.prepare().then(() => {
           } else {
             roomContent.set(threadId, data.content);
           }
-          saveThreadContent(threadId, data.content);
+          // Schedule for batch save instead of immediate save
+          scheduleBatchSave(threadId, data.content);
 
           // Broadcast to all other clients with the same thread ID
           const clients = rooms.get(threadId);

@@ -325,9 +325,10 @@ function IntroPageContent() {
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[#000000] font-sans text-[#f5f5f7]">
-      
       {/* Styles for scroll effects, custom gradients, and 3D card perspectives */}
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
         
         body {
@@ -454,65 +455,116 @@ function IntroPageContent() {
         .glass-layer {
           transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.3s;
         }
-      ` }} />
+      `,
+        }}
+      />
 
       {/* Navigation - Apple Header Style */}
-      <header 
-        className={`fixed top-0 left-0 right-0 z-50 flex h-14 items-center justify-between border-b px-6 transition-all duration-300 ${
-          scrollY > 50 
-            ? "border-white/10 bg-black/85 backdrop-blur-md" 
+      <header
+        className={`fixed left-0 right-0 top-0 z-50 flex h-14 items-center justify-between border-b px-6 transition-all duration-300 ${
+          scrollY > 50
+            ? "border-white/10 bg-black/85 backdrop-blur-md"
             : "border-transparent bg-transparent"
         }`}
       >
         <div className="flex items-center gap-6">
-          <a href="#" className="flex items-center gap-2 text-white hover:opacity-85 transition">
-            <svg width="22" height="22" viewBox="0 0 32 32" fill="none" className="text-white">
-              <path d="M16 2L2 9L16 16L30 9L16 2Z" fill="currentColor" />
-              <path d="M2 16L16 23L30 16" stroke="currentColor" strokeWidth="2" />
-              <path d="M2 23L16 30L30 23" stroke="currentColor" strokeWidth="2" />
+          <a
+            href="#"
+            className="flex items-center gap-2 text-white transition hover:opacity-85"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 32 32"
+              fill="none"
+              className="text-white"
+            >
+              <path
+                d="M16 2L2 9L16 16L30 9L16 2Z"
+                fill="currentColor"
+              />
+              <path
+                d="M2 16L16 23L30 16"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+              <path
+                d="M2 23L16 30L30 23"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
             </svg>
-            <span className="font-outfit text-sm font-semibold tracking-tight uppercase">Harness</span>
+            <span className="font-outfit text-sm font-semibold uppercase tracking-tight">
+              Harness
+            </span>
           </a>
           <span className="hidden h-4 w-px bg-white/20 sm:block" />
-          <span className="hidden font-outfit text-xs text-white/50 tracking-wider uppercase sm:block">Introduction</span>
+          <span className="font-outfit hidden text-xs uppercase tracking-wider text-white/50 sm:block">
+            Introduction
+          </span>
         </div>
 
         <nav className="hidden items-center gap-8 text-xs font-normal text-[#e8e8ed] md:flex">
-          <a href="#hero" className="hover:text-white transition">Overview</a>
-          <a href="#chip" className="hover:text-white transition">HE-1 Processor</a>
-          <a href="#tandem" className="hover:text-white transition">Tandem Loops</a>
-          <a href="#sandbox" className="hover:text-white transition">Isolation</a>
-          <a href="#specs" className="hover:text-white transition">Technical Specifications</a>
+          <a
+            href="#hero"
+            className="transition hover:text-white"
+          >
+            Overview
+          </a>
+          <a
+            href="#chip"
+            className="transition hover:text-white"
+          >
+            HE-1 Processor
+          </a>
+          <a
+            href="#tandem"
+            className="transition hover:text-white"
+          >
+            Tandem Loops
+          </a>
+          <a
+            href="#sandbox"
+            className="transition hover:text-white"
+          >
+            Isolation
+          </a>
+          <a
+            href="#specs"
+            className="transition hover:text-white"
+          >
+            Technical Specifications
+          </a>
         </nav>
 
         <div className="flex items-center gap-4">
-          <div className="font-mono text-xs text-white/40 select-none flex items-center gap-0.5">
+          <div className="flex select-none items-center gap-0.5 font-mono text-xs text-white/40">
             <div className="tooltip-wrapper">
-              <span 
+              <span
                 onClick={() => setIsDialogOpen(true)}
-                className="cursor-pointer underline decoration-dotted decoration-white/30 underline-offset-2 hover:text-white transition"
+                className="cursor-pointer underline decoration-white/30 decoration-dotted underline-offset-2 transition hover:text-white"
               >
-                T
+                Thread
               </span>
               <div className="tooltip-box-bottom">
-                <div className="tooltip-arrow w-2 h-2 bg-zinc-900 border-l border-t border-white/10 rotate-45 -mb-1 z-10" />
-                <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
+                <div className="tooltip-arrow z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-white/10 bg-zinc-900" />
+                <div className="whitespace-nowrap rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-white shadow-xl">
                   MARKDOWN ONLINE PREVIEW
                 </div>
               </div>
             </div>
-            hread: #{threadId}
+            : #{threadId}
           </div>
           <div className="tooltip-wrapper">
-            <a 
+            <a
               href={`/chat?threadId=${threadId}`}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0071e3] text-white hover:bg-[#147fe5] transition shadow-md shadow-blue-500/20"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0071e3] text-white shadow-md shadow-blue-500/20 transition hover:bg-[#147fe5]"
             >
               <MessageSquare className="h-4 w-4" />
             </a>
             <div className="tooltip-box-bottom">
-              <div className="w-2 h-2 bg-zinc-900 border-l border-t border-white/10 rotate-45 -mb-1 z-10" />
-              <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
+              <div className="z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-white/10 bg-zinc-900" />
+              <div className="whitespace-nowrap rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-white shadow-xl">
                 LAUNCH CHAT
               </div>
             </div>
@@ -521,25 +573,29 @@ function IntroPageContent() {
       </header>
 
       {/* Floating background lights */}
-      <div className="absolute top-[10%] left-[20%] h-[600px] w-[600px] blur-orb-indigo rounded-full pointer-events-none" />
-      <div className="absolute top-[40%] right-[10%] h-[500px] w-[500px] blur-orb-teal rounded-full pointer-events-none" />
-      <div className="absolute bottom-[20%] left-[10%] h-[600px] w-[600px] blur-orb-purple rounded-full pointer-events-none" />
+      <div className="blur-orb-indigo pointer-events-none absolute left-[20%] top-[10%] h-[600px] w-[600px] rounded-full" />
+      <div className="blur-orb-teal pointer-events-none absolute right-[10%] top-[40%] h-[500px] w-[500px] rounded-full" />
+      <div className="blur-orb-purple pointer-events-none absolute bottom-[20%] left-[10%] h-[600px] w-[600px] rounded-full" />
 
       {/* 1. HERO SECTION (Apple "Thinpossible" style) */}
-      <section 
-        id="hero" 
+      <section
+        id="hero"
         className="relative flex min-h-screen flex-col items-center justify-center px-6 pt-24 text-center"
       >
-        <div className={`apple-fade max-w-4xl ${visibleSections["hero"] ? "visible" : ""}`}>
-          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/5 px-4 py-1 text-xs font-medium tracking-wide text-indigo-400 font-mono mb-6 backdrop-blur-md">
+        <div
+          className={`apple-fade max-w-4xl ${
+            visibleSections["hero"] ? "visible" : ""
+          }`}
+        >
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/5 px-4 py-1 font-mono text-xs font-medium tracking-wide text-indigo-400 backdrop-blur-md">
             <Zap className="h-3 w-3 animate-pulse" />
             AGENT = MODEL + HARNESS
           </div>
-          
+
           <h1 className="font-outfit text-5xl font-extrabold tracking-tight text-white sm:text-7xl md:text-8xl">
             Harness Engineering.
           </h1>
-          
+
           <p className="font-outfit mt-6 text-2xl font-bold tracking-tight text-[#86868b] sm:text-3xl md:text-4xl">
             Stateless intelligence meets structural execution. <br />
             <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
@@ -547,97 +603,123 @@ function IntroPageContent() {
             </span>
           </p>
 
-          <p className="mx-auto mt-6 max-w-2xl text-base text-[#86868b] sm:text-lg leading-relaxed">
-            Applying Sutton's <em>Bitter Lesson</em> to agent architecture. While core model prompts represent probabilistic suggestions, the harness establishes the deterministic governance plane.
+          <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-[#86868b] sm:text-lg">
+            Applying Sutton's <em>Bitter Lesson</em> to agent architecture.
+            While core model prompts represent probabilistic suggestions, the
+            harness establishes the deterministic governance plane.
           </p>
 
           {/* Interactive Layered 3D Stack Visualization */}
           <div className="mt-16 flex justify-center">
-            <div 
+            <div
               ref={stackRef}
               onMouseMove={handleMouseMove}
               onMouseLeave={handleMouseLeave}
-              className="relative cursor-pointer py-12 px-6"
+              className="relative cursor-pointer px-6 py-12"
               style={{ perspective: "1000px" }}
             >
-              <div 
+              <div
                 className="relative flex flex-col items-center gap-6 transition-all duration-300 ease-out"
-                style={{ 
+                style={{
                   transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
-                  transformStyle: "preserve-3d"
+                  transformStyle: "preserve-3d",
                 }}
               >
                 {/* 3D Glass Layer 1: Orchestration */}
-                <div 
-                  className="glass-layer flex h-20 w-80 sm:w-96 items-center justify-between rounded-2xl border border-indigo-400/40 bg-indigo-950/20 px-6 backdrop-blur-lg shadow-2xl transition hover:border-indigo-400"
-                  style={{ transform: "translateZ(60px)", boxShadow: "0 20px 40px rgba(99, 102, 241, 0.15)" }}
+                <div
+                  className="glass-layer flex h-20 w-80 items-center justify-between rounded-2xl border border-indigo-400/40 bg-indigo-950/20 px-6 shadow-2xl backdrop-blur-lg transition hover:border-indigo-400 sm:w-96"
+                  style={{
+                    transform: "translateZ(60px)",
+                    boxShadow: "0 20px 40px rgba(99, 102, 241, 0.15)",
+                  }}
                 >
                   <div className="flex items-center gap-4">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400">
                       <Layers className="h-5 w-5" />
                     </div>
                     <div className="text-left">
-                      <h4 className="font-outfit font-bold text-sm tracking-tight text-white">1. Orchestration Layer</h4>
-                      <p className="text-[10px] text-indigo-400/80 font-mono">PLAN-ACT-VERIFY MACHINE</p>
+                      <h4 className="font-outfit text-sm font-bold tracking-tight text-white">
+                        1. Orchestration Layer
+                      </h4>
+                      <p className="font-mono text-[10px] text-indigo-400/80">
+                        PLAN-ACT-VERIFY MACHINE
+                      </p>
                     </div>
                   </div>
                   <ChevronRight className="h-4 w-4 text-white/30" />
                 </div>
 
                 {/* 3D Glass Layer 2: Context Engineering */}
-                <div 
-                  className="glass-layer flex h-20 w-80 sm:w-96 items-center justify-between rounded-2xl border border-purple-400/30 bg-purple-950/20 px-6 backdrop-blur-lg shadow-xl transition hover:border-purple-400"
-                  style={{ transform: "translateZ(30px)", boxShadow: "0 15px 30px rgba(168, 85, 247, 0.1)" }}
+                <div
+                  className="glass-layer border-purple-400/30 bg-purple-950/20 hover:border-purple-400 flex h-20 w-80 items-center justify-between rounded-2xl border px-6 shadow-xl backdrop-blur-lg transition sm:w-96"
+                  style={{
+                    transform: "translateZ(30px)",
+                    boxShadow: "0 15px 30px rgba(168, 85, 247, 0.1)",
+                  }}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/10 text-purple-400">
+                    <div className="bg-purple-500/10 text-purple-400 flex h-10 w-10 items-center justify-center rounded-xl">
                       <FileText className="h-5 w-5" />
                     </div>
                     <div className="text-left">
-                      <h4 className="font-outfit font-bold text-sm tracking-tight text-white">2. Context Engineering</h4>
-                      <p className="text-[10px] text-purple-400/80 font-mono">DYNAMIC RE-RANKING & PRUNING</p>
+                      <h4 className="font-outfit text-sm font-bold tracking-tight text-white">
+                        2. Context Engineering
+                      </h4>
+                      <p className="text-purple-400/80 font-mono text-[10px]">
+                        DYNAMIC RE-RANKING & PRUNING
+                      </p>
                     </div>
                   </div>
                   <ChevronRight className="h-4 w-4 text-white/30" />
                 </div>
 
                 {/* 3D Glass Layer 3: Sandbox Environment */}
-                <div 
-                  className="glass-layer flex h-20 w-80 sm:w-96 items-center justify-between rounded-2xl border border-cyan-400/30 bg-cyan-950/20 px-6 backdrop-blur-lg shadow-lg transition hover:border-cyan-400"
-                  style={{ transform: "translateZ(0px)", boxShadow: "0 10px 20px rgba(6, 182, 212, 0.1)" }}
+                <div
+                  className="glass-layer flex h-20 w-80 items-center justify-between rounded-2xl border border-cyan-400/30 bg-cyan-950/20 px-6 shadow-lg backdrop-blur-lg transition hover:border-cyan-400 sm:w-96"
+                  style={{
+                    transform: "translateZ(0px)",
+                    boxShadow: "0 10px 20px rgba(6, 182, 212, 0.1)",
+                  }}
                 >
                   <div className="flex items-center gap-4">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400">
                       <Shield className="h-5 w-5" />
                     </div>
                     <div className="text-left">
-                      <h4 className="font-outfit font-bold text-sm tracking-tight text-white">3. Isolated Sandbox</h4>
-                      <p className="text-[10px] text-cyan-400/80 font-mono">DOCKER CONTAINER BOUNDS</p>
+                      <h4 className="font-outfit text-sm font-bold tracking-tight text-white">
+                        3. Isolated Sandbox
+                      </h4>
+                      <p className="font-mono text-[10px] text-cyan-400/80">
+                        DOCKER CONTAINER BOUNDS
+                      </p>
                     </div>
                   </div>
                   <ChevronRight className="h-4 w-4 text-white/30" />
                 </div>
-
               </div>
             </div>
           </div>
-          
-          <div className="mt-8 text-xs text-[#86868b] font-mono tracking-wider">
+
+          <div className="mt-8 font-mono text-xs tracking-wider text-[#86868b]">
             💡 PERSPECTIVE GRID: DRAG OR MOVE CURSOR OVER STACK
           </div>
         </div>
       </section>
 
       {/* 2. THE CHIP SECTION (Apple's M4 Chip style) */}
-      <section 
-        id="chip" 
-        className="relative flex min-h-screen flex-col items-center justify-center px-6 py-24 text-center bg-[#050505]"
+      <section
+        id="chip"
+        className="relative flex min-h-screen flex-col items-center justify-center bg-[#050505] px-6 py-24 text-center"
       >
-        <div className={`apple-fade max-w-4xl ${visibleSections["chip"] ? "visible" : ""}`}>
-          <h2 className="font-outfit text-xs font-bold tracking-widest text-[#86868b] uppercase mb-4">
+        <div
+          className={`apple-fade max-w-4xl ${
+            visibleSections["chip"] ? "visible" : ""
+          }`}
+        >
+          <h2 className="font-outfit mb-4 text-xs font-bold uppercase tracking-widest text-[#86868b]">
             System Engine
           </h2>
-          
+
           <h3 className="font-outfit text-4xl font-extrabold tracking-tight text-white sm:text-6xl">
             Introducing HE-1. <br />
             <span className="bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
@@ -646,60 +728,115 @@ function IntroPageContent() {
           </h3>
 
           <p className="mx-auto mt-6 max-w-2xl text-base text-[#86868b] sm:text-lg">
-            Harness Engine 1 (HE-1) isn't a models weights file. It's the structural compiler written in Rust & TypeScript that manages system tools, schedules execution steps, and validates model output loops.
+            Harness Engine 1 (HE-1) isn't a models weights file. It's the
+            structural compiler written in Rust & TypeScript that manages system
+            tools, schedules execution steps, and validates model output loops.
           </p>
 
           {/* Glowing Processor Graphic inside HTML/SVG */}
           <div className="relative mt-16 flex justify-center">
-            <div className="relative h-64 w-64 rounded-3xl border border-white/5 bg-neutral-900/60 p-6 backdrop-blur-md shadow-[0_0_80px_rgba(245,158,11,0.05)]">
+            <div className="relative h-64 w-64 rounded-3xl border border-white/5 bg-neutral-900/60 p-6 shadow-[0_0_80px_rgba(245,158,11,0.05)] backdrop-blur-md">
               {/* Golden circular circuitry animations */}
-              <svg className="absolute inset-0 h-full w-full pointer-events-none" viewBox="0 0 256 256">
+              <svg
+                className="pointer-events-none absolute inset-0 h-full w-full"
+                viewBox="0 0 256 256"
+              >
                 {/* Circuit lines */}
-                <path d="M40 40h60v30h56v-30h60" stroke="rgba(245,158,11,0.15)" strokeWidth="1.5" fill="none" />
-                <path d="M40 216h60v-30h56v30h60" stroke="rgba(245,158,11,0.15)" strokeWidth="1.5" fill="none" />
-                <path d="M40 128h40v40h96v-40h40" stroke="rgba(245,158,11,0.15)" strokeWidth="1.5" fill="none" />
-                
+                <path
+                  d="M40 40h60v30h56v-30h60"
+                  stroke="rgba(245,158,11,0.15)"
+                  strokeWidth="1.5"
+                  fill="none"
+                />
+                <path
+                  d="M40 216h60v-30h56v30h60"
+                  stroke="rgba(245,158,11,0.15)"
+                  strokeWidth="1.5"
+                  fill="none"
+                />
+                <path
+                  d="M40 128h40v40h96v-40h40"
+                  stroke="rgba(245,158,11,0.15)"
+                  strokeWidth="1.5"
+                  fill="none"
+                />
+
                 {/* Flow particles */}
-                <path d="M40 40h60v30h56v-30h60" stroke="#f59e0b" strokeWidth="1.5" fill="none" className="animate-trace opacity-80" />
-                <path d="M40 216h60v-30h56v30h60" stroke="#f59e0b" strokeWidth="1.5" fill="none" className="animate-trace opacity-80" style={{ animationDelay: "1.5s" }} />
+                <path
+                  d="M40 40h60v30h56v-30h60"
+                  stroke="#f59e0b"
+                  strokeWidth="1.5"
+                  fill="none"
+                  className="animate-trace opacity-80"
+                />
+                <path
+                  d="M40 216h60v-30h56v30h60"
+                  stroke="#f59e0b"
+                  strokeWidth="1.5"
+                  fill="none"
+                  className="animate-trace opacity-80"
+                  style={{ animationDelay: "1.5s" }}
+                />
               </svg>
 
               {/* Core Processor visual */}
               <div className="flex h-full w-full flex-col items-center justify-center rounded-2xl border border-amber-500/20 bg-gradient-to-b from-amber-500/5 to-amber-600/10 shadow-[inset_0_0_30px_rgba(245,158,11,0.1)]">
-                <Cpu className="h-16 w-16 text-amber-500 animate-pulse" />
-                <span className="font-outfit text-xl font-black text-amber-400 tracking-tighter mt-4 font-mono">HE-1</span>
-                <span className="font-mono text-[9px] text-amber-500/60 mt-1 uppercase tracking-wider">Harness Engine Core</span>
+                <Cpu className="h-16 w-16 animate-pulse text-amber-500" />
+                <span className="font-outfit mt-4 font-mono text-xl font-black tracking-tighter text-amber-400">
+                  HE-1
+                </span>
+                <span className="mt-1 font-mono text-[9px] uppercase tracking-wider text-amber-500/60">
+                  Harness Engine Core
+                </span>
               </div>
             </div>
           </div>
 
-          <div className="mt-16 grid grid-cols-1 gap-8 text-left sm:grid-cols-3 max-w-3xl mx-auto">
+          <div className="mx-auto mt-16 grid max-w-3xl grid-cols-1 gap-8 text-left sm:grid-cols-3">
             <div className="border-t border-white/10 pt-4">
-              <h4 className="text-white font-semibold font-outfit text-sm">Deterministic Policy</h4>
-              <p className="text-xs text-[#86868b] mt-2 leading-relaxed">Converts vague model intents into zero-defect execution statements.</p>
+              <h4 className="font-outfit text-sm font-semibold text-white">
+                Deterministic Policy
+              </h4>
+              <p className="mt-2 text-xs leading-relaxed text-[#86868b]">
+                Converts vague model intents into zero-defect execution
+                statements.
+              </p>
             </div>
             <div className="border-t border-white/10 pt-4">
-              <h4 className="text-white font-semibold font-outfit text-sm">MCP Dynamic Contracts</h4>
-              <p className="text-xs text-[#86868b] mt-2 leading-relaxed">Standardizes and strictly validates external tool interfaces.</p>
+              <h4 className="font-outfit text-sm font-semibold text-white">
+                MCP Dynamic Contracts
+              </h4>
+              <p className="mt-2 text-xs leading-relaxed text-[#86868b]">
+                Standardizes and strictly validates external tool interfaces.
+              </p>
             </div>
             <div className="border-t border-white/10 pt-4">
-              <h4 className="text-white font-semibold font-outfit text-sm">Runaway Budgeting</h4>
-              <p className="text-xs text-[#86868b] mt-2 leading-relaxed">Cuts off loop iteration spend to protect execution costs dynamically.</p>
+              <h4 className="font-outfit text-sm font-semibold text-white">
+                Runaway Budgeting
+              </h4>
+              <p className="mt-2 text-xs leading-relaxed text-[#86868b]">
+                Cuts off loop iteration spend to protect execution costs
+                dynamically.
+              </p>
             </div>
           </div>
         </div>
       </section>
 
       {/* 3. TANDEM LOOP ARCHITECTURE (Apple's Tandem OLED style) */}
-      <section 
-        id="tandem" 
-        className="relative flex min-h-screen flex-col items-center justify-center px-6 py-24 text-center bg-[#000]"
+      <section
+        id="tandem"
+        className="relative flex min-h-screen flex-col items-center justify-center bg-[#000] px-6 py-24 text-center"
       >
-        <div className={`apple-fade max-w-5xl ${visibleSections["tandem"] ? "visible" : ""}`}>
-          <h2 className="font-outfit text-xs font-bold tracking-widest text-[#86868b] uppercase mb-4">
+        <div
+          className={`apple-fade max-w-5xl ${
+            visibleSections["tandem"] ? "visible" : ""
+          }`}
+        >
+          <h2 className="font-outfit mb-4 text-xs font-bold uppercase tracking-widest text-[#86868b]">
             Double-Loop Verification
           </h2>
-          
+
           <h3 className="font-outfit text-4xl font-extrabold tracking-tight text-white sm:text-6xl">
             Tandem Verification. <br />
             <span className="bg-gradient-to-r from-purple-400 to-indigo-500 bg-clip-text text-transparent">
@@ -708,46 +845,66 @@ function IntroPageContent() {
           </h3>
 
           <p className="mx-auto mt-6 max-w-2xl text-base text-[#86868b] sm:text-lg">
-            Like standard displays split bright pixels across dual OLED arrays, Harness Engineering coordinates two asynchronous validation systems in tandem to isolate faults instantly.
+            Like standard displays split bright pixels across dual OLED arrays,
+            Harness Engineering coordinates two asynchronous validation systems
+            in tandem to isolate faults instantly.
           </p>
 
           {/* Concentric Tandem Loop visual representation */}
-          <div className="relative mt-16 flex flex-col items-center justify-center md:flex-row gap-12">
-            
+          <div className="relative mt-16 flex flex-col items-center justify-center gap-12 md:flex-row">
             {/* Outer Loop */}
-            <div className="relative flex h-60 w-60 flex-col items-center justify-center rounded-full border border-purple-500/20 bg-purple-500/5 p-6 shadow-[inset_0_0_20px_rgba(168,85,247,0.05)]">
-              <div className="absolute inset-0 rounded-full border border-dashed border-purple-500/30 animate-concentric" />
-              <Activity className="h-10 w-10 text-purple-400" />
-              <h4 className="font-outfit font-bold text-base text-white mt-4">1. Planning Loop</h4>
-              <p className="text-[10px] text-purple-400 font-mono mt-1">PLAN-ACT-VERIFY</p>
-              <p className="text-[10px] text-[#86868b] text-center mt-2 font-sans px-2">Decides strategy, writes checklists, cross-references files.</p>
+            <div className="border-purple-500/20 bg-purple-500/5 relative flex h-60 w-60 flex-col items-center justify-center rounded-full border p-6 shadow-[inset_0_0_20px_rgba(168,85,247,0.05)]">
+              <div className="border-purple-500/30 animate-concentric absolute inset-0 rounded-full border border-dashed" />
+              <Activity className="text-purple-400 h-10 w-10" />
+              <h4 className="font-outfit mt-4 text-base font-bold text-white">
+                1. Planning Loop
+              </h4>
+              <p className="text-purple-400 mt-1 font-mono text-[10px]">
+                PLAN-ACT-VERIFY
+              </p>
+              <p className="mt-2 px-2 text-center font-sans text-[10px] text-[#86868b]">
+                Decides strategy, writes checklists, cross-references files.
+              </p>
             </div>
 
             <div className="hidden h-px w-20 bg-gradient-to-r from-purple-500/40 to-indigo-500/40 md:block" />
 
             {/* Inner Loop */}
             <div className="relative flex h-60 w-60 flex-col items-center justify-center rounded-full border border-indigo-500/20 bg-indigo-500/5 p-6 shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]">
-              <div className="absolute inset-0 rounded-full border border-dashed border-indigo-500/30 animate-concentric" style={{ animationDelay: "1.5s" }} />
+              <div
+                className="animate-concentric absolute inset-0 rounded-full border border-dashed border-indigo-500/30"
+                style={{ animationDelay: "1.5s" }}
+              />
               <Terminal className="h-10 w-10 text-indigo-400" />
-              <h4 className="font-outfit font-bold text-base text-white mt-4">2. Execution Loop</h4>
-              <p className="text-[10px] text-indigo-400 font-mono mt-1">WRITE-RUN-INSPECT-FIX</p>
-              <p className="text-[10px] text-[#86868b] text-center mt-2 font-sans px-2">Executes scripts, audits linting errors, compiles environment code.</p>
+              <h4 className="font-outfit mt-4 text-base font-bold text-white">
+                2. Execution Loop
+              </h4>
+              <p className="mt-1 font-mono text-[10px] text-indigo-400">
+                WRITE-RUN-INSPECT-FIX
+              </p>
+              <p className="mt-2 px-2 text-center font-sans text-[10px] text-[#86868b]">
+                Executes scripts, audits linting errors, compiles environment
+                code.
+              </p>
             </div>
-
           </div>
         </div>
       </section>
 
       {/* 4. SANDBOX CONFINEMENT (Apple iPad thinness style) */}
-      <section 
-        id="sandbox" 
-        className="relative flex min-h-screen flex-col items-center justify-center px-6 py-24 text-center bg-[#050505]"
+      <section
+        id="sandbox"
+        className="relative flex min-h-screen flex-col items-center justify-center bg-[#050505] px-6 py-24 text-center"
       >
-        <div className={`apple-fade max-w-4xl ${visibleSections["sandbox"] ? "visible" : ""}`}>
-          <h2 className="font-outfit text-xs font-bold tracking-widest text-[#86868b] uppercase mb-4">
+        <div
+          className={`apple-fade max-w-4xl ${
+            visibleSections["sandbox"] ? "visible" : ""
+          }`}
+        >
+          <h2 className="font-outfit mb-4 text-xs font-bold uppercase tracking-widest text-[#86868b]">
             Security Isolation
           </h2>
-          
+
           <h3 className="font-outfit text-4xl font-extrabold tracking-tight text-white sm:text-6xl">
             Thinnest boundaries. <br />
             <span className="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">
@@ -756,63 +913,94 @@ function IntroPageContent() {
           </h3>
 
           <p className="mx-auto mt-6 max-w-2xl text-base text-[#86868b] sm:text-lg">
-            An autonomous agent should never run raw code directly on a bare host. The HE-1 harness seals agent logic behind an isolated container limit.
+            An autonomous agent should never run raw code directly on a bare
+            host. The HE-1 harness seals agent logic behind an isolated
+            container limit.
           </p>
 
           {/* Interactive Confinement Visualizer */}
-          <div className="relative mt-16 flex flex-col md:flex-row items-stretch justify-center gap-px bg-white/5 rounded-3xl overflow-hidden border border-white/10 max-w-3xl mx-auto">
-            
+          <div className="relative mx-auto mt-16 flex max-w-3xl flex-col items-stretch justify-center gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/5 md:flex-row">
             {/* Safe Agent Sandbox Panel */}
-            <div className="flex-1 p-8 bg-neutral-950/80 flex flex-col justify-between text-left">
+            <div className="flex flex-1 flex-col justify-between bg-neutral-950/80 p-8 text-left">
               <div>
-                <span className="inline-flex items-center gap-1.5 rounded bg-cyan-500/10 px-2 py-0.5 text-[9px] font-bold text-cyan-400 font-mono uppercase tracking-wider">CONTAINED</span>
-                <h4 className="font-outfit text-xl font-bold text-white mt-4">Isolated Sandbox</h4>
-                <p className="text-xs text-[#86868b] mt-2 leading-relaxed">
-                  Agents execute command scripts inside Docker containers, WASM boxes, or isolated `uv venv` shells. Host filesystem is completely invisible.
+                <span className="inline-flex items-center gap-1.5 rounded bg-cyan-500/10 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-cyan-400">
+                  CONTAINED
+                </span>
+                <h4 className="font-outfit mt-4 text-xl font-bold text-white">
+                  Isolated Sandbox
+                </h4>
+                <p className="mt-2 text-xs leading-relaxed text-[#86868b]">
+                  Agents execute command scripts inside Docker containers, WASM
+                  boxes, or isolated `uv venv` shells. Host filesystem is
+                  completely invisible.
                 </p>
               </div>
               <ul className="mt-8 flex flex-col gap-2 font-mono text-[10px] text-cyan-400">
-                <li className="flex items-center gap-2"><CheckCircle className="h-3 w-3" /> Root filesystem isolated</li>
-                <li className="flex items-center gap-2"><CheckCircle className="h-3 w-3" /> Restricted process limits</li>
-                <li className="flex items-center gap-2"><CheckCircle className="h-3 w-3" /> Capped execution timeouts</li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="h-3 w-3" /> Root filesystem isolated
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="h-3 w-3" /> Restricted process limits
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="h-3 w-3" /> Capped execution timeouts
+                </li>
               </ul>
             </div>
 
             {/* Glowing Divider Line (iPad 5.1mm style) */}
-            <div className="relative w-full h-1 md:w-1 md:h-auto bg-[#0071e3]/40 flex items-center justify-center">
-              <div className="absolute w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_12px_#2dd4bf] animate-ping" />
+            <div className="relative flex h-1 w-full items-center justify-center bg-[#0071e3]/40 md:h-auto md:w-1">
+              <div className="absolute h-2 w-2 animate-ping rounded-full bg-cyan-400 shadow-[0_0_12px_#2dd4bf]" />
             </div>
 
             {/* Unsecure Host Panel */}
-            <div className="flex-1 p-8 bg-neutral-900/60 flex flex-col justify-between text-left">
+            <div className="flex flex-1 flex-col justify-between bg-neutral-900/60 p-8 text-left">
               <div>
-                <span className="inline-flex items-center gap-1.5 rounded bg-rose-500/10 px-2 py-0.5 text-[9px] font-bold text-rose-400 font-mono uppercase tracking-wider">PROTECTED</span>
-                <h4 className="font-outfit text-xl font-bold text-white mt-4">Company Host System</h4>
-                <p className="text-xs text-[#86868b] mt-2 leading-relaxed">
-                  Raw servers, credentials, enterprise files, and operational databases sit securely outside the sandbox boundary. Immune to runaway scripts.
+                <span className="inline-flex items-center gap-1.5 rounded bg-rose-500/10 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-rose-400">
+                  PROTECTED
+                </span>
+                <h4 className="font-outfit mt-4 text-xl font-bold text-white">
+                  Company Host System
+                </h4>
+                <p className="mt-2 text-xs leading-relaxed text-[#86868b]">
+                  Raw servers, credentials, enterprise files, and operational
+                  databases sit securely outside the sandbox boundary. Immune to
+                  runaway scripts.
                 </p>
               </div>
               <ul className="mt-8 flex flex-col gap-2 font-mono text-[10px] text-[#86868b]">
-                <li className="flex items-center gap-2"><Lock className="h-3 w-3 text-white/20" /> Host terminal locked</li>
-                <li className="flex items-center gap-2"><Lock className="h-3 w-3 text-white/20" /> Database access strictly proxied</li>
-                <li className="flex items-center gap-2"><Lock className="h-3 w-3 text-white/20" /> Zero local token leaks</li>
+                <li className="flex items-center gap-2">
+                  <Lock className="h-3 w-3 text-white/20" /> Host terminal
+                  locked
+                </li>
+                <li className="flex items-center gap-2">
+                  <Lock className="h-3 w-3 text-white/20" /> Database access
+                  strictly proxied
+                </li>
+                <li className="flex items-center gap-2">
+                  <Lock className="h-3 w-3 text-white/20" /> Zero local token
+                  leaks
+                </li>
               </ul>
             </div>
-
           </div>
         </div>
       </section>
 
       {/* 5. ACCESSORIES & MCP (Apple Pencil Pro / Magic Keyboard style) */}
-      <section 
-        id="accessories" 
-        className="relative flex min-h-screen flex-col items-center justify-center px-6 py-24 text-center bg-[#000]"
+      <section
+        id="accessories"
+        className="relative flex min-h-screen flex-col items-center justify-center bg-[#000] px-6 py-24 text-center"
       >
-        <div className={`apple-fade max-w-4xl ${visibleSections["accessories"] ? "visible" : ""}`}>
-          <h2 className="font-outfit text-xs font-bold tracking-widest text-[#86868b] uppercase mb-4">
+        <div
+          className={`apple-fade max-w-4xl ${
+            visibleSections["accessories"] ? "visible" : ""
+          }`}
+        >
+          <h2 className="font-outfit mb-4 text-xs font-bold uppercase tracking-widest text-[#86868b]">
             Pro Accessories
           </h2>
-          
+
           <h3 className="font-outfit text-4xl font-extrabold tracking-tight text-white sm:text-6xl">
             Model Context Protocol. <br />
             <span className="bg-gradient-to-r from-emerald-400 to-cyan-500 bg-clip-text text-transparent">
@@ -821,27 +1009,37 @@ function IntroPageContent() {
           </h3>
 
           <p className="mx-auto mt-6 max-w-2xl text-base text-[#86868b] sm:text-lg">
-            Like a Magic Keyboard snaps onto an iPad Pro with magnetic ease, Model Context Protocol (MCP) strictly registers and connects tools with standardized APIs on dynamic demands.
+            Like a Magic Keyboard snaps onto an iPad Pro with magnetic ease,
+            Model Context Protocol (MCP) strictly registers and connects tools
+            with standardized APIs on dynamic demands.
           </p>
 
-          <div className="mt-16 grid grid-cols-1 gap-6 sm:grid-cols-2 max-w-3xl mx-auto">
-            <div className="p-6 rounded-2xl border border-white/5 bg-neutral-900/50 text-left hover:border-emerald-500/30 transition duration-300">
+          <div className="mx-auto mt-16 grid max-w-3xl grid-cols-1 gap-6 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/5 bg-neutral-900/50 p-6 text-left transition duration-300 hover:border-emerald-500/30">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
                 <FolderTree className="h-5 w-5" />
               </div>
-              <h4 className="font-outfit font-bold text-base text-white mt-4">Durable Filesystem Workspace</h4>
-              <p className="text-xs text-[#86868b] mt-2 leading-relaxed">
-                The agent keeps a workspace structure where it files planning checklists, drafts, code files, and final artifacts, leaving a completely auditable workspace history.
+              <h4 className="font-outfit mt-4 text-base font-bold text-white">
+                Durable Filesystem Workspace
+              </h4>
+              <p className="mt-2 text-xs leading-relaxed text-[#86868b]">
+                The agent keeps a workspace structure where it files planning
+                checklists, drafts, code files, and final artifacts, leaving a
+                completely auditable workspace history.
               </p>
             </div>
-            
-            <div className="p-6 rounded-2xl border border-white/5 bg-neutral-900/50 text-left hover:border-cyan-500/30 transition duration-300">
+
+            <div className="rounded-2xl border border-white/5 bg-neutral-900/50 p-6 text-left transition duration-300 hover:border-cyan-500/30">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400">
                 <Search className="h-5 w-5" />
               </div>
-              <h4 className="font-outfit font-bold text-base text-white mt-4">Tool Pruning Filters</h4>
-              <p className="text-xs text-[#86868b] mt-2 leading-relaxed">
-                Filters and prunes unnecessary tools dynamically based on the step of the plan. Minimizes context pollution and improves execution speeds.
+              <h4 className="font-outfit mt-4 text-base font-bold text-white">
+                Tool Pruning Filters
+              </h4>
+              <p className="mt-2 text-xs leading-relaxed text-[#86868b]">
+                Filters and prunes unnecessary tools dynamically based on the
+                step of the plan. Minimizes context pollution and improves
+                execution speeds.
               </p>
             </div>
           </div>
@@ -849,98 +1047,172 @@ function IntroPageContent() {
       </section>
 
       {/* 6. TECHNICAL COMPARISON & SPECS SHEET (Apple teardown style) */}
-      <section 
-        id="specs" 
-        className="relative flex min-h-screen flex-col items-center justify-center px-6 py-24 bg-[#050505]"
+      <section
+        id="specs"
+        className="relative flex min-h-screen flex-col items-center justify-center bg-[#050505] px-6 py-24"
       >
-        <div className={`apple-fade max-w-4xl w-full mx-auto ${visibleSections["specs"] ? "visible" : ""}`}>
-          <div className="text-center mb-12">
-            <h2 className="font-outfit text-xs font-bold tracking-widest text-[#86868b] uppercase mb-4">
+        <div
+          className={`apple-fade mx-auto w-full max-w-4xl ${
+            visibleSections["specs"] ? "visible" : ""
+          }`}
+        >
+          <div className="mb-12 text-center">
+            <h2 className="font-outfit mb-4 text-xs font-bold uppercase tracking-widest text-[#86868b]">
               Specs Teardown
             </h2>
             <h3 className="font-outfit text-3xl font-extrabold tracking-tight text-white sm:text-5xl">
               Harness vs. Bare Model
             </h3>
-            <p className="text-xs text-[#86868b] mt-2">Compare raw model completions to systemic HE-1 constraints.</p>
+            <p className="mt-2 text-xs text-[#86868b]">
+              Compare raw model completions to systemic HE-1 constraints.
+            </p>
           </div>
 
-          <div className="flex justify-center mb-8">
-            <div className="inline-flex rounded-full bg-white/5 p-1 border border-white/10">
-              <button 
+          <div className="mb-8 flex justify-center">
+            <div className="inline-flex rounded-full border border-white/10 bg-white/5 p-1">
+              <button
                 onClick={() => setActiveTab(0)}
-                className={`rounded-full px-6 py-1.5 text-xs font-semibold font-outfit transition ${activeTab === 0 ? "bg-white text-black" : "text-[#86868b] hover:text-white"}`}
+                className={`font-outfit rounded-full px-6 py-1.5 text-xs font-semibold transition ${
+                  activeTab === 0
+                    ? "bg-white text-black"
+                    : "text-[#86868b] hover:text-white"
+                }`}
               >
                 Harness Specifications
               </button>
-              <button 
+              <button
                 onClick={() => setActiveTab(1)}
-                className={`rounded-full px-6 py-1.5 text-xs font-semibold font-outfit transition ${activeTab === 1 ? "bg-white text-black" : "text-[#86868b] hover:text-white"}`}
+                className={`font-outfit rounded-full px-6 py-1.5 text-xs font-semibold transition ${
+                  activeTab === 1
+                    ? "bg-white text-black"
+                    : "text-[#86868b] hover:text-white"
+                }`}
               >
                 Baseline Prompts
               </button>
             </div>
           </div>
 
-          <div className="border border-white/10 rounded-2xl bg-black/60 backdrop-blur-md overflow-hidden">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/60 backdrop-blur-md">
             {activeTab === 0 ? (
               <div className="divide-y divide-white/5">
-                <div className="flex flex-col sm:flex-row p-6">
-                  <div className="sm:w-1/3 text-xs text-[#86868b] font-mono tracking-wider">CORE ORCHESTRATION</div>
-                  <div className="sm:w-2/3 mt-2 sm:mt-0">
-                    <h4 className="text-sm font-bold text-white font-outfit">State-Machine execution</h4>
-                    <p className="text-xs text-[#86868b] mt-1 leading-relaxed">Driven by pregel state-machines (LangGraph framework). Runs execution loops asynchronously with safe checkpoints.</p>
+                <div className="flex flex-col p-6 sm:flex-row">
+                  <div className="font-mono text-xs tracking-wider text-[#86868b] sm:w-1/3">
+                    CORE ORCHESTRATION
+                  </div>
+                  <div className="mt-2 sm:mt-0 sm:w-2/3">
+                    <h4 className="font-outfit text-sm font-bold text-white">
+                      State-Machine execution
+                    </h4>
+                    <p className="mt-1 text-xs leading-relaxed text-[#86868b]">
+                      Driven by pregel state-machines (LangGraph framework).
+                      Runs execution loops asynchronously with safe checkpoints.
+                    </p>
                   </div>
                 </div>
-                <div className="flex flex-col sm:flex-row p-6">
-                  <div className="sm:w-1/3 text-xs text-[#86868b] font-mono tracking-wider">CONTAINER ISOLATION</div>
-                  <div className="sm:w-2/3 mt-2 sm:mt-0">
-                    <h4 className="text-sm font-bold text-white font-outfit">Isolated Docker & WASM</h4>
-                    <p className="text-xs text-[#86868b] mt-1 leading-relaxed">Confinement of agent tool usage inside isolated containers. High safety prevents data leakage or raw execution failures.</p>
+                <div className="flex flex-col p-6 sm:flex-row">
+                  <div className="font-mono text-xs tracking-wider text-[#86868b] sm:w-1/3">
+                    CONTAINER ISOLATION
+                  </div>
+                  <div className="mt-2 sm:mt-0 sm:w-2/3">
+                    <h4 className="font-outfit text-sm font-bold text-white">
+                      Isolated Docker & WASM
+                    </h4>
+                    <p className="mt-1 text-xs leading-relaxed text-[#86868b]">
+                      Confinement of agent tool usage inside isolated
+                      containers. High safety prevents data leakage or raw
+                      execution failures.
+                    </p>
                   </div>
                 </div>
-                <div className="flex flex-col sm:flex-row p-6">
-                  <div className="sm:w-1/3 text-xs text-[#86868b] font-mono tracking-wider">WORKSPACE PERSISTENCE</div>
-                  <div className="sm:w-2/3 mt-2 sm:mt-0">
-                    <h4 className="text-sm font-bold text-white font-outfit">Durable Local Workspace</h4>
-                    <p className="text-xs text-[#86868b] mt-1 leading-relaxed">Maintains checklist state documents (like `tracker.md` or `AGENTS.md`) directly in the agent's filesystem workspace.</p>
+                <div className="flex flex-col p-6 sm:flex-row">
+                  <div className="font-mono text-xs tracking-wider text-[#86868b] sm:w-1/3">
+                    WORKSPACE PERSISTENCE
+                  </div>
+                  <div className="mt-2 sm:mt-0 sm:w-2/3">
+                    <h4 className="font-outfit text-sm font-bold text-white">
+                      Durable Local Workspace
+                    </h4>
+                    <p className="mt-1 text-xs leading-relaxed text-[#86868b]">
+                      Maintains checklist state documents (like `tracker.md` or
+                      `AGENTS.md`) directly in the agent's filesystem workspace.
+                    </p>
                   </div>
                 </div>
-                <div className="flex flex-col sm:flex-row p-6">
-                  <div className="sm:w-1/3 text-xs text-[#86868b] font-mono tracking-wider">OUTPUT COMPLIANCE</div>
-                  <div className="sm:w-2/3 mt-2 sm:mt-0">
-                    <h4 className="text-sm font-bold text-white font-outfit">Double-Loop Syntactic Validators</h4>
-                    <p className="text-xs text-[#86868b] mt-1 leading-relaxed">Syntax lints, schema verifiers, and output checkers run automatically. Re-routes execution errors directly to the planner.</p>
+                <div className="flex flex-col p-6 sm:flex-row">
+                  <div className="font-mono text-xs tracking-wider text-[#86868b] sm:w-1/3">
+                    OUTPUT COMPLIANCE
+                  </div>
+                  <div className="mt-2 sm:mt-0 sm:w-2/3">
+                    <h4 className="font-outfit text-sm font-bold text-white">
+                      Double-Loop Syntactic Validators
+                    </h4>
+                    <p className="mt-1 text-xs leading-relaxed text-[#86868b]">
+                      Syntax lints, schema verifiers, and output checkers run
+                      automatically. Re-routes execution errors directly to the
+                      planner.
+                    </p>
                   </div>
                 </div>
               </div>
             ) : (
               <div className="divide-y divide-white/5">
-                <div className="flex flex-col sm:flex-row p-6">
-                  <div className="sm:w-1/3 text-xs text-rose-400 font-mono tracking-wider">CORE ORCHESTRATION</div>
-                  <div className="sm:w-2/3 mt-2 sm:mt-0">
-                    <h4 className="text-sm font-bold text-white font-outfit">Ephemeral Session Prompts</h4>
-                    <p className="text-xs text-[#86868b] mt-1 leading-relaxed">Relies strictly on continuous prompt instructions in chat threads. High risk of instruction drift over long chat history.</p>
+                <div className="flex flex-col p-6 sm:flex-row">
+                  <div className="font-mono text-xs tracking-wider text-rose-400 sm:w-1/3">
+                    CORE ORCHESTRATION
+                  </div>
+                  <div className="mt-2 sm:mt-0 sm:w-2/3">
+                    <h4 className="font-outfit text-sm font-bold text-white">
+                      Ephemeral Session Prompts
+                    </h4>
+                    <p className="mt-1 text-xs leading-relaxed text-[#86868b]">
+                      Relies strictly on continuous prompt instructions in chat
+                      threads. High risk of instruction drift over long chat
+                      history.
+                    </p>
                   </div>
                 </div>
-                <div className="flex flex-col sm:flex-row p-6">
-                  <div className="sm:w-1/3 text-xs text-rose-400 font-mono tracking-wider">CONTAINER ISOLATION</div>
-                  <div className="sm:w-2/3 mt-2 sm:mt-0">
-                    <h4 className="text-sm font-bold text-white font-outfit">Direct Host Shells</h4>
-                    <p className="text-xs text-[#86868b] mt-1 leading-relaxed">Dangerous connection directly to developer hosts or lack of tool execution support. High vulnerability to bad terminal actions.</p>
+                <div className="flex flex-col p-6 sm:flex-row">
+                  <div className="font-mono text-xs tracking-wider text-rose-400 sm:w-1/3">
+                    CONTAINER ISOLATION
+                  </div>
+                  <div className="mt-2 sm:mt-0 sm:w-2/3">
+                    <h4 className="font-outfit text-sm font-bold text-white">
+                      Direct Host Shells
+                    </h4>
+                    <p className="mt-1 text-xs leading-relaxed text-[#86868b]">
+                      Dangerous connection directly to developer hosts or lack
+                      of tool execution support. High vulnerability to bad
+                      terminal actions.
+                    </p>
                   </div>
                 </div>
-                <div className="flex flex-col sm:flex-row p-6">
-                  <div className="sm:w-1/3 text-xs text-rose-400 font-mono tracking-wider">WORKSPACE PERSISTENCE</div>
-                  <div className="sm:w-2/3 mt-2 sm:mt-0">
-                    <h4 className="text-sm font-bold text-white font-outfit">Ephemeral RAM Memory</h4>
-                    <p className="text-xs text-[#86868b] mt-1 leading-relaxed">Zero physical filesystem state. Memory decays or gets completely lost when context limits are reached.</p>
+                <div className="flex flex-col p-6 sm:flex-row">
+                  <div className="font-mono text-xs tracking-wider text-rose-400 sm:w-1/3">
+                    WORKSPACE PERSISTENCE
+                  </div>
+                  <div className="mt-2 sm:mt-0 sm:w-2/3">
+                    <h4 className="font-outfit text-sm font-bold text-white">
+                      Ephemeral RAM Memory
+                    </h4>
+                    <p className="mt-1 text-xs leading-relaxed text-[#86868b]">
+                      Zero physical filesystem state. Memory decays or gets
+                      completely lost when context limits are reached.
+                    </p>
                   </div>
                 </div>
-                <div className="flex flex-col sm:flex-row p-6">
-                  <div className="sm:w-1/3 text-xs text-rose-400 font-mono tracking-wider">OUTPUT COMPLIANCE</div>
-                  <div className="sm:w-2/3 mt-2 sm:mt-0">
-                    <h4 className="text-sm font-bold text-white font-outfit">Blind Output Completion</h4>
-                    <p className="text-xs text-[#86868b] mt-1 leading-relaxed">No compile checks. Outputs markdown sheets blindly without running syntactic verification loops.</p>
+                <div className="flex flex-col p-6 sm:flex-row">
+                  <div className="font-mono text-xs tracking-wider text-rose-400 sm:w-1/3">
+                    OUTPUT COMPLIANCE
+                  </div>
+                  <div className="mt-2 sm:mt-0 sm:w-2/3">
+                    <h4 className="font-outfit text-sm font-bold text-white">
+                      Blind Output Completion
+                    </h4>
+                    <p className="mt-1 text-xs leading-relaxed text-[#86868b]">
+                      No compile checks. Outputs markdown sheets blindly without
+                      running syntactic verification loops.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -950,99 +1222,132 @@ function IntroPageContent() {
       </section>
 
       {/* 7. CALL TO ACTION SECTION (Apple Upgrade style) */}
-      <section 
-        id="cta" 
-        className="relative flex min-h-[80vh] flex-col items-center justify-center px-6 py-24 text-center bg-black"
+      <section
+        id="cta"
+        className="relative flex min-h-[80vh] flex-col items-center justify-center bg-black px-6 py-24 text-center"
       >
-        <div className={`apple-fade max-w-4xl ${visibleSections["cta"] ? "visible" : ""}`}>
+        <div
+          className={`apple-fade max-w-4xl ${
+            visibleSections["cta"] ? "visible" : ""
+          }`}
+        >
           <h2 className="font-outfit text-5xl font-extrabold tracking-tight text-white sm:text-7xl">
             Get started. <br />
             <span className="bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">
               Build your Harness today.
             </span>
           </h2>
-          
-          <p className="mx-auto mt-6 max-w-lg text-[#86868b] text-base sm:text-lg">
-            Create structured, durable AI agents governed by isolated systems. Move beyond simple text instructions.
+
+          <p className="mx-auto mt-6 max-w-lg text-base text-[#86868b] sm:text-lg">
+            Create structured, durable AI agents governed by isolated systems.
+            Move beyond simple text instructions.
           </p>
 
-          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a 
+          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+            <a
               href={`/chat?threadId=${threadId}`}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-full bg-white px-8 py-3.5 text-sm font-bold text-black hover:bg-neutral-200 transition shadow-lg shadow-white/5"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-8 py-3.5 text-sm font-bold text-black shadow-lg shadow-white/5 transition hover:bg-neutral-200 sm:w-auto"
             >
               Launch Deep Agent
               <Play className="h-4 w-4 fill-current" />
             </a>
           </div>
 
-          <div className="mt-12 text-xs text-white/30 font-mono tracking-widest uppercase">
-            <a 
+          <div className="mt-12 font-mono text-xs uppercase tracking-widest text-white/30">
+            <a
               href="https://medium.com/@jerry.shao/harness-engineering-building-production-grade-ai-systems-beyond-prompts-and-context-5fcdffdd6b4c"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-white border-b border-white/10 hover:border-white/40 transition-colors duration-200 pb-0.5 inline-flex items-center gap-1"
+              className="inline-flex items-center gap-1 border-b border-white/10 pb-0.5 transition-colors duration-200 hover:border-white/40 hover:text-white"
             >
-              Harness Engineering: Building Production-Grade AI Systems Beyond Prompts and Context
+              Harness Engineering: Building Production-Grade AI Systems Beyond
+              Prompts and Context
               <ArrowUpRight className="h-3 w-3" />
             </a>
           </div>
         </div>
       </section>
 
-
       {/* Real-time Telemetry Sync Editor Modal Dialog */}
       {isDialogOpen && (
-        <div className={cn(
-          "fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-md animate-in fade-in duration-300",
-          isTelemetryFullscreen ? "p-0" : "p-4"
-        )}>
-          <div className={cn(
-            "relative flex flex-col bg-zinc-950/90 border border-white/10 shadow-2xl transition-all duration-300 ease-in-out animate-in zoom-in-95 duration-300",
-            isTelemetryFullscreen
-              ? "w-screen max-w-none h-screen max-h-none rounded-none border-none p-6 sm:p-8"
-              : "w-full max-w-6xl h-[85vh] rounded-3xl p-6 sm:p-8"
-          )}>
-            
+        <div
+          className={cn(
+            "fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-md duration-300 animate-in fade-in",
+            isTelemetryFullscreen ? "p-0" : "p-4"
+          )}
+        >
+          <div
+            className={cn(
+              "relative flex flex-col border border-white/10 bg-zinc-950/90 shadow-2xl transition-all duration-300 duration-300 ease-in-out animate-in zoom-in-95",
+              isTelemetryFullscreen
+                ? "h-screen max-h-none w-screen max-w-none rounded-none border-none p-6 sm:p-8"
+                : "h-[85vh] w-full max-w-6xl rounded-3xl p-6 sm:p-8"
+            )}
+          >
             {/* Modal Header */}
-            <div className="flex items-center justify-between mb-6 border-b border-white/5 pb-4 select-none">
-              <div className="flex items-center gap-3 min-w-0">
+            <div className="mb-6 flex select-none items-center justify-between border-b border-white/5 pb-4">
+              <div className="flex min-w-0 items-center gap-3">
                 {/* macOS-style Window Control Dots */}
-                <div className="flex items-center gap-[6px] mr-2 shrink-0 group/dots py-1 px-1">
+                <div className="group/dots mr-2 flex shrink-0 items-center gap-[6px] px-1 py-1">
                   <button
                     onClick={() => setIsDialogOpen(false)}
-                    className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#FF5F56] border border-[#E0443E] active:bg-[#BF403A] focus:outline-none transition-colors"
+                    className="relative flex h-3 w-3 items-center justify-center rounded-full border border-[#E0443E] bg-[#FF5F56] transition-colors focus:outline-none active:bg-[#BF403A]"
                     aria-label="Close"
                   >
-                    <svg className="absolute h-[5px] w-[5px] text-[#4C0002] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100" viewBox="0 0 6 6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+                    <svg
+                      className="absolute h-[5px] w-[5px] text-[#4C0002] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100"
+                      viewBox="0 0 6 6"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                      strokeLinecap="round"
+                    >
                       <path d="M1 1l4 4M5 1L1 5" />
                     </svg>
                   </button>
                   <button
-                    onClick={() => toast.info("Minimize is not supported in browser dialog")}
-                    className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#FFBD2E] border border-[#DFA023] active:bg-[#C08E1A] focus:outline-none transition-colors"
+                    onClick={() =>
+                      toast.info("Minimize is not supported in browser dialog")
+                    }
+                    className="relative flex h-3 w-3 items-center justify-center rounded-full border border-[#DFA023] bg-[#FFBD2E] transition-colors focus:outline-none active:bg-[#C08E1A]"
                     aria-label="Minimize"
                   >
-                    <svg className="absolute h-[5px] w-[5px] text-[#5C3E00] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100" viewBox="0 0 6 6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+                    <svg
+                      className="absolute h-[5px] w-[5px] text-[#5C3E00] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100"
+                      viewBox="0 0 6 6"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                      strokeLinecap="round"
+                    >
                       <path d="M1 3h4" />
                     </svg>
                   </button>
                   <button
-                    onClick={() => setIsTelemetryFullscreen(prev => !prev)}
-                    className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#27C93F] border border-[#1AAB29] active:bg-[#12821B] focus:outline-none transition-colors"
+                    onClick={() => setIsTelemetryFullscreen((prev) => !prev)}
+                    className="relative flex h-3 w-3 items-center justify-center rounded-full border border-[#1AAB29] bg-[#27C93F] transition-colors focus:outline-none active:bg-[#12821B]"
                     aria-label="Toggle Fullscreen"
                   >
-                    <svg className="absolute h-[5px] w-[5px] text-[#003300] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100" viewBox="0 0 6 6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+                    <svg
+                      className="absolute h-[5px] w-[5px] text-[#003300] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100"
+                      viewBox="0 0 6 6"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                      strokeLinecap="round"
+                    >
                       <path d="M1.5 4.5l3-3 M1.5 2.5v2h2 M4.5 3.5v-2h-2" />
                     </svg>
                   </button>
                 </div>
-                
+
                 {/* Divider */}
-                <div className="h-4 w-[1px] bg-white/10 mr-2 shrink-0" />
+                <div className="mr-2 h-4 w-[1px] shrink-0 bg-white/10" />
 
                 <div className="flex items-center gap-3">
-                  <h3 className="font-outfit text-xl font-bold text-white leading-none">Markdown Online Preview</h3>
+                  <h3 className="font-outfit text-xl font-bold leading-none text-white">
+                    Markdown Online Preview
+                  </h3>
                   <button
                     onClick={() => {
                       if (wsStatus === "disconnected") {
@@ -1060,25 +1365,31 @@ function IntroPageContent() {
                       }
                     }}
                     className={cn(
-                      "flex items-center gap-2 rounded-full px-2.5 py-1 text-[10px] font-mono font-bold tracking-wider transition-all duration-300 select-none",
-                      wsStatus === "connected" && "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 cursor-default",
-                      wsStatus === "connecting" && "bg-amber-500/10 text-amber-400 border border-amber-500/20 cursor-default animate-pulse",
-                      wsStatus === "disconnected" && "bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 cursor-pointer active:scale-95"
+                      "flex select-none items-center gap-2 rounded-full px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider transition-all duration-300",
+                      wsStatus === "connected" &&
+                        "cursor-default border border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
+                      wsStatus === "connecting" &&
+                        "animate-pulse cursor-default border border-amber-500/20 bg-amber-500/10 text-amber-400",
+                      wsStatus === "disconnected" &&
+                        "cursor-pointer border border-rose-500/20 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 active:scale-95"
                     )}
                     title={
-                      wsStatus === "connected" 
-                        ? "Websocket Synced (Connected)" 
+                      wsStatus === "connected"
+                        ? "Websocket Synced (Connected)"
                         : wsStatus === "connecting"
-                          ? "Websocket Connecting..."
-                          : "Websocket Disconnected (Click to Reconnect)"
+                        ? "Websocket Connecting..."
+                        : "Websocket Disconnected (Click to Reconnect)"
                     }
                   >
-                    <span 
+                    <span
                       className={cn(
                         "h-2 w-2 rounded-full",
-                        wsStatus === "connected" && "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-pulse",
-                        wsStatus === "connecting" && "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)] animate-pulse",
-                        wsStatus === "disconnected" && "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]"
+                        wsStatus === "connected" &&
+                          "animate-pulse bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]",
+                        wsStatus === "connecting" &&
+                          "animate-pulse bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]",
+                        wsStatus === "disconnected" &&
+                          "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]"
                       )}
                     />
                     {wsStatus.toUpperCase()}
@@ -1088,9 +1399,13 @@ function IntroPageContent() {
             </div>
 
             {/* Custom Text Area Container - Stretches to fill remaining space */}
-            <div className="relative border border-white/10 rounded-2xl bg-black/40 focus-within:border-indigo-500/60 transition duration-300 flex-1 flex flex-col overflow-hidden">
-              <Tabs value={activeTelemetryTab} onValueChange={setActiveTelemetryTab} className="flex flex-col h-full w-full gap-0">
-                <div className="flex items-center justify-between px-4 py-2 border-b border-white/10 bg-zinc-950/60 shrink-0">
+            <div className="relative flex flex-1 flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/40 transition duration-300 focus-within:border-indigo-500/60">
+              <Tabs
+                value={activeTelemetryTab}
+                onValueChange={setActiveTelemetryTab}
+                className="flex h-full w-full flex-col gap-0"
+              >
+                <div className="flex shrink-0 items-center justify-between border-b border-white/10 bg-zinc-950/60 px-4 py-2">
                   <TabsList className="grid w-full max-w-[320px] grid-cols-2">
                     <TabsTrigger value="edit">Markdown</TabsTrigger>
                     <TabsTrigger value="preview">Review Markdown</TabsTrigger>
@@ -1104,14 +1419,20 @@ function IntroPageContent() {
                         <div className="tooltip-wrapper">
                           <button
                             onClick={handleCopy}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 hover:bg-white/10 hover:text-white transition duration-200"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 transition duration-200 hover:bg-white/10 hover:text-white"
                           >
-                            {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                            {copied ? (
+                              <Check className="h-3.5 w-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
                           </button>
                           <div className="tooltip-box-bottom">
-                            <div className="tooltip-arrow w-2 h-2 bg-zinc-900 border-l border-t border-white/10 rotate-45 -mb-1 z-10" />
-                            <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
-                              {copied ? "COPIED TO CLIPBOARD" : "COPY TO CLIPBOARD"}
+                            <div className="tooltip-arrow z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-white/10 bg-zinc-900" />
+                            <div className="whitespace-nowrap rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-white shadow-xl">
+                              {copied
+                                ? "COPIED TO CLIPBOARD"
+                                : "COPY TO CLIPBOARD"}
                             </div>
                           </div>
                         </div>
@@ -1120,13 +1441,13 @@ function IntroPageContent() {
                         <div className="tooltip-wrapper">
                           <button
                             onClick={handlePaste}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 hover:bg-white/10 hover:text-white transition duration-200"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 transition duration-200 hover:bg-white/10 hover:text-white"
                           >
                             <ClipboardPaste className="h-3.5 w-3.5" />
                           </button>
                           <div className="tooltip-box-bottom">
-                            <div className="tooltip-arrow w-2 h-2 bg-zinc-900 border-l border-t border-white/10 rotate-45 -mb-1 z-10" />
-                            <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
+                            <div className="tooltip-arrow z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-white/10 bg-zinc-900" />
+                            <div className="whitespace-nowrap rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-white shadow-xl">
                               PASTE FROM CLIPBOARD
                             </div>
                           </div>
@@ -1136,13 +1457,13 @@ function IntroPageContent() {
                         <div className="tooltip-wrapper">
                           <button
                             onClick={handleRemove}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 hover:bg-rose-500/20 hover:text-rose-400 transition duration-200"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 transition duration-200 hover:bg-rose-500/20 hover:text-rose-400"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                           <div className="tooltip-box-bottom tooltip-align-right">
-                            <div className="tooltip-arrow w-2 h-2 bg-zinc-900 border-l border-t border-rose-500/20 rotate-45 -mb-1 z-10" />
-                            <div className="bg-zinc-900 border border-rose-500/20 text-rose-400 font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
+                            <div className="tooltip-arrow z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-rose-500/20 bg-zinc-900" />
+                            <div className="whitespace-nowrap rounded-md border border-rose-500/20 bg-zinc-900 px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-rose-400 shadow-xl">
                               REMOVE THREAD CONTENT
                             </div>
                           </div>
@@ -1153,14 +1474,20 @@ function IntroPageContent() {
                       <div className="tooltip-wrapper">
                         <button
                           onClick={handleCopyHtml}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 hover:bg-white/10 hover:text-white transition duration-200"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 transition duration-200 hover:bg-white/10 hover:text-white"
                         >
-                          {copiedHtml ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                          {copiedHtml ? (
+                            <Check className="h-3.5 w-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
                         </button>
                         <div className="tooltip-box-bottom tooltip-align-right">
-                          <div className="tooltip-arrow w-2 h-2 bg-zinc-900 border-l border-t border-white/10 rotate-45 -mb-1 z-10" />
-                          <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
-                            {copiedHtml ? "COPIED PREVIEW HTML" : "COPY PREVIEW HTML"}
+                          <div className="tooltip-arrow z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-white/10 bg-zinc-900" />
+                          <div className="whitespace-nowrap rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-white shadow-xl">
+                            {copiedHtml
+                              ? "COPIED PREVIEW HTML"
+                              : "COPY PREVIEW HTML"}
                           </div>
                         </div>
                       </div>
@@ -1169,37 +1496,46 @@ function IntroPageContent() {
                 </div>
 
                 {/* Tab content area */}
-                <TabsContent value="edit" className="flex-1 flex flex-col min-h-0 data-[state=inactive]:hidden">
+                <TabsContent
+                  value="edit"
+                  className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+                >
                   <textarea
                     value={sharedText}
                     onChange={handleTextChange}
                     placeholder="Type, paste, or telemetry sync here..."
-                    className="w-full flex-1 bg-transparent border-0 outline-none p-6 font-mono text-sm text-white/95 placeholder-white/20 resize-none focus:ring-0 leading-relaxed"
+                    className="w-full flex-1 resize-none border-0 bg-transparent p-6 font-mono text-sm leading-relaxed text-white/95 placeholder-white/20 outline-none focus:ring-0"
                   />
                 </TabsContent>
 
-                <TabsContent value="preview" className="relative flex-1 flex flex-col min-h-0 bg-transparent data-[state=inactive]:hidden">
+                <TabsContent
+                  value="preview"
+                  className="relative flex min-h-0 flex-1 flex-col bg-transparent data-[state=inactive]:hidden"
+                >
                   {sharedText ? (
-                    <ScrollArea className="flex-1 min-h-0 bg-transparent w-full">
-                      <div ref={previewRef} className="p-6 text-left text-neutral-100">
+                    <ScrollArea className="min-h-0 w-full flex-1 bg-transparent">
+                      <div
+                        ref={previewRef}
+                        className="p-6 text-left text-neutral-100"
+                      >
                         <MarkdownContent content={sharedText} />
                       </div>
                       <ScrollBar orientation="horizontal" />
                     </ScrollArea>
                   ) : (
-                    <div className="absolute top-0 left-0 right-0 p-6 text-left text-white/30 font-mono text-sm leading-relaxed">
+                    <div className="absolute left-0 right-0 top-0 p-6 text-left font-mono text-sm leading-relaxed text-white/30">
                       <p>No content to preview.</p>
-                      <p className="text-xs mt-1 text-white/20">Write or paste text in the Markdown tab first.</p>
+                      <p className="mt-1 text-xs text-white/20">
+                        Write or paste text in the Markdown tab first.
+                      </p>
                     </div>
                   )}
                 </TabsContent>
               </Tabs>
             </div>
-
           </div>
         </div>
       )}
-
     </div>
   );
 }

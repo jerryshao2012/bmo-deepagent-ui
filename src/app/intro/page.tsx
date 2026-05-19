@@ -17,12 +17,10 @@ import {
   Terminal, 
   Search, 
   ChevronRight, 
-  ArrowRight, 
-  Zap, 
+  Zap,
   Play, 
   CheckCircle,
   FileText,
-  AlertTriangle,
   FolderTree,
   Lock,
   ArrowUpRight,
@@ -31,7 +29,6 @@ import {
   ClipboardPaste,
   Copy,
   Check,
-  X
 } from "lucide-react";
 
 function IntroPageContent() {
@@ -216,7 +213,6 @@ function IntroPageContent() {
 
   // Ref elements for interactive 3D mouse parallax
   const stackRef = useRef<HTMLDivElement>(null);
-  const chipRef = useRef<HTMLDivElement>(null);
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
 
   // Generate 6-digit Thread ID if not present in query params
@@ -346,13 +342,47 @@ function IntroPageContent() {
           flex-direction: column;
           align-items: center;
           pointer-events: none;
-          z-index: 200;
+          z-index: 9999;
           transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
         .tooltip-wrapper:hover .tooltip-box {
           visibility: visible;
           opacity: 1;
           transform: translateX(-50%) translateY(0);
+        }
+
+        .tooltip-box-bottom {
+          position: absolute;
+          top: 100%;
+          left: 50%;
+          transform: translateX(-50%) translateY(-4px);
+          margin-top: 8px;
+          visibility: hidden;
+          opacity: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          pointer-events: none;
+          z-index: 9999;
+          transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .tooltip-wrapper:hover .tooltip-box-bottom {
+          visibility: visible;
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
+        }
+
+        .tooltip-box-bottom.tooltip-align-right {
+          left: auto;
+          right: 0;
+          transform: translateX(0) translateY(-4px);
+          align-items: flex-end;
+        }
+        .tooltip-wrapper:hover .tooltip-box-bottom.tooltip-align-right {
+          transform: translateX(0) translateY(0);
+        }
+        .tooltip-box-bottom.tooltip-align-right .tooltip-arrow {
+          margin-right: 12px;
         }
 
         /* Ambient colored background lights */
@@ -425,23 +455,37 @@ function IntroPageContent() {
         </nav>
 
         <div className="flex items-center gap-4">
-          <span className="font-mono text-xs text-white/40 select-none">
-            <span 
-              onClick={() => setIsDialogOpen(true)}
-              className="cursor-pointer"
-              title="Click to open Markdown Online Preview"
-            >
-              T
-            </span>
+          <div className="font-mono text-xs text-white/40 select-none flex items-center gap-0.5">
+            <div className="tooltip-wrapper">
+              <span 
+                onClick={() => setIsDialogOpen(true)}
+                className="cursor-pointer underline decoration-dotted decoration-white/30 underline-offset-2 hover:text-white transition"
+              >
+                T
+              </span>
+              <div className="tooltip-box-bottom">
+                <div className="tooltip-arrow w-2 h-2 bg-zinc-900 border-l border-t border-white/10 rotate-45 -mb-1 z-10" />
+                <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
+                  MARKDOWN ONLINE PREVIEW
+                </div>
+              </div>
+            </div>
             hread: #{threadId}
-          </span>
-          <a 
-            href={`/chat?threadId=${threadId}`}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0071e3] text-white hover:bg-[#147fe5] transition shadow-md shadow-blue-500/20"
-            title="Launch Chat"
-          >
-            <MessageSquare className="h-4 w-4" />
-          </a>
+          </div>
+          <div className="tooltip-wrapper">
+            <a 
+              href={`/chat?threadId=${threadId}`}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0071e3] text-white hover:bg-[#147fe5] transition shadow-md shadow-blue-500/20"
+            >
+              <MessageSquare className="h-4 w-4" />
+            </a>
+            <div className="tooltip-box-bottom">
+              <div className="w-2 h-2 bg-zinc-900 border-l border-t border-white/10 rotate-45 -mb-1 z-10" />
+              <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
+                LAUNCH CHAT
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -1033,11 +1077,11 @@ function IntroPageContent() {
                           >
                             {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
                           </button>
-                          <div className="tooltip-box">
+                          <div className="tooltip-box-bottom">
+                            <div className="tooltip-arrow w-2 h-2 bg-zinc-900 border-l border-t border-white/10 rotate-45 -mb-1 z-10" />
                             <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
                               {copied ? "COPIED TO CLIPBOARD" : "COPY TO CLIPBOARD"}
                             </div>
-                            <div className="w-2 h-2 bg-zinc-900 border-r border-b border-white/10 rotate-45 -mt-1" />
                           </div>
                         </div>
 
@@ -1049,11 +1093,11 @@ function IntroPageContent() {
                           >
                             <ClipboardPaste className="h-3.5 w-3.5" />
                           </button>
-                          <div className="tooltip-box">
+                          <div className="tooltip-box-bottom">
+                            <div className="tooltip-arrow w-2 h-2 bg-zinc-900 border-l border-t border-white/10 rotate-45 -mb-1 z-10" />
                             <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
                               PASTE FROM CLIPBOARD
                             </div>
-                            <div className="w-2 h-2 bg-zinc-900 border-r border-b border-white/10 rotate-45 -mt-1" />
                           </div>
                         </div>
 
@@ -1065,11 +1109,11 @@ function IntroPageContent() {
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
-                          <div className="tooltip-box">
+                          <div className="tooltip-box-bottom tooltip-align-right">
+                            <div className="tooltip-arrow w-2 h-2 bg-zinc-900 border-l border-t border-rose-500/20 rotate-45 -mb-1 z-10" />
                             <div className="bg-zinc-900 border border-rose-500/20 text-rose-400 font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
                               CLEAR EDITOR CONTENT
                             </div>
-                            <div className="w-2 h-2 bg-zinc-900 border-r border-b border-rose-500/20 rotate-45 -mt-1" />
                           </div>
                         </div>
                       </>
@@ -1082,11 +1126,11 @@ function IntroPageContent() {
                         >
                           {copiedHtml ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
                         </button>
-                        <div className="tooltip-box">
+                        <div className="tooltip-box-bottom tooltip-align-right">
+                          <div className="tooltip-arrow w-2 h-2 bg-zinc-900 border-l border-t border-white/10 rotate-45 -mb-1 z-10" />
                           <div className="bg-zinc-900 border border-white/10 text-white font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
                             {copiedHtml ? "COPIED PREVIEW HTML" : "COPY PREVIEW HTML"}
                           </div>
-                          <div className="w-2 h-2 bg-zinc-900 border-r border-b border-white/10 rotate-45 -mt-1" />
                         </div>
                       </div>
                     )}

@@ -15,12 +15,95 @@ app.prepare().then(() => {
     handle(req, res, parsedUrl);
   });
 
+  const fs = require("fs");
+  const path = require("path");
+
+  // Storage directory within the workspace
+  const STORAGE_DIR = path.join(__dirname, "data", "markdown_threads");
+  if (!fs.existsSync(STORAGE_DIR)) {
+    fs.mkdirSync(STORAGE_DIR, { recursive: true });
+  }
+
+  function getFilePath(threadId) {
+    const safeThreadId = threadId.replace(/[^a-zA-Z0-9_-]/g, "");
+    return path.join(STORAGE_DIR, `${safeThreadId}.md`);
+  }
+
+  function saveThreadContent(threadId, content) {
+    const filePath = getFilePath(threadId);
+    if (!content || content.trim() === "") {
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+          console.log(`[WS] Content removed. Deleted file for thread: ${threadId}`);
+        } catch (err) {
+          console.error(`[WS] Error deleting file for thread ${threadId}:`, err);
+        }
+      }
+    } else {
+      try {
+        fs.writeFileSync(filePath, content, "utf8");
+        console.log(`[WS] Content saved. Wrote file for thread: ${threadId}`);
+      } catch (err) {
+        console.error(`[WS] Error writing file for thread ${threadId}:`, err);
+      }
+    }
+  }
+
+  function loadThreadContent(threadId) {
+    const filePath = getFilePath(threadId);
+    if (fs.existsSync(filePath)) {
+      try {
+        return fs.readFileSync(filePath, "utf8");
+      } catch (err) {
+        console.error(`[WS] Error reading file for thread ${threadId}:`, err);
+      }
+    }
+    return null;
+  }
+
+  // Simple fixed-sized LRU cache to reduce disk data access
+  class LRUCache {
+    constructor(capacity = 200) {
+      this.capacity = capacity;
+      this.cache = new Map();
+    }
+
+    get(key) {
+      if (!this.cache.has(key)) return undefined;
+      const value = this.cache.get(key);
+      this.cache.delete(key);
+      this.cache.set(key, value);
+      return value;
+    }
+
+    has(key) {
+      return this.cache.has(key);
+    }
+
+    set(key, value) {
+      if (this.cache.has(key)) {
+        this.cache.delete(key);
+      } else if (this.cache.size >= this.capacity) {
+        // Evict oldest (least recently used) item
+        const oldestKey = this.cache.keys().next().value;
+        this.cache.delete(oldestKey);
+        console.log(`[WS Cache] Evicted thread from cache: ${oldestKey}`);
+      }
+      this.cache.set(key, value);
+    }
+
+    delete(key) {
+      return this.cache.delete(key);
+    }
+  }
+
   // Create WebSocket Server
   const wss = new WebSocketServer({ noServer: true });
 
   // Group clients by thread ID
   const rooms = new Map(); // Map<threadId, Set<WebSocket>>
-  const roomContent = new Map(); // Map<threadId, string>
+  const roomContent = new LRUCache(200); // Thread Cache (max 200 active threads)
 
   const nextUpgradeHandler = app.getUpgradeHandler();
 
@@ -53,20 +136,53 @@ app.prepare().then(() => {
     }
     rooms.get(threadId).add(ws);
 
-    // Initial sync
-    if (roomContent.has(threadId)) {
-      ws.send(
-        JSON.stringify({ type: "sync", content: roomContent.get(threadId) })
-      );
-    } else {
-      ws.send(JSON.stringify({ type: "sync", content: "" }));
-    }
-
     ws.on("message", (message) => {
       try {
         const data = JSON.parse(message);
+
+        if (data.type === "init") {
+          // Resolve thread content from memory or disk
+          let currentContent = "";
+          if (roomContent.has(threadId)) {
+            currentContent = roomContent.get(threadId);
+          } else {
+            const diskContent = loadThreadContent(threadId);
+            if (diskContent !== null) {
+              currentContent = diskContent;
+              roomContent.set(threadId, diskContent);
+            }
+          }
+
+          // If client has offline changes (non-empty) that differ from what we have, let client win
+          if (data.content && data.content.trim() !== "" && data.content !== currentContent) {
+            currentContent = data.content;
+            roomContent.set(threadId, currentContent);
+            saveThreadContent(threadId, currentContent);
+
+            // Broadcast the update to any other connected clients in the same thread
+            const clients = rooms.get(threadId);
+            if (clients) {
+              for (const client of clients) {
+                if (client !== ws && client.readyState === 1) {
+                  client.send(
+                    JSON.stringify({ type: "sync", content: currentContent })
+                  );
+                }
+              }
+            }
+          }
+
+          // Acknowledge by sending the resolved sync state to this connecting client
+          ws.send(JSON.stringify({ type: "sync", content: currentContent }));
+        }
+
         if (data.type === "update") {
-          roomContent.set(threadId, data.content);
+          if (!data.content || data.content.trim() === "") {
+            roomContent.delete(threadId);
+          } else {
+            roomContent.set(threadId, data.content);
+          }
+          saveThreadContent(threadId, data.content);
 
           // Broadcast to all other clients with the same thread ID
           const clients = rooms.get(threadId);

@@ -72,6 +72,16 @@ function IntroPageContent() {
     };
   }, [isDialogOpen]);
 
+  // Load initial content from localStorage once threadId resolves
+  useEffect(() => {
+    if (threadId) {
+      const cached = localStorage.getItem(`markdown_thread_${threadId}`);
+      if (cached) {
+        setSharedText(cached);
+      }
+    }
+  }, [threadId]);
+
   const connectWS = useCallback(() => {
     if (!threadId) return;
     
@@ -99,6 +109,10 @@ function IntroPageContent() {
       console.log("WebSocket connected for thread:", threadId);
       setSocket(ws);
       setWsStatus("connected");
+
+      // Retrieve local offline content from localStorage and initialize sync on the server
+      const localContent = localStorage.getItem(`markdown_thread_${threadId}`) || "";
+      ws.send(JSON.stringify({ type: "init", content: localContent }));
     };
 
     ws.onmessage = (event) => {
@@ -106,6 +120,11 @@ function IntroPageContent() {
         const data = JSON.parse(event.data);
         if (data.type === "sync") {
           setSharedText(data.content);
+          if (data.content) {
+            localStorage.setItem(`markdown_thread_${threadId}`, data.content);
+          } else {
+            localStorage.removeItem(`markdown_thread_${threadId}`);
+          }
         }
       } catch (err) {
         console.error("WS error parsing message:", err);
@@ -163,22 +182,34 @@ function IntroPageContent() {
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setSharedText(val);
+    if (val) {
+      localStorage.setItem(`markdown_thread_${threadId}`, val);
+    } else {
+      localStorage.removeItem(`markdown_thread_${threadId}`);
+    }
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "update", content: val }));
     }
   };
 
-  const handleClear = () => {
+  const handleRemove = () => {
     setSharedText("");
+    localStorage.removeItem(`markdown_thread_${threadId}`);
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "update", content: "" }));
     }
+    toast.success("Content removed from local and server storage.");
   };
 
   const handlePaste = async () => {
     try {
       const text = await navigator.clipboard.readText();
       setSharedText(text);
+      if (text) {
+        localStorage.setItem(`markdown_thread_${threadId}`, text);
+      } else {
+        localStorage.removeItem(`markdown_thread_${threadId}`);
+      }
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: "update", content: text }));
       }
@@ -1101,10 +1132,10 @@ function IntroPageContent() {
                           </div>
                         </div>
 
-                        {/* Clear Button */}
+                        {/* Remove Button */}
                         <div className="tooltip-wrapper">
                           <button
-                            onClick={handleClear}
+                            onClick={handleRemove}
                             className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 hover:bg-rose-500/20 hover:text-rose-400 transition duration-200"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -1112,7 +1143,7 @@ function IntroPageContent() {
                           <div className="tooltip-box-bottom tooltip-align-right">
                             <div className="tooltip-arrow w-2 h-2 bg-zinc-900 border-l border-t border-rose-500/20 rotate-45 -mb-1 z-10" />
                             <div className="bg-zinc-900 border border-rose-500/20 text-rose-400 font-mono text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap">
-                              CLEAR EDITOR CONTENT
+                              REMOVE THREAD CONTENT
                             </div>
                           </div>
                         </div>

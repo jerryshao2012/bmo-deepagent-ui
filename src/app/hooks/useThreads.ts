@@ -209,7 +209,7 @@ export function useThreads(props: {
         return mappedThreads;
       }
 
-      const hydratedThreads = await Promise.all(
+      return await Promise.all(
         mappedThreads.map(async (thread) => {
           const needsHydration =
             thread.status === "busy" || thread.title === "Untitled Thread";
@@ -236,8 +236,6 @@ export function useThreads(props: {
           }
         })
       );
-
-      return hydratedThreads;
     },
     {
       revalidateFirstPage: true,
@@ -312,7 +310,8 @@ export async function deleteThread(threadId: string): Promise<void> {
 
 /**
  * Delete threads older than the specified number of days
- * @param days - Number of days to retain threads (default: 7)
+ * Uses updated_at timestamp, so any thread activity automatically extends retention
+ * @param days - Number of days to retain threads since last update (default: 7)
  */
 export async function cleanupOldThreads(days: number = 7): Promise<void> {
   const config = getConfig();
@@ -345,14 +344,18 @@ export async function cleanupOldThreads(days: number = 7): Promise<void> {
   });
 
   try {
-    // Fetch all threads to check their age
+    // Calculate cutoff date based on last update time
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
+    
+    console.log(`[Cleanup] Starting thread cleanup - deleting threads not updated since ${cutoffDate.toISOString()} (${days} days ago)`);
 
     // Search threads in batches to handle pagination
     let offset = 0;
     const batchSize = 100;
     let hasMore = true;
+    let deletedCount = 0;
+    let checkedCount = 0;
 
     while (hasMore) {
       const threads = await client.threads.search({
@@ -369,13 +372,24 @@ export async function cleanupOldThreads(days: number = 7): Promise<void> {
 
       // Check each thread's updated_at timestamp
       for (const thread of threads) {
+        checkedCount++;
         const updatedAt = new Date(thread.updated_at);
+        
+        // Only delete if thread hasn't been updated in the retention period
         if (updatedAt < cutoffDate) {
           try {
             await client.threads.delete(thread.thread_id);
-            console.log(`[Cleanup] Deleted old thread: ${thread.thread_id}`);
+            deletedCount++;
+            console.log(`[Cleanup] Deleted thread ${thread.thread_id} (last updated: ${updatedAt.toISOString()})`);
           } catch (error) {
             console.error(`[Cleanup] Failed to delete thread ${thread.thread_id}:`, error);
+          }
+        } else {
+          // Thread is still active, stop checking further (sorted by updated_at desc)
+          // All remaining threads will be newer
+          if (deletedCount === 0 && checkedCount > 0) {
+            hasMore = false;
+            break;
           }
         }
       }
@@ -387,6 +401,8 @@ export async function cleanupOldThreads(days: number = 7): Promise<void> {
         hasMore = false;
       }
     }
+    
+    console.log(`[Cleanup] Completed - checked ${checkedCount} threads, deleted ${deletedCount} old threads`);
   } catch (error) {
     console.error("[Cleanup] Error during thread cleanup:", error);
   }

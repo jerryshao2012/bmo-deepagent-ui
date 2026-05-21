@@ -141,7 +141,7 @@ export const FileViewDialog = React.memo<{
       onClose();
     } else {
       const original = String(file.path || "");
-      const display = original.replace(/^[\/\\]+/, "");
+      const display = original.replace(/^[/\\]+/, "");
       setOriginalFileName(original);
       setDisplayFileName(display);
       setFileContent(String(file.content || ""));
@@ -300,7 +300,7 @@ export const FileViewDialog = React.memo<{
                 />
               </TabsContent>
               <TabsContent value="preview" className="flex-1 flex flex-col min-h-0 data-[state=inactive]:hidden">
-                <ScrollArea className="bg-surface flex-1 w-full rounded-md border border-border">
+                <ScrollArea className="bg-surface h-full w-full rounded-md border border-border">
                   <div className="p-6">
                     <MarkdownContent content={fileContent} />
                   </div>

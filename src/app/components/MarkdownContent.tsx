@@ -145,16 +145,180 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
     return (
       <div
         className={cn(
-          "prose min-w-0 max-w-full overflow-hidden break-words text-sm leading-relaxed",
-          light
-            ? "text-zinc-800 [&_h1:first-child]:mt-0 [&_h1]:mb-4 [&_h1]:mt-6 [&_h1]:font-semibold [&_h1]:text-zinc-950 [&_h2:first-child]:mt-0 [&_h2]:mb-4 [&_h2]:mt-6 [&_h2]:font-semibold [&_h2]:text-zinc-900 [&_h3:first-child]:mt-0 [&_h3]:mb-4 [&_h3]:mt-6 [&_h3]:font-semibold [&_h3]:text-zinc-850 [&_h4:first-child]:mt-0 [&_h4]:mb-4 [&_h4]:mt-6 [&_h4]:font-semibold [&_h4]:text-zinc-800 [&_h5:first-child]:mt-0 [&_h5]:mb-4 [&_h5]:mt-6 [&_h5]:font-semibold [&_h5]:text-zinc-800 [&_h6:first-child]:mt-0 [&_h6]:mb-4 [&_h6]:mt-6 [&_h6]:font-semibold [&_h6]:text-zinc-800 [&_p:last-child]:mb-0 [&_p]:mb-4 [&_code]:before:content-none [&_code]:after:content-none [&_code]:bg-zinc-100 [&_code]:text-purple-600 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-md [&_code]:border [&_code]:border-zinc-200 [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:font-normal"
-            : "dark:prose-invert text-inherit [&_h1:first-child]:mt-0 [&_h1]:mb-4 [&_h1]:mt-6 [&_h1]:font-semibold [&_h1]:text-white [&_h2:first-child]:mt-0 [&_h2]:mb-4 [&_h2]:mt-6 [&_h2]:font-semibold [&_h2]:text-white [&_h3:first-child]:mt-0 [&_h3]:mb-4 [&_h3]:mt-6 [&_h3]:font-semibold [&_h3]:text-white [&_h4:first-child]:mt-0 [&_h4]:mb-4 [&_h4]:mt-6 [&_h4]:font-semibold [&_h4]:text-white [&_h5:first-child]:mt-0 [&_h5]:mb-4 [&_h5]:mt-6 [&_h5]:font-semibold [&_h5]:text-white [&_h6:first-child]:mt-0 [&_h6]:mb-4 [&_h6]:mt-6 [&_h6]:font-semibold [&_h6]:text-white [&_p:last-child]:mb-0 [&_p]:mb-4 [&_code]:before:content-none [&_code]:after:content-none [&_code]:bg-white/10 [&_code]:text-indigo-300 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-md [&_code]:border [&_code]:border-white/5 [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:font-normal",
+          "markdown-content min-w-0 max-w-full overflow-hidden break-words text-sm leading-relaxed",
+          light ? "text-zinc-800 bg-white" : "text-foreground",
           className
         )}
       >
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
+            h1({ children, className, ...props }) {
+              return (
+                <h1
+                  className={cn(
+                    "text-2xl font-bold mt-7 mb-4 pb-2 border-b",
+                    light ? "text-zinc-950 border-zinc-200" : "text-foreground border-border/50",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </h1>
+              );
+            },
+            h2({ children, className, ...props }) {
+              return (
+                <h2
+                  className={cn(
+                    "text-xl font-semibold mt-6 mb-3",
+                    light ? "text-zinc-900" : "text-foreground",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </h2>
+              );
+            },
+            h3({ children, className, ...props }) {
+              return (
+                <h3
+                  className={cn(
+                    "text-lg font-semibold mt-5 mb-2",
+                    light ? "text-zinc-800" : "text-foreground",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </h3>
+              );
+            },
+            h4({ children, className, ...props }) {
+              return (
+                <h4
+                  className={cn(
+                    "text-base font-semibold mt-4 mb-2",
+                    light ? "text-zinc-800" : "text-foreground",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </h4>
+              );
+            },
+            h5({ children, className, ...props }) {
+              return (
+                <h5
+                  className={cn(
+                    "text-sm font-semibold mt-4 mb-2",
+                    light ? "text-zinc-800" : "text-foreground",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </h5>
+              );
+            },
+            h6({ children, className, ...props }) {
+              return (
+                <h6
+                  className={cn(
+                    "text-xs font-semibold mt-4 mb-2 uppercase tracking-wider",
+                    light ? "text-zinc-600" : "text-foreground/80",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </h6>
+              );
+            },
+            p({ children, className, ...props }) {
+              return (
+                <p
+                  className={cn(
+                    "mb-4 leading-relaxed last:mb-0",
+                    light ? "text-zinc-800" : "text-foreground/90",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </p>
+              );
+            },
+            strong({ children, className, ...props }) {
+              return (
+                <strong
+                  className={cn(
+                    "font-bold",
+                    light ? "text-zinc-950" : "text-foreground",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </strong>
+              );
+            },
+            em({ children, className, ...props }) {
+              return (
+                <em
+                  className={cn(
+                    "italic",
+                    light ? "text-zinc-800" : "text-foreground/95",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </em>
+              );
+            },
+            del({ children, className, ...props }) {
+              return (
+                <del
+                  className={cn(
+                    "line-through",
+                    light ? "text-zinc-400" : "text-foreground/60",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </del>
+              );
+            },
+            img({ src, alt, className, ...props }) {
+              return (
+                <span className="block my-6 max-w-full text-center">
+                  <img
+                    src={src}
+                    alt={alt}
+                    className={cn(
+                      "inline-block max-w-full h-auto rounded-lg border shadow-sm",
+                      light ? "border-zinc-200" : "border-border/40",
+                      className
+                    )}
+                    {...props}
+                  />
+                  {alt && (
+                    <span
+                      className={cn(
+                        "block mt-2 text-xs italic",
+                        light ? "text-zinc-500" : "text-foreground/60"
+                      )}
+                    >
+                      {alt}
+                    </span>
+                  )}
+                </span>
+              );
+            },
             code({
               className,
               children,
@@ -163,13 +327,23 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
               className?: string;
               children?: React.ReactNode;
             }) {
+              const isInline = !className || !className.startsWith("language-");
+              if (!isInline) {
+                return (
+                  <code className={className} {...props}>
+                    {children}
+                  </code>
+                );
+              }
+
               return (
                 <code
                   className={cn(
-                    "rounded-md px-1.5 py-0.5 font-mono text-[0.9em] font-normal before:content-none after:content-none",
+                    "rounded px-1.5 py-0.5 font-mono text-[0.875em] border",
                     light
-                      ? "bg-zinc-100 text-purple-600 border border-zinc-200"
-                      : "bg-white/10 text-indigo-300 border border-white/5"
+                      ? "bg-zinc-100 text-purple-600 border-zinc-200"
+                      : "bg-muted/50 text-rose-600 dark:text-rose-400 border-border/30",
+                    className
                   )}
                   {...props}
                 >
@@ -229,9 +403,12 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
             },
             a({
               href,
+              className,
               children,
+              ...props
             }: {
               href?: string;
+              className?: string;
               children?: React.ReactNode;
             }) {
               return (
@@ -239,45 +416,361 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={cn("no-underline hover:underline", light ? "text-blue-600" : "text-primary")}
+                  className={cn(
+                    "no-underline hover:underline font-medium text-blue-600 dark:text-blue-400",
+                    className
+                  )}
+                  {...props}
                 >
                   {children}
                 </a>
               );
             },
-            blockquote({ children }: { children?: React.ReactNode }) {
+            blockquote({
+              children,
+              className,
+              ...props
+            }: {
+              children?: React.ReactNode;
+              className?: string;
+            }) {
+              let alertType: "note" | "tip" | "important" | "warning" | "caution" | null = null;
+              let cleanChildren = children;
+
+              const processAlert = (node: any): { type: typeof alertType; cleanNode: any } => {
+                if (!node) return { type: null, cleanNode: null };
+                
+                if (typeof node === "string") {
+                  const match = node.trim().match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i);
+                  if (match) {
+                    const type = match[1].toLowerCase() as any;
+                    const cleanText = node.replace(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i, "");
+                    return { type, cleanNode: cleanText };
+                  }
+                }
+                
+                if (React.isValidElement(node)) {
+                  const element = node as React.ReactElement<any>;
+                  if (element.props && element.props.children) {
+                    const childrenArray = React.Children.toArray(element.props.children);
+                    if (childrenArray.length > 0) {
+                      const firstChildResult = processAlert(childrenArray[0]);
+                      if (firstChildResult.type) {
+                        const newChildren = [
+                          firstChildResult.cleanNode,
+                          ...childrenArray.slice(1)
+                        ].filter(Boolean);
+                        
+                        return {
+                          type: firstChildResult.type,
+                          cleanNode: React.cloneElement(element, {
+                            ...element.props,
+                            children: newChildren.length === 1 ? newChildren[0] : newChildren
+                          })
+                        };
+                      }
+                    }
+                  }
+                }
+                
+                return { type: null, cleanNode: node };
+              };
+
+              const childrenArray = React.Children.toArray(children);
+              if (childrenArray.length > 0) {
+                const result = processAlert(childrenArray[0]);
+                if (result.type) {
+                  alertType = result.type;
+                  cleanChildren = [result.cleanNode, ...childrenArray.slice(1)].filter(Boolean);
+                }
+              }
+
+              if (alertType) {
+                const config = {
+                  note: {
+                    border: "border-l-4 border-blue-500",
+                    bg: light ? "bg-blue-50/50" : "bg-blue-500/5 dark:bg-blue-500/10",
+                    text: light ? "text-blue-800" : "text-blue-700 dark:text-blue-400",
+                    title: "Note",
+                    icon: (
+                      <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    )
+                  },
+                  tip: {
+                    border: "border-l-4 border-emerald-500",
+                    bg: light ? "bg-emerald-50/50" : "bg-emerald-500/5 dark:bg-emerald-500/10",
+                    text: light ? "text-emerald-800" : "text-emerald-700 dark:text-emerald-400",
+                    title: "Tip",
+                    icon: (
+                      <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                      </svg>
+                    )
+                  },
+                  important: {
+                    border: "border-l-4 border-purple-500",
+                    bg: light ? "bg-purple-50/50" : "bg-purple-500/5 dark:bg-purple-500/10",
+                    text: light ? "text-purple-800" : "text-purple-700 dark:text-purple-400",
+                    title: "Important",
+                    icon: (
+                      <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    )
+                  },
+                  warning: {
+                    border: "border-l-4 border-amber-500",
+                    bg: light ? "bg-amber-50/50" : "bg-amber-500/5 dark:bg-amber-500/10",
+                    text: light ? "text-amber-800" : "text-amber-700 dark:text-amber-400",
+                    title: "Warning",
+                    icon: (
+                      <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    )
+                  },
+                  caution: {
+                    border: "border-l-4 border-rose-500",
+                    bg: light ? "bg-rose-50/50" : "bg-rose-500/5 dark:bg-rose-500/10",
+                    text: light ? "text-rose-800" : "text-rose-700 dark:text-rose-400",
+                    title: "Caution",
+                    icon: (
+                      <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    )
+                  }
+                }[alertType];
+
+                return (
+                  <div
+                    className={cn(
+                      "my-5 p-4 rounded-r-md border-y border-r",
+                      light ? "border-zinc-200" : "border-border/40",
+                      config.border,
+                      config.bg
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "flex items-center font-semibold mb-2 text-xs uppercase tracking-wider",
+                        config.text
+                      )}
+                    >
+                      {config.icon}
+                      {config.title}
+                    </div>
+                    <div
+                      className={cn(
+                        "text-sm [&>p]:mb-0 [&>p]:leading-relaxed",
+                        light ? "text-zinc-800" : "text-foreground/90"
+                      )}
+                    >
+                      {cleanChildren}
+                    </div>
+                  </div>
+                );
+              }
+
               return (
-                <blockquote className={cn("my-4 border-l-4 pl-4 italic", light ? "text-zinc-500 border-zinc-300" : "text-primary/50 border-border")}>
+                <blockquote
+                  className={cn(
+                    "my-4 border-l-4 pl-4 italic p-2 py-1 rounded-r-sm",
+                    light
+                      ? "text-zinc-600 border-zinc-300 bg-zinc-50"
+                      : "text-foreground/80 border-border/80 bg-muted/20",
+                    className
+                  )}
+                  {...props}
+                >
                   {children}
                 </blockquote>
               );
             },
-            ul({ children }: { children?: React.ReactNode }) {
+            ul({
+              children,
+              className,
+              ...props
+            }: {
+              children?: React.ReactNode;
+              className?: string;
+            }) {
+              const isTaskList = className?.includes("contains-task-list");
               return (
-                <ul className={cn("my-4 pl-6 [&>li:last-child]:mb-0 [&>li]:mb-1", light ? "text-zinc-700 list-disc" : "")}>
+                <ul
+                  className={cn(
+                    "my-4 pl-6 space-y-1.5",
+                    isTaskList ? "list-none pl-4" : "list-disc",
+                    light ? "text-zinc-800" : "text-foreground/90",
+                    className
+                  )}
+                  {...props}
+                >
                   {children}
                 </ul>
               );
             },
-            ol({ children }: { children?: React.ReactNode }) {
+            ol({
+              children,
+              className,
+              ...props
+            }: {
+              children?: React.ReactNode;
+              className?: string;
+            }) {
               return (
-                <ol className={cn("my-4 pl-6 [&>li:last-child]:mb-0 [&>li]:mb-1", light ? "text-zinc-700 list-decimal" : "")}>
+                <ol
+                  className={cn(
+                    "my-4 pl-6 list-decimal space-y-1.5",
+                    light ? "text-zinc-800" : "text-foreground/90",
+                    className
+                  )}
+                  {...props}
+                >
                   {children}
                 </ol>
               );
             },
-            table({ children }: { children?: React.ReactNode }) {
+            li({ children, className, ...props }) {
               return (
-                <div className="my-4 overflow-x-auto">
-                  <table className={cn(
-                    "w-full border-collapse [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2 [&_th]:text-left [&_th]:font-semibold",
-                    light
-                      ? "[&_th]:bg-zinc-100 [&_td]:border-zinc-200 [&_th]:border-zinc-200 [&_th]:text-zinc-950 text-zinc-800"
-                      : "[&_th]:bg-surface [&_td]:border-border [&_th]:border-border"
-                  )}>
+                <li
+                  className={cn(
+                    light ? "text-zinc-800" : "text-foreground/90",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </li>
+              );
+            },
+            input({ checked, type, className, ...props }) {
+              if (type === "checkbox") {
+                return (
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    readOnly
+                    className={cn(
+                      "mr-2 h-4 w-4 shrink-0 rounded align-middle focus:ring-0 focus:ring-offset-0 disabled:opacity-80",
+                      light
+                        ? "border-zinc-300 bg-white text-primary"
+                        : "border-border bg-background text-primary",
+                      className
+                    )}
+                    {...props}
+                  />
+                );
+              }
+              return <input type={type} className={className} {...props} />;
+            },
+            table({ children, className, ...props }) {
+              return (
+                <div
+                  className={cn(
+                    "my-5 overflow-x-auto rounded-lg border shadow-sm",
+                    light ? "border-zinc-200 bg-white" : "border-border/60 bg-surface"
+                  )}
+                >
+                  <table
+                    className={cn(
+                      "w-full border-collapse text-left text-sm",
+                      light ? "text-zinc-800" : "text-foreground",
+                      className
+                    )}
+                    {...props}
+                  >
                     {children}
                   </table>
                 </div>
+              );
+            },
+            thead({ children, className, ...props }) {
+              return (
+                <thead
+                  className={cn(
+                    "border-b",
+                    light ? "bg-zinc-50 border-zinc-200" : "bg-muted/30 border-border/80",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </thead>
+              );
+            },
+            tbody({ children, className, ...props }) {
+              return (
+                <tbody
+                  className={cn(
+                    "divide-y",
+                    light
+                      ? "divide-zinc-200 [&>tr:nth-child(even)]:bg-zinc-50/50"
+                      : "divide-border/40 [&>tr:nth-child(even)]:bg-muted/10",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </tbody>
+              );
+            },
+            tr({ children, className, ...props }) {
+              return (
+                <tr
+                  className={cn(
+                    "transition-colors",
+                    light ? "hover:bg-zinc-50" : "hover:bg-muted/5",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </tr>
+              );
+            },
+            th({ children, className, ...props }) {
+              return (
+                <th
+                  className={cn(
+                    "px-4 py-3 font-semibold border-r last:border-r-0",
+                    light
+                      ? "text-zinc-900 border-zinc-200"
+                      : "text-foreground border-border/40",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </th>
+              );
+            },
+            td({ children, className, ...props }) {
+              return (
+                <td
+                  className={cn(
+                    "px-4 py-2.5 border-r last:border-r-0",
+                    light
+                      ? "text-zinc-800 border-zinc-200"
+                      : "text-foreground/90 border-border/40",
+                    className
+                  )}
+                  {...props}
+                >
+                  {children}
+                </td>
+              );
+            },
+            hr() {
+              return (
+                <hr
+                  className={cn(
+                    "my-6 border-t-2 w-full",
+                    light ? "border-black" : "border-black dark:border-zinc-700"
+                  )}
+                />
               );
             },
           }}

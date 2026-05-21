@@ -24,7 +24,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { signOut } from "next-auth/react";
 import { cleanupOldThreads } from "@/app/hooks/useThreads";
 
 interface HomePageInnerProps {
@@ -229,7 +228,10 @@ function HomePageInner({
                     <div className="font-medium">{user.name}</div>
                     <div className="text-xs text-muted-foreground">{user.email}</div>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/" })}>
+                  <DropdownMenuItem onClick={() => {
+                    document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+                    window.location.href = "/login";
+                  }}>
                     Sign out
                   </DropdownMenuItem>
                 </DropdownMenuContent>

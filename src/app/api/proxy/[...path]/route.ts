@@ -72,16 +72,23 @@ async function handleProxyRequest(request: NextRequest) {
 
     // Add API key for non-health-check requests
     if (!isHealth) {
-      const apiKey = process.env.LANGCHAIN_API_KEY;
+      const sessionToken = request.cookies.get("session_token")?.value;
       
-      if (!apiKey) {
+      let authHeaderToken = request.headers.get("authorization");
+      if (authHeaderToken && authHeaderToken.startsWith("Bearer ")) {
+        authHeaderToken = authHeaderToken.substring(7);
+      }
+      
+      const activeToken = sessionToken || authHeaderToken || process.env.LANGCHAIN_API_KEY;
+      
+      if (!activeToken) {
         return NextResponse.json(
-          { error: "LANGCHAIN_API_KEY not configured" },
-          { status: 500 }
+          { error: "Authentication credential not configured. Please login or set LANGCHAIN_API_KEY." },
+          { status: 401 }
         );
       }
 
-      headers.set("X-API-Key", apiKey);
+      headers.set("X-API-Key", activeToken);
     }
 
     // Forward the request to LangGraph server

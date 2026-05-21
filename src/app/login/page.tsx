@@ -1,9 +1,9 @@
-import { auth, signIn } from "@/auth";
 import SignInAnimation from "../components/SignInAnimation";
 import QRCodeSignIn from "../components/QRCodeSignIn";
 import { HealthIndicator } from "../components/HealthIndicator";
 import LoginProviders from "../components/LoginProviders";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +12,11 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const session = await auth();
+  const cookieStore = await cookies();
+  const token = cookieStore.get("session_token")?.value;
   const resolvedSearchParams = await searchParams;
 
-  if (session?.user) {
+  if (token) {
     // Redirect to chat or callback URL if provided
     const callbackUrl = typeof resolvedSearchParams.callbackUrl === 'string' ? resolvedSearchParams.callbackUrl : '/chat';
     redirect(callbackUrl);
@@ -110,9 +111,9 @@ export default async function LoginPage({
           <LoginProviders
             onSignIn={async (provider: string) => {
               "use server";
-              const resolvedSearchParams = await searchParams;
-              const callbackUrl = typeof resolvedSearchParams.callbackUrl === 'string' ? resolvedSearchParams.callbackUrl : '/chat';
-              await signIn(provider, { redirectTo: callbackUrl });
+              const backendUrl = process.env.LANGGRAPH_URL || process.env.NEXT_PUBLIC_LANGGRAPH_URL || "http://localhost:2024";
+              const cleanBackendUrl = backendUrl.replace(/\/+$/, "");
+              redirect(`${cleanBackendUrl}/auth/login/${provider}`);
             }}
           />
 

@@ -54,6 +54,7 @@ function IntroPageContent() {
   const [copied, setCopied] = useState<boolean>(false);
   const [copiedHtml, setCopiedHtml] = useState<boolean>(false);
   const [activeTelemetryTab, setActiveTelemetryTab] = useState<string>("edit");
+  const [selectedLayer, setSelectedLayer] = useState<number | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -842,13 +843,15 @@ function IntroPageContent() {
               >
                 {/* 3D Glass Layer 1: Orchestration */}
                 <div
-                  className="glass-layer flex h-20 w-80 items-center justify-between rounded-2xl border border-indigo-400/40 bg-indigo-950/20 px-6 shadow-2xl backdrop-blur-lg transition hover:border-indigo-400 sm:w-96"
+                  onClick={() => setSelectedLayer(selectedLayer === 1 ? null : 1)}
+                  className={`glass-layer flex w-80 flex-col justify-center rounded-2xl border border-indigo-400/40 bg-indigo-950/20 px-6 shadow-2xl backdrop-blur-lg transition hover:border-indigo-400 sm:w-96 cursor-pointer overflow-hidden ${selectedLayer === 1 ? 'py-6' : 'h-20'}`}
                   style={{
                     transform: "translateZ(60px)",
                     boxShadow: "0 20px 40px rgba(99, 102, 241, 0.15)",
                   }}
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-4">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400">
                       <Layers className="h-5 w-5" />
                     </div>
@@ -861,18 +864,26 @@ function IntroPageContent() {
                       </p>
                     </div>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-white/30" />
+                  <ChevronRight className={`h-4 w-4 text-white/30 transition-transform ${selectedLayer === 1 ? 'rotate-90' : ''}`} />
+                  </div>
+                  {selectedLayer === 1 && (
+                    <div className="mt-4 border-t border-indigo-500/20 pt-4 text-left font-outfit text-sm text-[#86868b] leading-relaxed animate-in fade-in slide-in-from-top-2 duration-300">
+                      Responsible for managing the flow of tasks, invoking external tools/APIs, and coordinating complex workflows. It moves systems beyond fixed rules by enabling autonomous agents to plan and execute actions in a step-by-step, context-aware manner.
+                    </div>
+                  )}
                 </div>
 
                 {/* 3D Glass Layer 2: Context Engineering */}
                 <div
-                  className="glass-layer border-purple-400/30 bg-purple-950/20 hover:border-purple-400 flex h-20 w-80 items-center justify-between rounded-2xl border px-6 shadow-xl backdrop-blur-lg transition sm:w-96"
+                  onClick={() => setSelectedLayer(selectedLayer === 2 ? null : 2)}
+                  className={`glass-layer border-purple-400/30 bg-purple-950/20 hover:border-purple-400 flex w-80 flex-col justify-center rounded-2xl border px-6 shadow-xl backdrop-blur-lg transition sm:w-96 cursor-pointer overflow-hidden ${selectedLayer === 2 ? 'py-6' : 'h-20'}`}
                   style={{
                     transform: "translateZ(30px)",
                     boxShadow: "0 15px 30px rgba(168, 85, 247, 0.1)",
                   }}
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-4">
                     <div className="bg-purple-500/10 text-purple-400 flex h-10 w-10 items-center justify-center rounded-xl">
                       <FileText className="h-5 w-5" />
                     </div>
@@ -885,18 +896,26 @@ function IntroPageContent() {
                       </p>
                     </div>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-white/30" />
+                  <ChevronRight className={`h-4 w-4 text-white/30 transition-transform ${selectedLayer === 2 ? 'rotate-90' : ''}`} />
+                  </div>
+                  {selectedLayer === 2 && (
+                    <div className="mt-4 border-t border-purple-500/20 pt-4 text-left font-outfit text-sm text-[#86868b] leading-relaxed animate-in fade-in slide-in-from-top-2 duration-300">
+                      Involves the systematic management of user profiles, conversation history, and vector data to ensure the AI has the necessary information to provide relevant, personalized responses dynamically.
+                    </div>
+                  )}
                 </div>
 
                 {/* 3D Glass Layer 3: Sandbox Environment */}
                 <div
-                  className="glass-layer flex h-20 w-80 items-center justify-between rounded-2xl border border-cyan-400/30 bg-cyan-950/20 px-6 shadow-lg backdrop-blur-lg transition hover:border-cyan-400 sm:w-96"
+                  onClick={() => setSelectedLayer(selectedLayer === 3 ? null : 3)}
+                  className={`glass-layer flex w-80 flex-col justify-center rounded-2xl border border-cyan-400/30 bg-cyan-950/20 px-6 shadow-lg backdrop-blur-lg transition hover:border-cyan-400 sm:w-96 cursor-pointer overflow-hidden ${selectedLayer === 3 ? 'py-6' : 'h-20'}`}
                   style={{
                     transform: "translateZ(0px)",
                     boxShadow: "0 10px 20px rgba(6, 182, 212, 0.1)",
                   }}
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-4">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400">
                       <Shield className="h-5 w-5" />
                     </div>
@@ -909,7 +928,13 @@ function IntroPageContent() {
                       </p>
                     </div>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-white/30" />
+                  <ChevronRight className={`h-4 w-4 text-white/30 transition-transform ${selectedLayer === 3 ? 'rotate-90' : ''}`} />
+                  </div>
+                  {selectedLayer === 3 && (
+                    <div className="mt-4 border-t border-cyan-500/20 pt-4 text-left font-outfit text-sm text-[#86868b] leading-relaxed animate-in fade-in slide-in-from-top-2 duration-300">
+                      Allows for the safe execution of agentic code and tools, ensuring that autonomous behaviors do not negatively impact the host system, maintain security, and facilitate testing without risking production data.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

@@ -7,8 +7,19 @@
 **Install dependencies and run the app**
 
 ```bash
-git clone https://github.com/langchain-ai/deep-agents-ui.git
-cd deep-agents-ui
+git clone https://github.com/jerryshao2012/bmo-deepagent-ui.git
+cd bmo-deep-agents-ui
+# Install yarn
+npm config set "bin-links" true
+npm config set "strict-ssl" false
+npm install -g yarn
+# Add %AppData%\npm to PATH for Windows
+
+# For corporation network
+yarn config set "strict-ssl" false
+# Get configuration from npm config list
+yarn config set registry <url>
+
 yarn install
 yarn dev
 ```

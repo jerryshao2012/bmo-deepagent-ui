@@ -1,12 +1,15 @@
 import TokenSignIn from "../../chat/TokenSignIn";
 
-export default function LoginSuccessPage({
+export default async function LoginSuccessPage({
   searchParams,
 }: {
-  searchParams: { token?: string | string[] | undefined };
+  searchParams: Promise<{ token?: string | string[] | undefined }>;
 }) {
+  const resolvedSearchParams = await searchParams;
   const token =
-    typeof searchParams.token === "string" ? searchParams.token : undefined;
+    typeof resolvedSearchParams.token === "string"
+      ? resolvedSearchParams.token
+      : undefined;
 
   if (!token) {
     return (

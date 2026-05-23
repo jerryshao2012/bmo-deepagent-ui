@@ -8,12 +8,15 @@ export const dynamic = "force-dynamic";
 export default async function WorkspacePage({
   searchParams,
 }: {
-  searchParams: { token?: string | string[] | undefined };
+  searchParams: Promise<{ token?: string | string[] | undefined }>;
 }) {
   const cookieStore = await cookies();
   const token = cookieStore.get("session_token")?.value;
+  const resolvedSearchParams = await searchParams;
   const passedToken =
-    typeof searchParams.token === "string" ? searchParams.token : undefined;
+    typeof resolvedSearchParams.token === "string"
+      ? resolvedSearchParams.token
+      : undefined;
 
   if (!token && passedToken) {
     return (

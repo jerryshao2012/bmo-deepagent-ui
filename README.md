@@ -23,6 +23,9 @@ yarn config set "strict-ssl" false
 # Get configuration from npm config list
 yarn config set registry https://bmostaging.jfrog.io/artifactory/api/npm/bmoai-npm-virtual/
 
+# Update yarn.lock
+# Replace https://registry.npmjs.org/ with https://bmostaging.jfrog.io/artifactory/api/npm/bmoai-npm-virtual/
+# Replace https://registry.yarnpkg.com/ with https://bmostaging.jfrog.io/artifactory/api/npm/bmoai-npm-virtual/
 yarn install
 yarn dev
 ```

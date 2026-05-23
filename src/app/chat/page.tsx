@@ -25,7 +25,7 @@ export default async function WorkspacePage({
   }
 
   if (!token) {
-    redirect("/login");
+    redirect("/login?error=no_token");
   }
 
   // Fetch user data from the backend validation endpoint

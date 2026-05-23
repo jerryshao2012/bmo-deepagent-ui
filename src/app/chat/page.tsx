@@ -1,19 +1,38 @@
 import { cookies } from "next/headers";
 import ChatPage from "../chat-page";
+import TokenSignIn from "./TokenSignIn";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function WorkspacePage() {
+export default async function WorkspacePage({
+  searchParams,
+}: {
+  searchParams: { token?: string | string[] | undefined };
+}) {
   const cookieStore = await cookies();
   const token = cookieStore.get("session_token")?.value;
+  const passedToken =
+    typeof searchParams.token === "string" ? searchParams.token : undefined;
+
+  if (!token && passedToken) {
+    return (
+      <TokenSignIn
+        token={passedToken}
+        redirectTo="/chat"
+      />
+    );
+  }
 
   if (!token) {
     redirect("/login");
   }
 
   // Fetch user data from the backend validation endpoint
-  const backendUrl = process.env.LANGGRAPH_URL || process.env.NEXT_PUBLIC_LANGGRAPH_URL || "http://localhost:2024";
+  const backendUrl =
+    process.env.LANGGRAPH_URL ||
+    process.env.NEXT_PUBLIC_LANGGRAPH_URL ||
+    "http://localhost:2024";
   const cleanBackendUrl = backendUrl.replace(/\/+$/, "");
 
   let user = null;

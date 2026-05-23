@@ -1,7 +1,6 @@
 const { createServer } = require("http");
 const next = require("next");
 const { WebSocketServer } = require("ws");
-const { parse } = require("url");
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "localhost";
@@ -14,20 +13,22 @@ app.prepare().then(() => {
   const mermaidImages = new Map();
 
   const server = createServer((req, res) => {
-    const parsedUrl = parse(req.url, true);
+    const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
     const pathname = parsedUrl.pathname;
 
     // Route to store base64 Mermaid image
     if (pathname === "/api/store-mermaid-image" && req.method === "POST") {
       let body = "";
-      req.on("data", chunk => {
+      req.on("data", (chunk) => {
         body += chunk;
       });
       req.on("end", () => {
         try {
           const data = JSON.parse(body);
           if (!data || !data.image) {
-            throw new Error("Missing image payload");
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: false, error: "Missing image payload" }));
+            return;
           }
           const imageId = `img_${Math.random().toString(36).substring(2, 11)}`;
           mermaidImages.set(imageId, data.image);
@@ -44,8 +45,14 @@ app.prepare().then(() => {
     }
 
     // Route to serve binary PNG to Word/Outlook
-    if (pathname && pathname.startsWith("/api/mermaid-image/") && req.method === "GET") {
-      const match = pathname.match(/^\/api\/mermaid-image\/([a-zA-Z0-9_]+)\.png$/);
+    if (
+      pathname &&
+      pathname.startsWith("/api/mermaid-image/") &&
+      req.method === "GET"
+    ) {
+      const match = pathname.match(
+        /^\/api\/mermaid-image\/([a-zA-Z0-9_]+)\.png$/
+      );
       if (match) {
         const imageId = match[1];
         const imageData = mermaidImages.get(imageId);
@@ -57,20 +64,22 @@ app.prepare().then(() => {
             res.writeHead(200, {
               "Content-Type": "image/png",
               "Content-Length": buffer.length,
-              "Cache-Control": "public, max-age=3600"
+              "Cache-Control": "public, max-age=3600",
             });
             res.end(buffer);
             return;
           }
         }
       }
-      console.warn(`[Image Serve] Diagram image not found or invalid: ${pathname}`);
+      console.warn(
+        `[Image Serve] Diagram image not found or invalid: ${pathname}`
+      );
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not Found");
       return;
     }
 
-    handle(req, res, parsedUrl);
+    handle(req, res);
   });
 
   const fs = require("fs");
@@ -95,7 +104,7 @@ app.prepare().then(() => {
     // Update or create pending save entry
     pendingSaves.set(threadId, {
       content,
-      lastUpdated: Date.now()
+      lastUpdated: Date.now(),
     });
   }
 
@@ -105,57 +114,57 @@ app.prepare().then(() => {
     }
 
     console.log(`[WS Batch] Flushing ${pendingSaves.size} pending save(s)...`);
-    
-    const now = Date.now();
+
     const savesToFlush = new Map(pendingSaves);
-    
+
     for (const [threadId, data] of savesToFlush.entries()) {
       try {
         const filePath = getFilePath(threadId);
         const content = data.content;
-        
+
         if (!content || content.trim() === "") {
           if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
-            console.log(`[WS Batch] Content removed. Deleted file for thread: ${threadId}`);
+            console.log(
+              `[WS Batch] Content removed. Deleted file for thread: ${threadId}`
+            );
           }
         } else {
           fs.writeFileSync(filePath, content, "utf8");
-          console.log(`[WS Batch] Content saved. Wrote file for thread: ${threadId}`);
+          console.log(
+            `[WS Batch] Content saved. Wrote file for thread: ${threadId}`
+          );
         }
-        
+
         // Remove from pending if it hasn't been updated since we started flushing
         const current = pendingSaves.get(threadId);
         if (current && current.lastUpdated === data.lastUpdated) {
           pendingSaves.delete(threadId);
         }
       } catch (err) {
-        console.error(`[WS Batch] Error writing file for thread ${threadId}:`, err);
+        console.error(
+          `[WS Batch] Error writing file for thread ${threadId}:`,
+          err
+        );
       }
     }
   }
 
   // Set up periodic batch save interval
   const batchSaveInterval = setInterval(flushPendingSaves, BATCH_SAVE_INTERVAL);
-  
+
   // Also flush on graceful shutdown
-  process.on('SIGTERM', () => {
-    console.log('[WS] Graceful shutdown - flushing pending saves...');
-    flushPendingSaves();
-    clearInterval(batchSaveInterval);
-  });
-  
-  process.on('SIGINT', () => {
-    console.log('[WS] Graceful shutdown - flushing pending saves...');
+  process.on("SIGTERM", () => {
+    console.log("[WS] Graceful shutdown - flushing pending saves...");
     flushPendingSaves();
     clearInterval(batchSaveInterval);
   });
 
-  function saveThreadContent(threadId, content) {
-    // Instead of immediate save, schedule for batch processing
-    scheduleBatchSave(threadId, content);
-  }
-
+  process.on("SIGINT", () => {
+    console.log("[WS] Graceful shutdown - flushing pending saves...");
+    flushPendingSaves();
+    clearInterval(batchSaveInterval);
+  });
   function loadThreadContent(threadId) {
     const filePath = getFilePath(threadId);
     if (fs.existsSync(filePath)) {
@@ -260,7 +269,11 @@ app.prepare().then(() => {
           }
 
           // If client has offline changes (non-empty) that differ from what we have, let client win
-          if (data.content && data.content.trim() !== "" && data.content !== currentContent) {
+          if (
+            data.content &&
+            data.content.trim() !== "" &&
+            data.content !== currentContent
+          ) {
             currentContent = data.content;
             roomContent.set(threadId, currentContent);
             // Schedule for batch save instead of immediate save

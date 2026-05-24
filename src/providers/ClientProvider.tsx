@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useMemo, ReactNode } from "react";
 import { Client } from "@langchain/langgraph-sdk";
+import { createLangGraphClientConfig } from "@/lib/langgraph-client";
 
 interface ClientContextValue {
   client: Client;
@@ -21,32 +22,7 @@ export function ClientProvider({
   apiKey,
 }: ClientProviderProps) {
   const client = useMemo(() => {
-    let apiUrl: string;
-    const defaultHeaders: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    
-    if (typeof window !== "undefined") {
-      // Browser-side: use absolute URL to /api/proxy
-      apiUrl = `${window.location.origin}/api/proxy`;
-      // Pass deployment URL as header for dynamic local dev support
-      defaultHeaders["X-Deployment-URL"] = deploymentUrl;
-      // API key is added by server-side proxy, but keep for local dev fallback
-      if (apiKey) {
-        defaultHeaders["X-Api-Key"] = apiKey;
-      }
-    } else {
-      // Server-side: use direct deployment URL or env var
-      apiUrl = process.env.LANGGRAPH_URL || process.env.NEXT_PUBLIC_LANGGRAPH_URL || deploymentUrl;
-      if (apiKey) {
-        defaultHeaders["X-Api-Key"] = apiKey;
-      }
-    }
-    
-    return new Client({
-      apiUrl,
-      defaultHeaders,
-    });
+    return new Client(createLangGraphClientConfig({ deploymentUrl, apiKey }));
   }, [deploymentUrl, apiKey]);
 
   const value = useMemo(() => ({ client }), [client]);

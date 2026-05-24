@@ -3,6 +3,7 @@ import useSWR from "swr";
 import type { Thread } from "@langchain/langgraph-sdk";
 import { Client } from "@langchain/langgraph-sdk";
 import { getConfig } from "@/lib/config";
+import { createLangGraphClientConfig } from "@/lib/langgraph-client";
 
 export interface ThreadItem {
   id: string;
@@ -24,29 +25,12 @@ function createThreadsClient() {
     process.env.NEXT_PUBLIC_LANGSMITH_API_KEY ||
     "";
 
-  let apiUrl: string;
-  const defaultHeaders: Record<string, string> = {};
-  
-  if (typeof window !== "undefined") {
-    // Browser-side: use absolute URL to /api/proxy
-    apiUrl = `${window.location.origin}/api/proxy`;
-    // Pass deployment URL as header for dynamic local dev support
-    defaultHeaders["X-Deployment-URL"] = config.deploymentUrl;
-    if (apiKey) {
-      defaultHeaders["X-Api-Key"] = apiKey;
-    }
-  } else {
-    // Server-side: use direct deployment URL
-    apiUrl = config.deploymentUrl;
-    if (apiKey) {
-      defaultHeaders["X-Api-Key"] = apiKey;
-    }
-  }
-
-  return new Client({
-    apiUrl,
-    defaultHeaders,
-  });
+  return new Client(
+    createLangGraphClientConfig({
+      deploymentUrl: config.deploymentUrl,
+      apiKey,
+    })
+  );
 }
 
 function extractThreadPreview(thread: any): {
@@ -125,7 +109,6 @@ export function useThreads(props: {
         assistantId: config.assistantId,
         apiKey,
         status: props?.status,
-        isBrowser: typeof window !== "undefined",
       };
     },
     async ({
@@ -135,7 +118,6 @@ export function useThreads(props: {
       status,
       pageIndex,
       pageSize,
-      isBrowser,
     }: {
       kind: "threads";
       pageIndex: number;
@@ -144,34 +126,10 @@ export function useThreads(props: {
       assistantId: string;
       apiKey: string;
       status?: Thread["status"];
-      isBrowser?: boolean;
     }) => {
-      // Use API proxy for browser-side requests
-      let apiUrl: string;
-      const defaultHeaders: Record<string, string> = {};
-      
-      if (isBrowser) {
-        // Browser-side: use absolute URL to /api/proxy
-        apiUrl = typeof window !== "undefined" 
-          ? `${window.location.origin}/api/proxy`
-          : deploymentUrl;
-        // Pass deployment URL as header for dynamic local dev support
-        defaultHeaders["X-Deployment-URL"] = deploymentUrl;
-        if (apiKey) {
-          defaultHeaders["X-Api-Key"] = apiKey;
-        }
-      } else {
-        // Server-side: use direct deployment URL
-        apiUrl = deploymentUrl;
-        if (apiKey) {
-          defaultHeaders["X-Api-Key"] = apiKey;
-        }
-      }
-      
-      const client = new Client({
-        apiUrl,
-        defaultHeaders,
-      });
+      const client = new Client(
+        createLangGraphClientConfig({ deploymentUrl, apiKey })
+      );
 
       // Check if assistantId is a UUID (deployed) or graph name (local)
       const isUUID =
@@ -281,29 +239,12 @@ export async function deleteThread(threadId: string): Promise<void> {
     process.env.NEXT_PUBLIC_LANGSMITH_API_KEY ||
     "";
 
-  let apiUrl: string;
-  const defaultHeaders: Record<string, string> = {};
-  
-  if (typeof window !== "undefined") {
-    // Browser-side: use absolute URL to /api/proxy
-    apiUrl = `${window.location.origin}/api/proxy`;
-    // Pass deployment URL as header for dynamic local dev support
-    defaultHeaders["X-Deployment-URL"] = config.deploymentUrl;
-    if (apiKey) {
-      defaultHeaders["X-Api-Key"] = apiKey;
-    }
-  } else {
-    // Server-side: use direct deployment URL
-    apiUrl = config.deploymentUrl;
-    if (apiKey) {
-      defaultHeaders["X-Api-Key"] = apiKey;
-    }
-  }
-
-  const client = new Client({
-    apiUrl,
-    defaultHeaders,
-  });
+  const client = new Client(
+    createLangGraphClientConfig({
+      deploymentUrl: config.deploymentUrl,
+      apiKey,
+    })
+  );
 
   await client.threads.delete(threadId);
 }
@@ -322,26 +263,12 @@ export async function cleanupOldThreads(days: number = 7): Promise<void> {
     process.env.NEXT_PUBLIC_LANGSMITH_API_KEY ||
     "";
 
-  let apiUrl: string;
-  const defaultHeaders: Record<string, string> = {};
-  
-  if (typeof window !== "undefined") {
-    apiUrl = `${window.location.origin}/api/proxy`;
-    defaultHeaders["X-Deployment-URL"] = config.deploymentUrl;
-    if (apiKey) {
-      defaultHeaders["X-Api-Key"] = apiKey;
-    }
-  } else {
-    apiUrl = config.deploymentUrl;
-    if (apiKey) {
-      defaultHeaders["X-Api-Key"] = apiKey;
-    }
-  }
-
-  const client = new Client({
-    apiUrl,
-    defaultHeaders,
-  });
+  const client = new Client(
+    createLangGraphClientConfig({
+      deploymentUrl: config.deploymentUrl,
+      apiKey,
+    })
+  );
 
   try {
     // Calculate cutoff date based on last update time

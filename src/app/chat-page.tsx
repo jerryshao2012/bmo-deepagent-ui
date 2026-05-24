@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cleanupOldThreads } from "@/app/hooks/useThreads";
+import { logoutFromLangGraph } from "@/lib/langgraph-client";
 
 interface HomePageInnerProps {
   config: StandaloneConfig;
@@ -240,8 +241,14 @@ function HomePageInner({
                     <div className="font-medium">{user.name}</div>
                     <div className="text-xs text-muted-foreground">{user.email}</div>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => {
+                  <DropdownMenuItem onClick={async () => {
+                    // Call LangGraph server logout to clean up server session
+                    await logoutFromLangGraph(config.deploymentUrl);
+                    
+                    // Clear client-side session cookie
                     document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+                    
+                    // Redirect to login page
                     window.location.href = "/login";
                   }}>
                     Sign out

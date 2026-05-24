@@ -17,6 +17,8 @@ export default async function WorkspacePage() {
   const cleanBackendUrl = backendUrl.replace(/\/+$/, "");
 
   let user = null;
+  let validationFailed = false;
+  
   try {
     const res = await fetch(`${cleanBackendUrl}/auth/session/validate`, {
       headers: {
@@ -35,14 +37,22 @@ export default async function WorkspacePage() {
           identity: data.user.identity,
           provider: data.user.provider,
         };
+      } else {
+        validationFailed = true;
+        console.warn("Session validation returned invalid:", data);
       }
+    } else {
+      validationFailed = true;
+      console.warn(`Session validation failed with status: ${res.status}`);
     }
   } catch (error) {
     console.error("Failed to validate session with backend:", error);
+    validationFailed = true;
   }
 
-  if (!user) {
-    redirect("/login");
+  // If validation failed, redirect to login with an error parameter
+  if (validationFailed || !user) {
+    redirect("/login?error=session_invalid");
   }
 
   return <ChatPage user={user} />;

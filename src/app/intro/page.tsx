@@ -29,6 +29,7 @@ import {
   ClipboardPaste,
   Copy,
   Check,
+  LogOut,
 } from "lucide-react";
 
 function IntroPageContent() {
@@ -56,6 +57,25 @@ function IntroPageContent() {
   const [activeTelemetryTab, setActiveTelemetryTab] = useState<string>("edit");
   const [selectedLayer, setSelectedLayer] = useState<number | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+
+  // Function to clear session cookies
+  const handleClearCookies = () => {
+    // Clear session_token cookie
+    document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    
+    // Also clear localStorage items
+    localStorage.removeItem("last_thread_id");
+    localStorage.removeItem("last_used_provider");
+    
+    // Clear all markdown thread data
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith("markdown_thread_")) {
+        localStorage.removeItem(key);
+      }
+    });
+    
+    toast.success("Session cookies cleared. Please refresh the page.");
+  };
 
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -754,6 +774,22 @@ function IntroPageContent() {
         </nav>
 
         <div className="flex items-center gap-4">
+          {/* Clear Cookies Button */}
+          <div className="tooltip-wrapper">
+            <button
+              onClick={handleClearCookies}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-white/70 shadow-md transition hover:bg-zinc-700 hover:text-white"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+            <div className="tooltip-box-bottom">
+              <div className="z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-white/10 bg-zinc-900" />
+              <div className="whitespace-nowrap rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-white shadow-xl">
+                CLEAR SESSION COOKIES
+              </div>
+            </div>
+          </div>
+          
           <div className="flex select-none items-center gap-0.5 font-mono text-xs text-white/40">
             <div className="tooltip-wrapper">
               <span

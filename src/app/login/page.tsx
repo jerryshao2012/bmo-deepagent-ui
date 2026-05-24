@@ -15,8 +15,18 @@ export default async function LoginPage({
   const cookieStore = await cookies();
   const token = cookieStore.get("session_token")?.value;
   const resolvedSearchParams = await searchParams;
+  
+  // Check for error parameter
+  const error = typeof resolvedSearchParams.error === 'string' ? resolvedSearchParams.error : null;
+  
+  // If there's an error, clear the session token to break the redirect loop
+  if (error && token) {
+    // We can't delete cookies directly in server components,
+    // but we can pass this info to the client component
+    console.warn(`Login page accessed with error: ${error}. Session token will need to be cleared.`);
+  }
 
-  if (token) {
+  if (token && !error) {
     // Redirect to chat or callback URL if provided
     const callbackUrl = typeof resolvedSearchParams.callbackUrl === 'string' ? resolvedSearchParams.callbackUrl : '/chat';
     redirect(callbackUrl);
@@ -106,6 +116,24 @@ export default async function LoginPage({
               Sign in to your account to continue
             </p>
           </div>
+
+          {/* Error message */}
+          {error && (
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4">
+              <p className="text-sm font-medium text-red-800">
+                {error === 'session_invalid' 
+                  ? 'Your session has expired or is invalid. Please sign in again.'
+                  : 'An error occurred during authentication.'}
+              </p>
+              <p className="mt-2 text-xs text-red-600">
+                If you continue to experience issues, try{' '}
+                <a href="/intro" className="underline hover:text-red-700">
+                  visiting the intro page
+                </a>{' '}
+                and clearing your session cookies.
+              </p>
+            </div>
+          )}
 
           {/* Sign-in buttons */}
           <LoginProviders

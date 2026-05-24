@@ -17,6 +17,7 @@ import {
   Clock,
   Circle,
   FileIcon,
+  AlertCircle,
 } from "lucide-react";
 import { ChatMessage } from "@/app/components/ChatMessage";
 import type {
@@ -113,6 +114,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     chatElapsedSeconds,
     messageTimings,
     processingHumanMessageId,
+    streamError,
     setFiles,
     isLoading,
     isThreadLoading,
@@ -472,6 +474,22 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
             <div className="flex items-center justify-center p-8">
               <p className="text-muted-foreground">Loading...</p>
             </div>
+          ) : streamError ? (
+            <div className="mx-auto mb-4 max-w-[1024px] rounded-lg border border-red-200 bg-red-50 p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
+                <div className="flex-1 overflow-hidden">
+                  <h3 className="mb-1 text-sm font-semibold text-red-800">
+                    Backend Error
+                  </h3>
+                  <div className="max-h-96 overflow-y-auto rounded-md bg-red-100 p-3">
+                    <pre className="whitespace-pre-wrap break-all text-xs text-red-900">
+                      {streamError.message || String(streamError)}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+            </div>
           ) : (
             <>
               {processedMessages.map((data, index) => {
@@ -731,7 +749,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                           files={files}
                           setFiles={setFiles}
                           editDisabled={
-                            isLoading === true || interrupt !== undefined
+                            isLoading || interrupt !== undefined
                           }
                         />
                       </div>

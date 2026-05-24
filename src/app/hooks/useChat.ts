@@ -43,11 +43,11 @@ function extractFileText(value: unknown): string {
 
 export function useChat({
   activeAssistant,
-  onHistoryRevalidate,
+  onHistoryRevalidateAction,
   thread,
 }: {
   activeAssistant: Assistant | null;
-  onHistoryRevalidate?: () => void;
+  onHistoryRevalidateAction?: () => void;
   thread?: UseStreamThread<StateType>;
 }) {
   const [threadId, setThreadId] = useQueryState("threadId");
@@ -78,6 +78,7 @@ export function useChat({
     string | null
   >(null);
   const [localFiles, setLocalFiles] = useState<Record<string, unknown>>({});
+  const [streamError, setStreamError] = useState<Error | null>(null);
   const turnCountRef = useRef(0);
   const previousThreadIdRef = useRef<string | null | undefined>(undefined);
   const locallyUpdatedFilesRef = useRef<Record<string, string>>({});
@@ -99,9 +100,14 @@ export function useChat({
     // Enable fetching state history when switching to existing threads
     fetchStateHistory: true,
     // Revalidate thread list when stream finishes, errors, or creates new thread
-    onFinish: onHistoryRevalidate,
-    onError: onHistoryRevalidate,
-    onCreated: onHistoryRevalidate,
+    onFinish: onHistoryRevalidateAction,
+    onError: (error) => {
+      console.error("Stream error:", error);
+      const errorObject = error instanceof Error ? error : new Error(String(error));
+      setStreamError(errorObject);
+      onHistoryRevalidateAction?.();
+    },
+    onCreated: onHistoryRevalidateAction,
     experimental_thread: thread,
   });
 
@@ -127,6 +133,7 @@ export function useChat({
         setProcessingHumanMessageId(null);
         locallyUpdatedFilesRef.current = {};
         setLocalFiles({});
+        setStreamError(null);
       }
     }
 
@@ -327,9 +334,9 @@ export function useChat({
         }
       );
       // Update thread list immediately when sending a message
-      onHistoryRevalidate?.();
+      onHistoryRevalidateAction?.();
     },
-    [stream, activeAssistant?.config, onHistoryRevalidate]
+    [stream, activeAssistant?.config, onHistoryRevalidateAction]
   );
 
   const runSingleStep = useCallback(
@@ -396,24 +403,24 @@ export function useChat({
           : { interruptBefore: ["tools"] }),
       });
       // Update thread list when continuing stream
-      onHistoryRevalidate?.();
+      onHistoryRevalidateAction?.();
     },
-    [stream, activeAssistant?.config, onHistoryRevalidate]
+    [stream, activeAssistant?.config, onHistoryRevalidateAction]
   );
 
   const markCurrentThreadAsResolved = useCallback(() => {
     stream.submit(null, { command: { goto: "__end__", update: null } });
     // Update thread list when marking thread as resolved
-    onHistoryRevalidate?.();
-  }, [stream, onHistoryRevalidate]);
+    onHistoryRevalidateAction?.();
+  }, [stream, onHistoryRevalidateAction]);
 
   const resumeInterrupt = useCallback(
     (value: any) => {
       stream.submit(null, { command: { resume: value } });
       // Update thread list when resuming from interrupt
-      onHistoryRevalidate?.();
+      onHistoryRevalidateAction?.();
     },
-    [stream, onHistoryRevalidate]
+    [stream, onHistoryRevalidateAction]
   );
 
   const stopStream = useCallback(() => {
@@ -455,6 +462,7 @@ export function useChat({
     ui: effectiveUi,
     messageTimings,
     processingHumanMessageId,
+    streamError,
     setFiles,
     messages: effectiveMessages,
     isLoading: stream.isLoading,

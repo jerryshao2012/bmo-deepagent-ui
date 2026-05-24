@@ -110,9 +110,21 @@ function HomePageInner({
           (assistant) => assistant.metadata?.["created_by"] === "system"
         );
         if (defaultAssistant === undefined) {
-          throw new Error("No default assistant found");
+          console.error("No default assistant found");
+          setAssistant({
+            assistant_id: config.assistantId,
+            graph_id: config.assistantId,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            config: {},
+            metadata: {},
+            version: 1,
+            name: config.assistantId,
+            context: {},
+          });
+        } else {
+          setAssistant(defaultAssistant);
         }
-        setAssistant(defaultAssistant);
       } catch (error) {
         console.error(
           "Failed to find default assistant from graph_id: try setting the assistant_id directly:",
@@ -277,7 +289,7 @@ function HomePageInner({
             >
               <ChatProvider
                 activeAssistant={assistant}
-                onHistoryRevalidate={triggerThreadListRefresh}
+                onHistoryRevalidateAction={triggerThreadListRefresh}
               >
                 <ChatControlsBridge
                   onStopStreamReady={(fn) => {

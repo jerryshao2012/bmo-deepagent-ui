@@ -8,17 +8,17 @@ import type { UseStreamThread } from "@langchain/langgraph-sdk/react";
 interface ChatProviderProps {
   children: ReactNode;
   activeAssistant: Assistant | null;
-  onHistoryRevalidate?: () => void;
+  onHistoryRevalidateAction?: () => void;
   thread?: UseStreamThread<StateType>;
 }
 
 export function ChatProvider({
   children,
   activeAssistant,
-  onHistoryRevalidate,
+  onHistoryRevalidateAction,
   thread,
 }: ChatProviderProps) {
-  const chat = useChat({ activeAssistant, onHistoryRevalidate, thread });
+  const chat = useChat({ activeAssistant, onHistoryRevalidateAction, thread });
   return <ChatContext.Provider value={chat}>{children}</ChatContext.Provider>;
 }
 

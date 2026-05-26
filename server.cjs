@@ -99,6 +99,10 @@ app.prepare().then(() => {
   // Batch save mechanism - store pending updates and flush periodically
   const pendingSaves = new Map(); // Map<threadId, { content: string, lastUpdated: number }>
   const BATCH_SAVE_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
+  
+  // Debounce timers for immediate flush (1-2 second delay)
+  const debounceTimers = new Map(); // Map<threadId, NodeJS.Timeout>
+  const DEBOUNCE_DELAY = 1500; // 1.5 seconds
 
   function scheduleBatchSave(threadId, content) {
     // Update or create pending save entry
@@ -106,6 +110,48 @@ app.prepare().then(() => {
       content,
       lastUpdated: Date.now(),
     });
+    
+    // Clear existing debounce timer if any
+    if (debounceTimers.has(threadId)) {
+      clearTimeout(debounceTimers.get(threadId));
+    }
+    
+    // Set up debounced immediate flush
+    const timer = setTimeout(() => {
+      console.log(`[WS Debounce] Flushing thread ${threadId} after ${DEBOUNCE_DELAY}ms`);
+      const pendingData = pendingSaves.get(threadId);
+      if (pendingData) {
+        try {
+          const filePath = getFilePath(threadId);
+          const fileContent = pendingData.content;
+          
+          if (!fileContent || fileContent.trim() === "") {
+            if (fs.existsSync(filePath)) {
+              fs.unlinkSync(filePath);
+              console.log(
+                `[WS Debounce] Content removed. Deleted file for thread: ${threadId}`
+              );
+            }
+          } else {
+            fs.writeFileSync(filePath, fileContent, "utf8");
+            console.log(
+              `[WS Debounce] Content saved. Wrote file for thread: ${threadId}`
+            );
+          }
+          
+          // Remove from pending saves since we just flushed it
+          pendingSaves.delete(threadId);
+        } catch (err) {
+          console.error(
+            `[WS Debounce] Error writing file for thread ${threadId}:`,
+            err
+          );
+        }
+      }
+      debounceTimers.delete(threadId);
+    }, DEBOUNCE_DELAY);
+    
+    debounceTimers.set(threadId, timer);
   }
 
   function flushPendingSaves() {
@@ -150,18 +196,30 @@ app.prepare().then(() => {
     }
   }
 
-  // Set up periodic batch save interval
+  // Set up periodic batch save interval (for remaining unsaved items)
   const batchSaveInterval = setInterval(flushPendingSaves, BATCH_SAVE_INTERVAL);
 
   // Also flush on graceful shutdown
   process.on("SIGTERM", () => {
     console.log("[WS] Graceful shutdown - flushing pending saves...");
+    // Clear all debounce timers first
+    for (const [threadId, timer] of debounceTimers.entries()) {
+      clearTimeout(timer);
+    }
+    debounceTimers.clear();
+    // Flush all pending saves
     flushPendingSaves();
     clearInterval(batchSaveInterval);
   });
 
   process.on("SIGINT", () => {
     console.log("[WS] Graceful shutdown - flushing pending saves...");
+    // Clear all debounce timers first
+    for (const [threadId, timer] of debounceTimers.entries()) {
+      clearTimeout(timer);
+    }
+    debounceTimers.clear();
+    // Flush all pending saves
     flushPendingSaves();
     clearInterval(batchSaveInterval);
   });

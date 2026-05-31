@@ -360,8 +360,34 @@ app.prepare().then(() => {
           } else {
             roomContent.set(threadId, data.content);
           }
-          // Schedule for batch save instead of immediate save
-          scheduleBatchSave(threadId, data.content);
+          
+          // Check if immediate save is requested
+          if (data.immediate === true && data.content && data.content.trim() !== "") {
+            // Save immediately without debounce delay
+            console.log(`[WS Immediate] Saving thread ${threadId} immediately`);
+            try {
+              const filePath = getFilePath(threadId);
+              fs.writeFileSync(filePath, data.content, "utf8");
+              console.log(
+                `[WS Immediate] Content saved. Wrote file for thread: ${threadId}`
+              );
+              // Remove from pending saves since we just flushed it
+              pendingSaves.delete(threadId);
+              // Clear any existing debounce timer
+              if (debounceTimers.has(threadId)) {
+                clearTimeout(debounceTimers.get(threadId));
+                debounceTimers.delete(threadId);
+              }
+            } catch (err) {
+              console.error(
+                `[WS Immediate] Error writing file for thread ${threadId}:`,
+                err
+              );
+            }
+          } else {
+            // Schedule for batch save with debounce
+            scheduleBatchSave(threadId, data.content);
+          }
 
           // Broadcast to all other clients with the same thread ID
           const clients = rooms.get(threadId);

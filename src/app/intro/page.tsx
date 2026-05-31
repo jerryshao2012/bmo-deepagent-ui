@@ -228,11 +228,15 @@ function IntroPageContent() {
       setSharedText(text);
       if (text) {
         localStorage.setItem(`markdown_thread_${threadId}`, text);
+        // Save to server immediately if content is not empty
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "update", content: text, immediate: true }));
+        }
       } else {
         localStorage.removeItem(`markdown_thread_${threadId}`);
-      }
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "update", content: text }));
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "update", content: "" }));
+        }
       }
     } catch (err) {
       console.error("Failed to read from clipboard:", err);

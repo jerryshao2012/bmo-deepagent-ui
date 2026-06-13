@@ -144,3 +144,19 @@ You can also turn off Debug Mode to run the full agent end-to-end.
 If the term "Deep Agents" is new to you, check out these videos!
 [What are Deep Agents?](https://www.youtube.com/watch?v=433SmtTc0TA)
 [Implementing Deep Agents](https://www.youtube.com/watch?v=TTMYJAw5tiA&t=701s)
+
+### Azure Deployment
+
+**One-time Setup**
+
+Before your first deployment, you need to register the `Microsoft.ContainerRegistry` provider for your Azure subscription. This is a one-time operation.
+
+```bash
+az provider register --namespace Microsoft.ContainerRegistry
+```
+
+You can monitor the registration progress with the following command. Wait for it to show "Registered".
+
+```bash
+az provider show --namespace Microsoft.ContainerRegistry --query "registrationState"
+```

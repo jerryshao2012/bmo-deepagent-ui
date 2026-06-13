@@ -21,15 +21,15 @@ export ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query 'passwords
 echo "✅ Credentials retrieved successfully."
 
 # Get the agent's internal FQDN
-echo "🔍 Fetching internal FQDN for deep-research-agent..."
+echo "🔍 Fetching internal FQDN for deep-research-agent-$SEED..."
 AGENT_FQDN=$(az containerapp show \
-  --name deep-research-agent \
+  --name deep-research-agent-$SEED \
   --resource-group $RESOURCE_GROUP \
   --query properties.configuration.ingress.fqdn \
   -o tsv)
 
 if [ -z "$AGENT_FQDN" ]; then
-  echo "❌ Failed to retrieve Agent FQDN. Ensure 'deep-research-agent' is deployed."
+  echo "❌ Failed to retrieve Agent FQDN. Ensure 'deep-research-agent-$SEED' is deployed."
   exit 1
 fi
 echo "✅ Agent FQDN: https://$AGENT_FQDN"
@@ -48,7 +48,7 @@ if [ -n "$UI_FQDN" ]; then
     --resource-group $RESOURCE_GROUP \
     --image $ACR_NAME.azurecr.io/deepagent-ui:latest \
     --set-env-vars \
-      NEXT_PUBLIC_LANGGRAPH_URL=${NEXT_PUBLIC_LANGGRAPH_URL:-https://deep-research-agent.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io} \
+      NEXT_PUBLIC_LANGGRAPH_URL=${NEXT_PUBLIC_LANGGRAPH_URL:-https://$AGENT_FQDN} \
       NEXT_PUBLIC_ASSISTANT_ID=${NEXT_PUBLIC_ASSISTANT_ID:-research} \
       NEXT_PUBLIC_LANGSMITH_API_KEY=$LANGCHAIN_API_KEY \
       AUTH_SECRET=$AUTH_SECRET \
@@ -83,7 +83,7 @@ else
     --cpu 1.0 \
     --memory 2Gi \
     --env-vars \
-      NEXT_PUBLIC_LANGGRAPH_URL=${NEXT_PUBLIC_LANGGRAPH_URL:-https://deep-research-agent.calmsmoke-0bc2dc70.canadacentral.azurecontainerapps.io} \
+      NEXT_PUBLIC_LANGGRAPH_URL=${NEXT_PUBLIC_LANGGRAPH_URL:-https://$AGENT_FQDN} \
       NEXT_PUBLIC_ASSISTANT_ID=${NEXT_PUBLIC_ASSISTANT_ID:-research} \
       NEXT_PUBLIC_LANGSMITH_API_KEY=$LANGCHAIN_API_KEY \
       AUTH_SECRET=$AUTH_SECRET \

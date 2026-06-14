@@ -7,8 +7,7 @@ export interface StandaloneConfig {
 const CONFIG_KEY = "deep-agent-config";
 
 const DEFAULT_DEPLOYMENT_URL =
-  process.env.NEXT_PUBLIC_LANGGRAPH_URL ||
-  process.env.NEXT_PUBLIC_DEPLOYMENT_URL;
+  process.env.NEXT_PUBLIC_LANGGRAPH_URL;
 const DEFAULT_ASSISTANT_ID = process.env.NEXT_PUBLIC_ASSISTANT_ID;
 
 export function getConfig(): StandaloneConfig | null {

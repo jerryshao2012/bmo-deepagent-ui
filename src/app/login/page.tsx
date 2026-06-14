@@ -139,7 +139,7 @@ export default async function LoginPage({
           <LoginProviders
             onSignIn={async (provider: string) => {
               "use server";
-              const backendUrl = process.env.LANGGRAPH_URL || process.env.NEXT_PUBLIC_LANGGRAPH_URL || "http://localhost:2024";
+              const backendUrl = process.env.NEXT_PUBLIC_LANGGRAPH_URL || "http://localhost:2024";
               const cleanBackendUrl = backendUrl.replace(/\/+$/, "");
               redirect(`${cleanBackendUrl}/auth/login/${provider}`);
             }}

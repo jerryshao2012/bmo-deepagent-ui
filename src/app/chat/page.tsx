@@ -13,7 +13,7 @@ export default async function WorkspacePage() {
   }
 
   // Fetch user data from the backend validation endpoint
-  const backendUrl = process.env.LANGGRAPH_URL || process.env.NEXT_PUBLIC_LANGGRAPH_URL || "http://localhost:2024";
+  const backendUrl = process.env.NEXT_PUBLIC_LANGGRAPH_URL || "http://localhost:2024";
   const cleanBackendUrl = backendUrl.replace(/\/+$/, "");
 
   let user = null;

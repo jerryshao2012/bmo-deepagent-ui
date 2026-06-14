@@ -42,6 +42,15 @@ if [ -n "$UI_FQDN" ]; then
   echo "📝 Container app 'deepagent-ui' already exists. Updating with new image..."
   echo "✅ UI FQDN: https://$UI_FQDN"
   
+  # Ensure the container app has registry credentials configured for the current ACR
+  echo "🔑 Setting registry credentials for $ACR_NAME.azurecr.io..."
+  az containerapp registry set \
+    --name deepagent-ui \
+    --resource-group $RESOURCE_GROUP \
+    --server $ACR_NAME.azurecr.io \
+    --username $ACR_USERNAME \
+    --password $ACR_PASSWORD
+  
   # Update the container app with the new image and ensure all environment variables are set
   az containerapp update \
     --name deepagent-ui \

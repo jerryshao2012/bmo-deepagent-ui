@@ -17,4 +17,5 @@ node_modules/
 
 .env
 .env.docker
+.env-aws.docker
 

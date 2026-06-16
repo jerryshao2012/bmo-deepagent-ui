@@ -5,14 +5,19 @@ import { useEffect, useState } from "react";
 import { Globe } from "lucide-react";
 
 interface QRCodeSignInProps {
-  azureUrl: string;
+  url?: string;
 }
 
-export default function QRCodeSignIn({ azureUrl }: QRCodeSignInProps) {
+export default function QRCodeSignIn({ url: initialUrl }: QRCodeSignInProps) {
   const [mounted, setMounted] = useState(false);
+  const [url, setUrl] = useState(initialUrl || "");
 
   useEffect(() => {
     setMounted(true);
+    // Use the browser's origin (e.g., https://example.com) for the QR code
+    if (typeof window !== "undefined") {
+      setUrl(window.location.origin);
+    }
   }, []);
 
   if (!mounted) return null;
@@ -20,14 +25,14 @@ export default function QRCodeSignIn({ azureUrl }: QRCodeSignInProps) {
   return (
     <div className="mt-8 flex flex-col items-center gap-4">
       <a 
-        href={azureUrl}
+        href={url}
         className="relative group cursor-pointer block"
         title="Click to open Azure Deployment"
       >
         <div className="absolute -inset-2 bg-gradient-to-r from-blue-500/10 to-teal-500/10 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
         <div className="relative p-3 bg-white rounded-2xl border border-slate-100 shadow-sm transition-all duration-300 group-hover:shadow-md group-hover:border-slate-200">
           <QRCodeSVG
-            value={azureUrl}
+            value={url}
             size={120}
             level="H"
             includeMargin={false}

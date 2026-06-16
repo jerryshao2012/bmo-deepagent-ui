@@ -146,7 +146,7 @@ export default async function LoginPage({
           />
 
           {/* QR Code Section */}
-          <QRCodeSignIn azureUrl="https://deepagent-ui.salmonrock-b46ff20d.canadacentral.azurecontainerapps.io/" />
+          <QRCodeSignIn />
 
           {/* Footer text */}
           <p className="mt-8 text-center text-[0.7rem] leading-relaxed text-slate-400">

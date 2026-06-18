@@ -750,7 +750,7 @@ function IntroPageContent() {
               </div>
             </div>
           </div>
-          
+
           <div className="flex select-none items-center gap-0.5 font-mono text-xs text-white/40">
             <div className="tooltip-wrapper">
               <span
@@ -796,7 +796,7 @@ function IntroPageContent() {
           }`}
         >
           <h1 className="font-outfit text-5xl font-semibold leading-none text-white sm:text-7xl md:text-8xl">
-            Deep Agent
+            Harness Engineering
           </h1>
 
           <p className="font-outfit mt-5 text-3xl font-semibold leading-tight text-[#f5f5f7] sm:text-5xl md:text-6xl">
@@ -876,8 +876,16 @@ function IntroPageContent() {
                       </div>
                       <div className="grid gap-3 sm:grid-cols-3">
                         {[
-                          ["01", "Plan", "Breaks work into explicit checkpoints."],
-                          ["02", "Execute", "Runs tools inside bounded workflows."],
+                          [
+                            "01",
+                            "Plan",
+                            "Breaks work into explicit checkpoints.",
+                          ],
+                          [
+                            "02",
+                            "Execute",
+                            "Runs tools inside bounded workflows.",
+                          ],
                           ["03", "Verify", "Checks output before handoff."],
                         ].map(([step, title, copy]) => (
                           <button
@@ -930,7 +938,6 @@ function IntroPageContent() {
               </div>
             </div>
           </div>
-
         </div>
       </section>
 
@@ -950,8 +957,8 @@ function IntroPageContent() {
                 Get the highlights.
               </h2>
               <p className="mt-4 max-w-2xl text-lg leading-relaxed text-[#6e6e73]">
-                Deep Agent wraps model intelligence in durable planning,
-                scoped tools, and verification steps that make complex work
+                Deep Agent wraps model intelligence in durable planning, scoped
+                tools, and verification steps that make complex work
                 inspectable.
               </p>
             </div>
@@ -1034,9 +1041,8 @@ function IntroPageContent() {
                 One result.
               </h2>
               <p className="mt-6 max-w-xl text-lg leading-relaxed text-[#a1a1a6]">
-                The planner loop and execution loop run as distinct systems:
-                one decides what should happen, the other proves what did
-                happen.
+                The planner loop and execution loop run as distinct systems: one
+                decides what should happen, the other proves what did happen.
               </p>
             </div>
 
@@ -1127,21 +1133,19 @@ function IntroPageContent() {
                 </h3>
               </div>
               <div className="mt-12 grid gap-3 sm:grid-cols-3">
-                {[
-                  "Filesystem scoped",
-                  "Process limits",
-                  "Approval gates",
-                ].map((item) => (
-                  <div
-                    key={item}
-                    className="rounded-2xl border border-[#d2d2d7] p-4"
-                  >
-                    <CheckCircle className="h-5 w-5 text-[#0071e3]" />
-                    <p className="mt-10 text-sm font-semibold text-[#1d1d1f]">
-                      {item}
-                    </p>
-                  </div>
-                ))}
+                {["Filesystem scoped", "Process limits", "Approval gates"].map(
+                  (item) => (
+                    <div
+                      key={item}
+                      className="rounded-2xl border border-[#d2d2d7] p-4"
+                    >
+                      <CheckCircle className="h-5 w-5 text-[#0071e3]" />
+                      <p className="mt-10 text-sm font-semibold text-[#1d1d1f]">
+                        {item}
+                      </p>
+                    </div>
+                  )
+                )}
               </div>
             </div>
 
@@ -1181,38 +1185,38 @@ function IntroPageContent() {
               </div>
               <p className="mt-12 text-lg leading-relaxed text-[#6e6e73]">
                 Model Context Protocol registers tools through standardized
-                contracts, then keeps the workspace auditable as the agent
-                moves from research to execution.
+                contracts, then keeps the workspace auditable as the agent moves
+                from research to execution.
               </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="rounded-[28px] border border-white/10 bg-white/[0.06] p-7 text-left">
                 <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-[#7ee7d3]">
-                <FolderTree className="h-5 w-5" />
+                  <FolderTree className="h-5 w-5" />
+                </div>
+                <h4 className="mt-20 text-2xl font-semibold text-white">
+                  Durable Filesystem Workspace
+                </h4>
+                <p className="mt-4 text-sm leading-relaxed text-[#a1a1a6]">
+                  The agent keeps a workspace structure where it files planning
+                  checklists, drafts, code files, and final artifacts, leaving a
+                  completely auditable workspace history.
+                </p>
               </div>
-              <h4 className="mt-20 text-2xl font-semibold text-white">
-                Durable Filesystem Workspace
-              </h4>
-              <p className="mt-4 text-sm leading-relaxed text-[#a1a1a6]">
-                The agent keeps a workspace structure where it files planning
-                checklists, drafts, code files, and final artifacts, leaving a
-                completely auditable workspace history.
-              </p>
-            </div>
 
               <div className="rounded-[28px] border border-white/10 bg-white/[0.06] p-7 text-left">
                 <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-[#6bd1ff]">
-                <Search className="h-5 w-5" />
-              </div>
-              <h4 className="mt-20 text-2xl font-semibold text-white">
-                Tool Pruning Filters
-              </h4>
-              <p className="mt-4 text-sm leading-relaxed text-[#a1a1a6]">
-                Filters and prunes unnecessary tools dynamically based on the
-                step of the plan. Minimizes context pollution and improves
-                execution speeds.
-              </p>
+                  <Search className="h-5 w-5" />
+                </div>
+                <h4 className="mt-20 text-2xl font-semibold text-white">
+                  Tool Pruning Filters
+                </h4>
+                <p className="mt-4 text-sm leading-relaxed text-[#a1a1a6]">
+                  Filters and prunes unnecessary tools dynamically based on the
+                  step of the plan. Minimizes context pollution and improves
+                  execution speeds.
+                </p>
               </div>
             </div>
           </div>
@@ -1689,9 +1693,12 @@ function IntroPageContent() {
                     <ScrollArea className="min-h-0 w-full flex-1 bg-transparent">
                       <div
                         ref={previewRef}
-                        className="m-4 p-8 text-left bg-white text-zinc-900 rounded-2xl border border-zinc-200 shadow-lg min-h-[calc(100%-2rem)]"
+                        className="m-4 min-h-[calc(100%-2rem)] rounded-2xl border border-zinc-200 bg-white p-8 text-left text-zinc-900 shadow-lg"
                       >
-                        <MarkdownContent content={sharedText} light={true} />
+                        <MarkdownContent
+                          content={sharedText}
+                          light={true}
+                        />
                       </div>
                       <ScrollBar orientation="horizontal" />
                     </ScrollArea>

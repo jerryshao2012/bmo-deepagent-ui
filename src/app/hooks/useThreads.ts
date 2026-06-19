@@ -12,6 +12,7 @@ export interface ThreadItem {
   title: string;
   description: string;
   assistantId?: string;
+  isUserDefinedTitle?: boolean;
 }
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -21,9 +22,7 @@ function createThreadsClient() {
   if (!config) return null;
 
   const apiKey =
-    config.langsmithApiKey ||
-    process.env.NEXT_PUBLIC_LANGSMITH_API_KEY ||
-    "";
+    config.langsmithApiKey || process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
 
   return new Client(
     createLangGraphClientConfig({
@@ -36,22 +35,35 @@ function createThreadsClient() {
 function extractThreadPreview(thread: any): {
   title: string;
   description: string;
+  isUserDefinedTitle: boolean;
 } {
   let title = "Untitled Thread";
   let description = "";
+  let isUserDefinedTitle = false;
+
+  const customTitle = thread?.metadata?.custom_title;
+  if (typeof customTitle === "string" && customTitle.trim().length > 0) {
+    title = customTitle.trim();
+    isUserDefinedTitle = true;
+  }
 
   try {
     if (thread?.values && typeof thread.values === "object") {
       const values = thread.values as any;
       const messages = Array.isArray(values.messages) ? values.messages : [];
 
-      const firstHumanMessage = messages.find((m: any) => m.type === "human");
-      if (firstHumanMessage?.content) {
-        const content =
-          typeof firstHumanMessage.content === "string"
-            ? firstHumanMessage.content
-            : firstHumanMessage.content[0]?.text || "";
-        title = content.slice(0, 50) + (content.length > 50 ? "..." : "");
+      if (!isUserDefinedTitle) {
+        const firstHumanMessage = messages.find((m: any) => m.type === "human");
+        if (firstHumanMessage?.content) {
+          const content =
+            typeof firstHumanMessage.content === "string"
+              ? firstHumanMessage.content
+              : firstHumanMessage.content[0]?.text || "";
+
+          if (content) {
+            title = content.slice(0, 50) + (content.length > 50 ? "..." : "");
+          }
+        }
       }
 
       const firstAiMessage = messages.find((m: any) => m.type === "ai");
@@ -64,12 +76,12 @@ function extractThreadPreview(thread: any): {
       }
     }
   } catch {
-    if (thread?.thread_id) {
+    if (!isUserDefinedTitle && thread?.thread_id) {
       title = `Thread ${thread.thread_id.slice(0, 8)}`;
     }
   }
 
-  return { title, description };
+  return { title, description, isUserDefinedTitle };
 }
 
 export function useThreads(props: {
@@ -83,7 +95,9 @@ export function useThreads(props: {
       return false;
     }
 
-    return pages.some((page) => page.some((thread) => thread.status === "busy"));
+    return pages.some((page) =>
+      page.some((thread) => thread.status === "busy")
+    );
   };
 
   return useSWRInfinite(
@@ -149,7 +163,8 @@ export function useThreads(props: {
       });
 
       const mappedThreads = threads.map((thread): ThreadItem => {
-        const { title, description } = extractThreadPreview(thread);
+        const { title, description, isUserDefinedTitle } =
+          extractThreadPreview(thread);
 
         return {
           id: thread.thread_id,
@@ -158,6 +173,7 @@ export function useThreads(props: {
           title,
           description,
           assistantId,
+          isUserDefinedTitle,
         };
       });
 
@@ -170,7 +186,8 @@ export function useThreads(props: {
       return await Promise.all(
         mappedThreads.map(async (thread) => {
           const needsHydration =
-            thread.status === "busy" || thread.title === "Untitled Thread";
+            thread.status === "busy" ||
+            (!thread.isUserDefinedTitle && thread.title === "Untitled Thread");
 
           if (!needsHydration) {
             return thread;
@@ -235,9 +252,7 @@ export async function deleteThread(threadId: string): Promise<void> {
   if (!config) return;
 
   const apiKey =
-    config.langsmithApiKey ||
-    process.env.NEXT_PUBLIC_LANGSMITH_API_KEY ||
-    "";
+    config.langsmithApiKey || process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
 
   const client = new Client(
     createLangGraphClientConfig({
@@ -247,6 +262,38 @@ export async function deleteThread(threadId: string): Promise<void> {
   );
 
   await client.threads.delete(threadId);
+}
+
+export async function updateThreadTitle(
+  threadId: string,
+  title: string
+): Promise<void> {
+  const config = getConfig();
+  if (!config) return;
+
+  const apiKey =
+    config.langsmithApiKey || process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
+
+  const client = new Client(
+    createLangGraphClientConfig({
+      deploymentUrl: config.deploymentUrl,
+      apiKey,
+    })
+  );
+
+  const existing = await (client.threads as any).get(threadId);
+  const metadata =
+    existing?.metadata && typeof existing.metadata === "object"
+      ? existing.metadata
+      : {};
+
+  await client.threads.update(threadId, {
+    metadata: {
+      ...metadata,
+      custom_title: title.trim(),
+      title_source: "user",
+    },
+  });
 }
 
 /**
@@ -259,9 +306,7 @@ export async function cleanupOldThreads(days: number = 7): Promise<void> {
   if (!config) return;
 
   const apiKey =
-    config.langsmithApiKey ||
-    process.env.NEXT_PUBLIC_LANGSMITH_API_KEY ||
-    "";
+    config.langsmithApiKey || process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
 
   const client = new Client(
     createLangGraphClientConfig({
@@ -274,8 +319,10 @@ export async function cleanupOldThreads(days: number = 7): Promise<void> {
     // Calculate cutoff date based on last update time
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
-    
-    console.log(`[Cleanup] Starting thread cleanup - deleting threads not updated since ${cutoffDate.toISOString()} (${days} days ago)`);
+
+    console.log(
+      `[Cleanup] Starting thread cleanup - deleting threads not updated since ${cutoffDate.toISOString()} (${days} days ago)`
+    );
 
     // Search threads in batches to handle pagination
     let offset = 0;
@@ -301,15 +348,22 @@ export async function cleanupOldThreads(days: number = 7): Promise<void> {
       for (const thread of threads) {
         checkedCount++;
         const updatedAt = new Date(thread.updated_at);
-        
+
         // Only delete if thread hasn't been updated in the retention period
         if (updatedAt < cutoffDate) {
           try {
             await client.threads.delete(thread.thread_id);
             deletedCount++;
-            console.log(`[Cleanup] Deleted thread ${thread.thread_id} (last updated: ${updatedAt.toISOString()})`);
+            console.log(
+              `[Cleanup] Deleted thread ${
+                thread.thread_id
+              } (last updated: ${updatedAt.toISOString()})`
+            );
           } catch (error) {
-            console.error(`[Cleanup] Failed to delete thread ${thread.thread_id}:`, error);
+            console.error(
+              `[Cleanup] Failed to delete thread ${thread.thread_id}:`,
+              error
+            );
           }
         } else {
           // Thread is still active, stop checking further (sorted by updated_at desc)
@@ -322,14 +376,16 @@ export async function cleanupOldThreads(days: number = 7): Promise<void> {
       }
 
       offset += batchSize;
-      
+
       // If we got fewer threads than requested, we've reached the end
       if (threads.length < batchSize) {
         hasMore = false;
       }
     }
-    
-    console.log(`[Cleanup] Completed - checked ${checkedCount} threads, deleted ${deletedCount} old threads`);
+
+    console.log(
+      `[Cleanup] Completed - checked ${checkedCount} threads, deleted ${deletedCount} old threads`
+    );
   } catch (error) {
     console.error("[Cleanup] Error during thread cleanup:", error);
   }

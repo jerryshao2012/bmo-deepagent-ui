@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { format } from "date-fns";
-import { Loader2, MessageSquare, Trash2, X } from "lucide-react";
+import { Loader2, MessageSquare, Pencil, Trash2, X } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -19,7 +19,12 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { ThreadItem } from "@/app/hooks/useThreads";
-import { useThreads, deleteThread, cleanupOldThreads } from "@/app/hooks/useThreads";
+import {
+  useThreads,
+  deleteThread,
+  cleanupOldThreads,
+  updateThreadTitle,
+} from "@/app/hooks/useThreads";
 
 type StatusFilter = "all" | "idle" | "busy" | "interrupted" | "error";
 
@@ -128,6 +133,9 @@ export function ThreadList({
   const [currentThreadId, setCurrentThreadId] = useQueryState("threadId");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [savingTitleId, setSavingTitleId] = useState<string | null>(null);
 
   const threads = useThreads({
     status: statusFilter === "all" ? undefined : statusFilter,
@@ -227,6 +235,36 @@ export function ThreadList({
     onInterruptCountChange?.(interruptedCount);
   }, [interruptedCount, onInterruptCountChange]);
 
+  const startEditingTitle = useCallback((thread: ThreadItem) => {
+    setEditingThreadId(thread.id);
+    setEditingTitle(thread.title === "Untitled Thread" ? "" : thread.title);
+  }, []);
+
+  const cancelEditingTitle = useCallback(() => {
+    setEditingThreadId(null);
+    setEditingTitle("");
+  }, []);
+
+  const saveEditingTitle = useCallback(
+    async (thread: ThreadItem) => {
+      const nextTitle = editingTitle.trim();
+      if (!nextTitle) {
+        cancelEditingTitle();
+        return;
+      }
+
+      setSavingTitleId(thread.id);
+      try {
+        await updateThreadTitle(thread.id, nextTitle);
+        await threads.mutate();
+      } finally {
+        setSavingTitleId(null);
+        cancelEditingTitle();
+      }
+    },
+    [editingTitle, threads, cancelEditingTitle]
+  );
+
   return (
     <div className="absolute inset-0 flex flex-col">
       {/* Header with title, filter, and close button */}
@@ -319,18 +357,69 @@ export function ThreadList({
                   <div className="flex flex-col gap-1">
                     {groupThreads.map((thread) => (
                       <div key={thread.id} className="group relative">
-                        <button
-                          type="button"
-                          onClick={() => onThreadSelect(thread.id)}
-                          className={cn(
-                            "grid w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-3 pr-8 text-left transition-colors duration-200",
-                            "hover:bg-accent",
-                            currentThreadId === thread.id
-                              ? "border border-primary bg-accent hover:bg-accent"
-                              : "border border-transparent bg-transparent"
-                          )}
-                          aria-current={currentThreadId === thread.id}
-                        >
+                        {editingThreadId === thread.id ? (
+                          <div
+                            className={cn(
+                              "grid w-full items-center gap-3 rounded-lg border px-3 py-3 pr-14 text-left transition-colors duration-200",
+                              currentThreadId === thread.id
+                                ? "border-primary bg-accent"
+                                : "border-transparent bg-transparent"
+                            )}
+                            aria-current={currentThreadId === thread.id}
+                          >
+                            <div className="min-w-0 flex-1">
+                              {/* Title + Timestamp Row */}
+                              <div className="mb-1 flex items-center justify-between">
+                                <input
+                                  autoFocus
+                                  value={editingTitle}
+                                  onChange={(e) => setEditingTitle(e.target.value)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      void saveEditingTitle(thread);
+                                    } else if (e.key === "Escape") {
+                                      e.preventDefault();
+                                      cancelEditingTitle();
+                                    }
+                                  }}
+                                  className="h-7 w-full rounded border border-border bg-background px-2 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
+                                  aria-label="Edit thread title"
+                                />
+                                <span className="ml-2 flex-shrink-0 text-xs text-muted-foreground">
+                                  {formatTime(thread.updatedAt)}
+                                </span>
+                              </div>
+                              {/* Description + Status Row */}
+                              <div className="flex items-center justify-between">
+                                <p className="flex-1 truncate text-sm text-muted-foreground">
+                                  {thread.description}
+                                </p>
+                                <div className="ml-2 flex-shrink-0">
+                                  <div
+                                    className={cn(
+                                      "h-2 w-2 rounded-full",
+                                      getThreadColor(thread.status)
+                                    )}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => onThreadSelect(thread.id)}
+                            className={cn(
+                              "grid w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-3 pr-14 text-left transition-colors duration-200",
+                              "hover:bg-accent",
+                              currentThreadId === thread.id
+                                ? "border border-primary bg-accent hover:bg-accent"
+                                : "border border-transparent bg-transparent"
+                            )}
+                            aria-current={currentThreadId === thread.id}
+                          >
                           <div className="min-w-0 flex-1">
                             {/* Title + Timestamp Row */}
                             <div className="mb-1 flex items-center justify-between">
@@ -356,6 +445,24 @@ export function ThreadList({
                               </div>
                             </div>
                           </div>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          disabled={savingTitleId === thread.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startEditingTitle(thread);
+                          }}
+                          className="absolute right-8 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 disabled:pointer-events-none"
+                          aria-label="Edit thread title"
+                          title="Edit thread title"
+                        >
+                          {savingTitleId === thread.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Pencil className="h-3.5 w-3.5" />
+                          )}
                         </button>
                         <button
                           type="button"

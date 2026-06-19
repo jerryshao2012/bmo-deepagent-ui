@@ -136,6 +136,7 @@ export function ThreadList({
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [savingTitleId, setSavingTitleId] = useState<string | null>(null);
+  const isSavingTitleRef = useRef(false);
 
   const threads = useThreads({
     status: statusFilter === "all" ? undefined : statusFilter,
@@ -247,17 +248,28 @@ export function ThreadList({
 
   const saveEditingTitle = useCallback(
     async (thread: ThreadItem) => {
+      if (isSavingTitleRef.current) {
+        return;
+      }
+
       const nextTitle = editingTitle.trim();
       if (!nextTitle) {
         cancelEditingTitle();
         return;
       }
 
+      if (nextTitle === thread.title) {
+        cancelEditingTitle();
+        return;
+      }
+
+      isSavingTitleRef.current = true;
       setSavingTitleId(thread.id);
       try {
         await updateThreadTitle(thread.id, nextTitle);
         await threads.mutate();
       } finally {
+        isSavingTitleRef.current = false;
         setSavingTitleId(null);
         cancelEditingTitle();
       }
@@ -375,6 +387,9 @@ export function ThreadList({
                                   value={editingTitle}
                                   onChange={(e) => setEditingTitle(e.target.value)}
                                   onClick={(e) => e.stopPropagation()}
+                                  onBlur={() => {
+                                    void saveEditingTitle(thread);
+                                  }}
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter") {
                                       e.preventDefault();

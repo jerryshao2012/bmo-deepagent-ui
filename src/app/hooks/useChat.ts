@@ -23,6 +23,7 @@ export type StateType = {
     page_content?: string;
   };
   ui?: any;
+  no_web?: boolean | null;
 };
 
 function extractFileText(value: unknown): string {
@@ -62,6 +63,7 @@ export function useChat({
     files: Record<string, unknown>;
     email?: StateType["email"];
     ui?: StateType["ui"];
+    no_web?: StateType["no_web"];
     updatedAt: number;
   } | null>(null);
   const [messageTimings, setMessageTimings] = useState<
@@ -193,20 +195,14 @@ export function useChat({
       try {
         const threadState = (await (client.threads as any).get(threadId)) as {
           updated_at?: string;
-          values?: {
-            messages?: Message[];
-            todos?: TodoItem[];
-            files?: Record<string, unknown>;
-            email?: StateType["email"];
-            ui?: StateType["ui"];
-          };
+          values?: StateType;
         };
 
         if (isDisposed) {
           return;
         }
 
-        const values = threadState?.values ?? {};
+        const values = threadState?.values ?? ({} as Partial<StateType>);
         const serverMessages = values.messages ?? [];
         const serverUpdatedAt = threadState?.updated_at
           ? new Date(threadState.updated_at).getTime()
@@ -230,6 +226,7 @@ export function useChat({
             files: values.files ?? {},
             email: values.email,
             ui: values.ui,
+            no_web: values.no_web,
             updatedAt: serverUpdatedAt,
           };
         });
@@ -298,7 +295,7 @@ export function useChat({
   }, [stream.isLoading, stream.messages]);
 
   const sendMessage = useCallback(
-    (content: string) => {
+    (content: string, stateUpdates?: Record<string, any>) => {
       const humanMessageId = uuidv4();
       const newMessage: Message = {
         id: humanMessageId,
@@ -325,7 +322,7 @@ export function useChat({
         },
       }));
       stream.submit(
-        { messages: [newMessage] },
+        { messages: [newMessage], ...stateUpdates },
         {
           optimisticValues: (prev) => ({
             messages: [...(prev.messages ?? []), newMessage],
@@ -452,6 +449,10 @@ export function useChat({
     ? serverSnapshot?.files ?? localFiles
     : localFiles;
 
+  const effectiveNoWeb = shouldPreferServerSnapshot
+    ? serverSnapshot?.no_web
+    : stream.values.no_web;
+
   return {
     stream,
     todos: effectiveTodos,
@@ -475,5 +476,6 @@ export function useChat({
     stopStream,
     markCurrentThreadAsResolved,
     resumeInterrupt,
+    no_web: effectiveNoWeb,
   };
 }

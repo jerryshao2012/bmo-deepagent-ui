@@ -18,6 +18,7 @@ import {
   Circle,
   FileIcon,
   AlertCircle,
+  Globe,
 } from "lucide-react";
 import { ChatMessage } from "@/app/components/ChatMessage";
 import type {
@@ -122,12 +123,24 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     sendMessage,
     stopStream,
     resumeInterrupt,
+    no_web,
   } = useChatContext();
 
   const {
     data: selectedThreadStatus,
     isLoading: isSelectedThreadStatusLoading,
   } = useThreadStatus(currentThreadId);
+
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+
+  // Sync webSearchEnabled state with the thread's no_web configuration when thread loads or changes
+  useEffect(() => {
+    if (no_web !== undefined && no_web !== null) {
+      setWebSearchEnabled(!no_web);
+    } else {
+      setWebSearchEnabled(true);
+    }
+  }, [no_web, currentThreadId]);
 
   const localLatestStartedAt = useMemo(() => {
     const latestTiming = Object.values(messageTimings).sort(
@@ -187,10 +200,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       }
       const messageText = input;
       if (!messageText.trim() || composerLocked) return;
-      sendMessage(messageText);
+      sendMessage(messageText, { no_web: !webSearchEnabled });
       setInput("");
     },
-    [input, composerLocked, sendMessage, setInput]
+    [input, composerLocked, sendMessage, setInput, webSearchEnabled]
   );
 
   const handleKeyDown = useCallback(
@@ -774,10 +787,27 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
               rows={1}
             />
             <div className="flex justify-between gap-2 p-3">
-              <span className="self-center text-xxs italic text-[color:color-mix(in_srgb,var(--color-text-tertiary)_72%,white)]">
-                <b className="text-inherit">Enter</b> to send, {" "}
-                <b className="text-inherit">Shift+Enter</b> for new line
-              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setWebSearchEnabled((prev) => !prev)}
+                  disabled={composerLocked}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200",
+                    webSearchEnabled
+                      ? "border-primary/50 bg-primary/10 text-primary hover:bg-primary/20"
+                      : "border-border bg-transparent text-tertiary hover:bg-secondary/10 hover:text-secondary",
+                    composerLocked && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <Globe size={14} className={webSearchEnabled ? "text-primary" : "text-tertiary"} />
+                  <span>Search</span>
+                </button>
+                <span className="self-center text-xxs italic text-[color:color-mix(in_srgb,var(--color-text-tertiary)_72%,white)]">
+                  <b className="text-inherit">Enter</b> to send, {" "}
+                  <b className="text-inherit">Shift+Enter</b> for new line
+                </span>
+              </div>
               <div className="flex justify-end gap-2">
                 <Button
                   type={isLoading ? "button" : "submit"}

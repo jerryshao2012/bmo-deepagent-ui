@@ -96,7 +96,6 @@ You can get the Deployment URL and Assistant ID from the terminal output and `la
 
 - **Deployment URL**: The URL for the LangGraph deployment you are connecting to
 - **Assistant ID**: The ID of the assistant or agent you want to use
-- [Optional] **LangSmith API Key**: Your LangSmith API key (format: `lsv2_pt_...`). This may be required for accessing deployed LangGraph applications. You can also provide this via the `LANGCHAIN_API_KEY` environment variable.
 
 **Note:** When deploying to production, the application uses a server-side API proxy that automatically adds the `X-API-Key` header from the `LANGCHAIN_API_KEY` environment variable. Health check endpoints (`/health`, `/ok`) bypass authentication.
 
@@ -131,7 +130,7 @@ NEXT_PUBLIC_LANGSMITH_API_KEY="lsv2_xxxx"
 - **Health Checks**: Endpoints `/health` and `/ok` bypass authentication
 - **Local Development**: Can optionally use `NEXT_PUBLIC_LANGSMITH_API_KEY` for direct client-side authentication
 
-**Note:** Settings configured in the UI take precedence over environment variables.
+**Note:** LangSmith API keys are read from environment variables only.
 
 ### Usage
 

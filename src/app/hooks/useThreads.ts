@@ -21,8 +21,7 @@ function createThreadsClient() {
   const config = getConfig();
   if (!config) return null;
 
-  const apiKey =
-    config.langsmithApiKey || process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
+  const apiKey = process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
 
   return new Client(
     createLangGraphClientConfig({
@@ -105,10 +104,7 @@ export function useThreads(props: {
       const config = getConfig();
       if (!config) return null;
 
-      const apiKey =
-        config.langsmithApiKey ||
-        process.env.NEXT_PUBLIC_LANGSMITH_API_KEY ||
-        "";
+      const apiKey = process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
 
       // If the previous page returned no items, we've reached the end
       if (previousPageData && previousPageData.length === 0) {
@@ -251,8 +247,7 @@ export async function deleteThread(threadId: string): Promise<void> {
   const config = getConfig();
   if (!config) return;
 
-  const apiKey =
-    config.langsmithApiKey || process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
+  const apiKey = process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
 
   const client = new Client(
     createLangGraphClientConfig({
@@ -271,8 +266,7 @@ export async function updateThreadTitle(
   const config = getConfig();
   if (!config) return;
 
-  const apiKey =
-    config.langsmithApiKey || process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
+  const apiKey = process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
 
   const client = new Client(
     createLangGraphClientConfig({
@@ -305,8 +299,7 @@ export async function cleanupOldThreads(days: number = 7): Promise<void> {
   const config = getConfig();
   if (!config) return;
 
-  const apiKey =
-    config.langsmithApiKey || process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
+  const apiKey = process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
 
   const client = new Client(
     createLangGraphClientConfig({

@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  Suspense,
+} from "react";
 import { useQueryState } from "nuqs";
 import { getConfig, saveConfig, StandaloneConfig } from "@/lib/config";
 import { ConfigDialog } from "@/app/components/ConfigDialog";
@@ -202,7 +208,7 @@ function HomePageInner({
             )}
           </div>
           <div className="flex items-center gap-2">
-            <div className="text-sm text-muted-foreground mr-2">
+            <div className="mr-2 text-sm text-muted-foreground">
               <span className="font-medium">Assistant:</span>{" "}
               {config.assistantId}
             </div>
@@ -219,7 +225,7 @@ function HomePageInner({
               size="sm"
               onClick={() => setThreadId(null)}
               disabled={!threadId}
-              className="border-[#2F6868] bg-[#2F6868] text-white hover:bg-[#2F6868]/80 mr-2"
+              className="mr-2 border-[#2F6868] bg-[#2F6868] text-white hover:bg-[#2F6868]/80"
             >
               <SquarePen className="mr-2 h-4 w-4" />
               New Thread
@@ -227,30 +233,45 @@ function HomePageInner({
             {user && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="relative h-8 w-8 rounded-full border border-border">
+                  <Button
+                    variant="ghost"
+                    className="relative h-8 w-8 rounded-full border border-border"
+                  >
                     <Avatar className="h-8 w-8 bg-primary">
-                      <AvatarImage src={user.image || ""} alt={user.name || "User"} />
-                      <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
+                      <AvatarImage
+                        src={user.image || ""}
+                        alt={user.name || "User"}
+                      />
+                      <AvatarFallback className="text-primary-foreground bg-primary font-semibold">
                         {(user.name || "U")[0].toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56" align="end" forceMount>
+                <DropdownMenuContent
+                  className="w-56"
+                  align="end"
+                  forceMount
+                >
                   <DropdownMenuItem className="flex flex-col items-start gap-1 p-2">
                     <div className="font-medium">{user.name}</div>
-                    <div className="text-xs text-muted-foreground">{user.email}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {user.email}
+                    </div>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={async () => {
-                    // Call LangGraph server logout to clean up server session
-                    await logoutFromLangGraph(config.deploymentUrl);
-                    
-                    // Clear client-side session cookie
-                    document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-                    
-                    // Redirect to login page
-                    window.location.href = "/login";
-                  }}>
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      // Call LangGraph server logout to clean up server session
+                      await logoutFromLangGraph(config.deploymentUrl);
+
+                      // Clear client-side session cookie
+                      document.cookie =
+                        "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+
+                      // Redirect to login page
+                      window.location.href = "/login";
+                    }}
+                  >
                     Sign out
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -344,8 +365,7 @@ function HomePageContent({ user }: { user: any }) {
     setConfig(newConfig);
   }, []);
 
-  const langsmithApiKey =
-    config?.langsmithApiKey || process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
+  const langsmithApiKey = process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
 
   if (!config) {
     return (

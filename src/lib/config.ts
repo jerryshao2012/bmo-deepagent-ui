@@ -1,13 +1,11 @@
 export interface StandaloneConfig {
   deploymentUrl: string;
   assistantId: string;
-  langsmithApiKey?: string;
 }
 
 const CONFIG_KEY = "deep-agent-config";
 
-const DEFAULT_DEPLOYMENT_URL =
-  process.env.NEXT_PUBLIC_LANGGRAPH_URL;
+const DEFAULT_DEPLOYMENT_URL = process.env.NEXT_PUBLIC_LANGGRAPH_URL;
 const DEFAULT_ASSISTANT_ID = process.env.NEXT_PUBLIC_ASSISTANT_ID;
 
 export function getConfig(): StandaloneConfig | null {
@@ -37,7 +35,6 @@ export function getConfig(): StandaloneConfig | null {
     return {
       deploymentUrl: config.deploymentUrl || DEFAULT_DEPLOYMENT_URL || "",
       assistantId: config.assistantId || DEFAULT_ASSISTANT_ID || "",
-      langsmithApiKey: config.langsmithApiKey,
     };
   } catch {
     if (DEFAULT_DEPLOYMENT_URL && DEFAULT_ASSISTANT_ID) {

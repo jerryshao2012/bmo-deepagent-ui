@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { format } from "date-fns";
-import { Loader2, MessageSquare, Pencil, Trash2, X } from "lucide-react";
+import { Loader2, MessageSquare, Pencil, Trash2, X, Heart } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -24,9 +24,10 @@ import {
   deleteThread,
   cleanupOldThreads,
   updateThreadTitle,
+  updateThreadFavorite,
 } from "@/app/hooks/useThreads";
 
-type StatusFilter = "all" | "idle" | "busy" | "interrupted" | "error";
+type StatusFilter = "all" | "idle" | "busy" | "interrupted" | "error" | "favorite";
 
 const GROUP_LABELS = {
   interrupted: "Requiring Attention",
@@ -136,6 +137,7 @@ export function ThreadList({
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [savingTitleId, setSavingTitleId] = useState<string | null>(null);
+  const [favoritingId, setFavoritingId] = useState<string | null>(null);
   const isSavingTitleRef = useRef(false);
 
   const threads = useThreads({
@@ -325,6 +327,13 @@ export function ThreadList({
                   />
                 </SelectItem>
               </SelectGroup>
+              <SelectSeparator />
+              <SelectItem value="favorite">
+                <span className="inline-flex items-center gap-2">
+                  <Heart className="h-3.5 w-3.5 fill-red-500 text-red-500" />
+                  Favorite
+                </span>
+              </SelectItem>
             </SelectContent>
           </Select>
           {onClose && (
@@ -372,7 +381,7 @@ export function ThreadList({
                         {editingThreadId === thread.id ? (
                           <div
                             className={cn(
-                              "grid w-full items-center gap-3 rounded-lg border px-3 py-3 pr-14 text-left transition-colors duration-200",
+                              "grid w-full items-center gap-3 rounded-lg border px-3 py-3 pr-20 text-left transition-colors duration-200",
                               currentThreadId === thread.id
                                 ? "border-primary bg-accent"
                                 : "border-transparent bg-transparent"
@@ -401,6 +410,7 @@ export function ThreadList({
                                   }}
                                   className="h-7 w-full rounded border border-border bg-background px-2 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
                                   aria-label="Edit thread title"
+                                  // Keep title edit input text from wrapping or clashing with icons
                                 />
                                 <span className="ml-2 flex-shrink-0 text-xs text-muted-foreground">
                                   {formatTime(thread.updatedAt)}
@@ -427,7 +437,7 @@ export function ThreadList({
                             type="button"
                             onClick={() => onThreadSelect(thread.id)}
                             className={cn(
-                              "grid w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-3 pr-14 text-left transition-colors duration-200",
+                              "grid w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-3 pr-20 text-left transition-colors duration-200",
                               "hover:bg-accent",
                               currentThreadId === thread.id
                                 ? "border border-primary bg-accent hover:bg-accent"
@@ -462,6 +472,55 @@ export function ThreadList({
                           </div>
                           </button>
                         )}
+                        {thread.isFavorite ? (
+                          <button
+                            type="button"
+                            disabled={favoritingId === thread.id}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              setFavoritingId(thread.id);
+                              try {
+                                await updateThreadFavorite(thread.id, false);
+                                await threads.mutate();
+                              } finally {
+                                setFavoritingId(null);
+                              }
+                            }}
+                            className="absolute right-14 top-1/2 -translate-y-1/2 rounded p-1 text-red-500 transition-opacity disabled:pointer-events-none"
+                            aria-label="Unfavorite thread"
+                            title="Unfavorite thread"
+                          >
+                            {favoritingId === thread.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Heart className="h-3.5 w-3.5 fill-red-500 text-red-500" />
+                            )}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={favoritingId === thread.id}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              setFavoritingId(thread.id);
+                              try {
+                                await updateThreadFavorite(thread.id, true);
+                                await threads.mutate();
+                              } finally {
+                                setFavoritingId(null);
+                              }
+                            }}
+                            className="absolute right-14 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100 disabled:pointer-events-none"
+                            aria-label="Add to favorites"
+                            title="Add to favorites"
+                          >
+                            {favoritingId === thread.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Heart className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        )}
                         <button
                           type="button"
                           disabled={savingTitleId === thread.id}
@@ -479,45 +538,47 @@ export function ThreadList({
                             <Pencil className="h-3.5 w-3.5" />
                           )}
                         </button>
-                        <button
-                          type="button"
-                          disabled={deletingId === thread.id}
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            setDeletingId(thread.id);
-                            try {
-                              const isDeletingCurrentThread =
-                                currentThreadId === thread.id;
+                        {!thread.isFavorite && (
+                          <button
+                            type="button"
+                            disabled={deletingId === thread.id}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              setDeletingId(thread.id);
+                              try {
+                                const isDeletingCurrentThread =
+                                  currentThreadId === thread.id;
 
-                              if (isDeletingCurrentThread) {
-                                try {
-                                  await onStopCurrentThreadRun?.();
-                                } catch {
-                                  // Continue deletion even if stopping stream fails.
+                                if (isDeletingCurrentThread) {
+                                  try {
+                                    await onStopCurrentThreadRun?.();
+                                  } catch {
+                                    // Continue deletion even if stopping stream fails.
+                                  }
                                 }
+
+                                await deleteThread(thread.id);
+
+                                if (isDeletingCurrentThread) {
+                                  await setCurrentThreadId(null);
+                                }
+
+                                await threads.mutate();
+                              } finally {
+                                setDeletingId(null);
                               }
-
-                              await deleteThread(thread.id);
-
-                              if (isDeletingCurrentThread) {
-                                await setCurrentThreadId(null);
-                              }
-
-                              await threads.mutate();
-                            } finally {
-                              setDeletingId(null);
-                            }
-                          }}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 disabled:pointer-events-none"
-                          aria-label="Delete thread"
-                          title="Delete thread"
-                        >
-                          {deletingId === thread.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-3.5 w-3.5" />
-                          )}
-                        </button>
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 disabled:pointer-events-none"
+                            aria-label="Delete thread"
+                            title="Delete thread"
+                          >
+                            {deletingId === thread.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>

@@ -13,6 +13,7 @@ export interface ThreadItem {
   description: string;
   assistantId?: string;
   isUserDefinedTitle?: boolean;
+  isFavorite?: boolean;
 }
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -84,7 +85,7 @@ function extractThreadPreview(thread: any): {
 }
 
 export function useThreads(props: {
-  status?: Thread["status"];
+  status?: Thread["status"] | "favorite";
   limit?: number;
 }) {
   const pageSize = props.limit || DEFAULT_PAGE_SIZE;
@@ -135,7 +136,7 @@ export function useThreads(props: {
       deploymentUrl: string;
       assistantId: string;
       apiKey: string;
-      status?: Thread["status"];
+      status?: Thread["status"] | "favorite";
     }) => {
       const client = new Client(
         createLangGraphClientConfig({ deploymentUrl, apiKey })
@@ -152,10 +153,11 @@ export function useThreads(props: {
         offset: pageIndex * pageSize,
         sortBy: "updated_at" as const,
         sortOrder: "desc" as const,
-        status,
-        // Only filter by assistant_id metadata for deployed graphs (UUIDs)
-        // Local dev graphs don't set this metadata
-        ...(isUUID ? { metadata: { assistant_id: assistantId } } : {}),
+        status: status === "favorite" ? undefined : status,
+        metadata: {
+          ...(isUUID ? { assistant_id: assistantId } : {}),
+          ...(status === "favorite" ? { is_favorite: true } : {}),
+        },
       });
 
       const mappedThreads = threads.map((thread): ThreadItem => {
@@ -170,6 +172,7 @@ export function useThreads(props: {
           description,
           assistantId,
           isUserDefinedTitle,
+          isFavorite: !!thread.metadata?.is_favorite,
         };
       });
 
@@ -201,6 +204,7 @@ export function useThreads(props: {
               updatedAt: fullThread?.updated_at
                 ? new Date(fullThread.updated_at)
                 : thread.updatedAt,
+              isFavorite: !!fullThread?.metadata?.is_favorite,
             };
           } catch {
             return thread;
@@ -286,6 +290,36 @@ export async function updateThreadTitle(
       ...metadata,
       custom_title: title.trim(),
       title_source: "user",
+    },
+  });
+}
+
+export async function updateThreadFavorite(
+  threadId: string,
+  isFavorite: boolean
+): Promise<void> {
+  const config = getConfig();
+  if (!config) return;
+
+  const apiKey = process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
+
+  const client = new Client(
+    createLangGraphClientConfig({
+      deploymentUrl: config.deploymentUrl,
+      apiKey,
+    })
+  );
+
+  const existing = await (client.threads as any).get(threadId);
+  const metadata =
+    existing?.metadata && typeof existing.metadata === "object"
+      ? existing.metadata
+      : {};
+
+  await client.threads.update(threadId, {
+    metadata: {
+      ...metadata,
+      is_favorite: isFavorite,
     },
   });
 }

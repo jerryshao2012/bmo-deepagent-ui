@@ -19,7 +19,13 @@ import {
   FileIcon,
   AlertCircle,
   Globe,
+  Paperclip,
+  FileText,
+  X,
 } from "lucide-react";
+import { useClient } from "@/providers/ClientProvider";
+import { getConfig } from "@/lib/config";
+import { getBrowserSessionToken } from "@/lib/langgraph-client";
 import { ChatMessage } from "@/app/components/ChatMessage";
 import type {
   TodoItem,
@@ -95,8 +101,8 @@ const getStatusIcon = (status: TodoItem["status"], className?: string) => {
 };
 
 export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
-  const [currentThreadId] = useQueryState("threadId");
-  const [metaOpen, setMetaOpen] = useState<"tasks" | "files" | null>(null);
+  const [currentThreadId, setCurrentThreadId] = useQueryState("threadId");
+  const [metaOpen, setMetaOpen] = useState<"tasks" | "files" | "documents" | null>(null);
   const tasksContainerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -131,16 +137,182 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     isLoading: isSelectedThreadStatusLoading,
   } = useThreadStatus(currentThreadId);
 
+  const client = useClient();
+  const [documents, setDocuments] = useState<Array<{ name: string; size: number }>>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const fetchDocuments = useCallback(async () => {
+    if (!currentThreadId) {
+      setDocuments([]);
+      return;
+    }
+
+    try {
+      const appConfig = getConfig();
+      const deploymentUrl = appConfig?.deploymentUrl || "";
+      const token = getBrowserSessionToken();
+
+      const response = await fetch(
+        `${deploymentUrl.replace(/\/+$/, "")}/documents/list?folder=threads/${currentThreadId}`,
+        {
+          headers: {
+            "X-API-Key": token,
+          },
+        }
+      );
+
+      if (response.status === 404) {
+        setDocuments([]);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Failed to list documents: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const docs = (data.items || []).filter((item: any) => item.type === "file");
+      setDocuments(docs);
+    } catch (error) {
+      console.error("Failed to fetch documents:", error);
+    }
+  }, [currentThreadId]);
+
+  useEffect(() => {
+    fetchDocuments();
+  }, [currentThreadId, fetchDocuments]);
+
+  const handleAttachClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = e.target.files;
+    if (!selectedFiles || selectedFiles.length === 0) return;
+
+    setIsUploading(true);
+    try {
+      let activeThreadId = currentThreadId;
+      let isNewThread = false;
+      if (!activeThreadId) {
+        const newThread = await client.threads.create({
+          metadata: {
+            graph_id: assistant?.graph_id || "research",
+          },
+        });
+        activeThreadId = newThread.thread_id;
+        isNewThread = true;
+      } else {
+        try {
+          await client.threads.update(activeThreadId, {
+            metadata: {
+              graph_id: assistant?.graph_id || "research",
+            },
+          });
+        } catch (e) {
+          console.warn("Failed to update thread metadata:", e);
+        }
+      }
+
+      const formData = new FormData();
+      formData.append("folder", `threads/${activeThreadId}`);
+      for (let i = 0; i < selectedFiles.length; i++) {
+        formData.append("files", selectedFiles[i]);
+      }
+
+      const appConfig = getConfig();
+      const deploymentUrl = appConfig?.deploymentUrl || "";
+      const token = getBrowserSessionToken();
+
+      const response = await fetch(`${deploymentUrl.replace(/\/+$/, "")}/documents/upload`, {
+        method: "POST",
+        headers: {
+          "X-API-Key": token,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload failed with status: ${response.status}`);
+      }
+
+      // Set the doc_folder state in the thread values so the agent uses this folder for research
+      await client.threads.updateState(activeThreadId, {
+        values: {
+          doc_folder: `docs/threads/${activeThreadId}`,
+        },
+      });
+
+      // Clear the input value so the same file can be uploaded again if needed
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
+      if (isNewThread) {
+        await setCurrentThreadId(activeThreadId);
+      } else {
+        fetchDocuments();
+      }
+    } catch (error) {
+      console.error("Failed to upload files:", error);
+      alert(`Upload failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDeleteDocument = async (filename: string) => {
+    if (!currentThreadId) return;
+
+    if (!confirm(`Are you sure you want to delete "${filename}"?`)) return;
+
+    try {
+      const appConfig = getConfig();
+      const deploymentUrl = appConfig?.deploymentUrl || "";
+      const token = getBrowserSessionToken();
+
+      const response = await fetch(
+        `${deploymentUrl.replace(/\/+$/, "")}/documents/${encodeURIComponent(filename)}?folder=threads/${currentThreadId}`,
+        {
+          method: "DELETE",
+          headers: {
+            "X-API-Key": token,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete document: ${response.status}`);
+      }
+
+      fetchDocuments();
+    } catch (error) {
+      console.error("Failed to delete document:", error);
+      alert(`Delete failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+  const lastThreadIdRef = useRef<string | null>(null);
 
   // Sync webSearchEnabled state with the thread's no_web configuration when thread loads or changes
   useEffect(() => {
-    if (no_web !== undefined && no_web !== null) {
-      setWebSearchEnabled(!no_web);
-    } else {
-      setWebSearchEnabled(true);
+    if (currentThreadId !== lastThreadIdRef.current) {
+      lastThreadIdRef.current = currentThreadId;
+      if (no_web !== undefined && no_web !== null) {
+        setWebSearchEnabled(!no_web);
+      } else {
+        setWebSearchEnabled(true);
+      }
+    } else if (no_web !== undefined && no_web !== null) {
+      // If the thread is the same but no_web changed on the server (e.g. after stream completes), sync it.
+      // But only if it's different from our current state, to avoid overwriting user's local toggle before submission.
+      if (webSearchEnabled === no_web) {
+        setWebSearchEnabled(!no_web);
+      }
     }
-  }, [no_web, currentThreadId]);
+  }, [no_web, currentThreadId, webSearchEnabled]);
 
   const localLatestStartedAt = useMemo(() => {
     const latestTiming = Object.values(messageTimings).sort(
@@ -551,7 +723,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
             "mx-auto w-[calc(100%-32px)] max-w-[1024px] transition-colors duration-200 ease-in-out"
           )}
         >
-          {(hasTasks || hasFiles) && (
+          {(hasTasks || hasFiles || documents.length > 0) && (
             <div className="flex max-h-72 flex-col overflow-y-auto border-b border-border bg-sidebar empty:hidden">
               {!metaOpen && (
                 <>
@@ -576,7 +748,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                               prev === "tasks" ? null : "tasks"
                             )
                           }
-                          className="grid w-full cursor-pointer grid-cols-[auto_auto_1fr] items-center gap-3 px-[18px] py-3 text-left"
+                          className="grid flex-1 min-w-0 cursor-pointer grid-cols-[auto_auto_1fr] items-center gap-3 px-[18px] py-3 text-left"
                           {...getAriaExpandedProps(metaOpen === "tasks")}
                         >
                           {(() => {
@@ -672,10 +844,37 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                       );
                     })();
 
+                    const docsTrigger = (() => {
+                      if (documents.length === 0) return null;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMetaOpen((prev) =>
+                              prev === "documents" ? null : "documents"
+                            )
+                          }
+                          className="flex flex-shrink-0 cursor-pointer items-center gap-2 px-[18px] py-3 text-left text-sm"
+                          {...getAriaExpandedProps(metaOpen === "documents")}
+                        >
+                          <FileText size={16} />
+                          Docs
+                          <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
+                            {documents.length}
+                          </span>
+                        </button>
+                      );
+                    })();
+
                     return (
-                      <div className="grid grid-cols-[1fr_auto_auto] items-center">
-                        {tasksTrigger}
-                        {filesTrigger}
+                      <div className="flex justify-between items-center w-full min-w-0 overflow-hidden">
+                        <div className="flex-1 min-w-0">
+                          {tasksTrigger}
+                        </div>
+                        <div className="flex flex-shrink-0 items-center">
+                          {filesTrigger}
+                          {docsTrigger}
+                        </div>
                       </div>
                     );
                   })()}
@@ -713,6 +912,23 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                         Files (State)
                         <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
                           {Object.keys(files).length}
+                        </span>
+                      </button>
+                    )}
+                    {documents.length > 0 && (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 py-3 pr-4 first:pl-[18px] aria-expanded:font-semibold"
+                        onClick={() =>
+                          setMetaOpen((prev) =>
+                            prev === "documents" ? null : "documents"
+                          )
+                        }
+                        {...getAriaExpandedProps(metaOpen === "documents")}
+                      >
+                        Documents
+                        <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
+                          {documents.length}
                         </span>
                       </button>
                     )}
@@ -767,6 +983,45 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                         />
                       </div>
                     )}
+
+                    {metaOpen === "documents" && (
+                      <div className="mb-6">
+                        <div className="grid grid-cols-[repeat(auto-fill,minmax(256px,1fr))] gap-2">
+                          {documents.map((doc) => (
+                            <div
+                              key={doc.name}
+                              className="group relative flex flex-col items-center justify-center space-y-1 truncate rounded-md border border-border px-2 py-3 shadow-sm transition-colors"
+                              style={{
+                                backgroundColor: "var(--color-file-button)",
+                              }}
+                            >
+                              <FileText
+                                size={24}
+                                className="mx-auto text-muted-foreground"
+                              />
+                              <span className="mx-auto block w-full truncate break-words text-center text-sm leading-relaxed text-foreground px-1">
+                                {doc.name}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {(doc.size / 1024).toFixed(1)} KB
+                              </span>
+                              
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteDocument(doc.name);
+                                }}
+                                className="absolute top-1.5 right-1.5 hidden group-hover:flex items-center justify-center p-1 rounded-full bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+                                title="Delete document"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
@@ -795,12 +1050,12 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                   className={cn(
                     "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200",
                     webSearchEnabled
-                      ? "border-primary/50 bg-primary/10 text-primary hover:bg-primary/20"
+                      ? "border-[color-mix(in_srgb,var(--color-primary)_50%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_20%,transparent)]"
                       : "border-border bg-transparent text-tertiary hover:bg-secondary/10 hover:text-secondary",
                     composerLocked && "opacity-50 cursor-not-allowed"
                   )}
                 >
-                  <Globe size={14} className={webSearchEnabled ? "text-primary" : "text-tertiary"} />
+                  <Globe size={14} className={webSearchEnabled ? "text-[var(--color-primary)]" : "text-tertiary"} />
                   <span>Search</span>
                 </button>
                 <span className="self-center text-xxs italic text-[color:color-mix(in_srgb,var(--color-text-tertiary)_72%,white)]">
@@ -809,6 +1064,27 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                 </span>
               </div>
               <div className="flex justify-end gap-2">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  multiple
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={handleAttachClick}
+                  disabled={composerLocked || isUploading}
+                  title={isUploading ? "Uploading..." : "Attach files"}
+                  className={cn(
+                    "flex items-center justify-center rounded-full p-2 transition-all duration-200 border border-transparent",
+                    composerLocked || isUploading
+                      ? "text-tertiary/40 cursor-not-allowed"
+                      : "text-tertiary hover:text-primary hover:bg-secondary/10"
+                  )}
+                >
+                  <Paperclip size={18} className={isUploading ? "animate-pulse" : ""} />
+                </button>
                 <Button
                   type={isLoading ? "button" : "submit"}
                   variant={isLoading ? "destructive" : "default"}

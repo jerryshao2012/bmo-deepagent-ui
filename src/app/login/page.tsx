@@ -15,20 +15,28 @@ export default async function LoginPage({
   const cookieStore = await cookies();
   const token = cookieStore.get("session_token")?.value;
   const resolvedSearchParams = await searchParams;
-  
+
   // Check for error parameter
-  const error = typeof resolvedSearchParams.error === 'string' ? resolvedSearchParams.error : null;
-  
+  const error =
+    typeof resolvedSearchParams.error === "string"
+      ? resolvedSearchParams.error
+      : null;
+
   // If there's an error, clear the session token to break the redirect loop
   if (error && token) {
     // We can't delete cookies directly in server components,
     // but we can pass this info to the client component
-    console.warn(`Login page accessed with error: ${error}. Session token will need to be cleared.`);
+    console.warn(
+      `Login page accessed with error: ${error}. Session token will need to be cleared.`
+    );
   }
 
   if (token && !error) {
     // Redirect to chat or callback URL if provided
-    const callbackUrl = typeof resolvedSearchParams.callbackUrl === 'string' ? resolvedSearchParams.callbackUrl : '/chat';
+    const callbackUrl =
+      typeof resolvedSearchParams.callbackUrl === "string"
+        ? resolvedSearchParams.callbackUrl
+        : "/chat";
     redirect(callbackUrl);
   }
 
@@ -38,10 +46,19 @@ export default async function LoginPage({
       <div className="pointer-events-none absolute inset-0 z-0 bg-[#faf8f5]" />
 
       {/* Top Header */}
-      <header className="absolute top-0 left-0 right-0 z-20 flex h-16 items-center justify-between border-b border-slate-200/60 bg-white/70 px-6 backdrop-blur-md">
-        <a href="/" className="flex items-center gap-4 hover:opacity-80 transition active:scale-95 duration-200">
-          <img src="/bmo-logo.svg" alt="BMO" className="h-6 w-auto" />
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900">Deep Agent</h1>
+      <header className="absolute left-0 right-0 top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200/60 bg-white/70 px-6 backdrop-blur-md">
+        <a
+          href="/"
+          className="flex items-center gap-4 transition duration-200 hover:opacity-80 active:scale-95"
+        >
+          <img
+            src="/bmo-logo.svg"
+            alt="BMO"
+            className="h-6 w-auto"
+          />
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900">
+            Deep Agent
+          </h1>
         </a>
         <HealthIndicator />
       </header>
@@ -92,7 +109,13 @@ export default async function LoginPage({
                   strokeWidth="1"
                   opacity="0.3"
                 />
-                <circle cx="24" cy="24" r="4" fill="url(#logo-grad)" opacity="0.6" />
+                <circle
+                  cx="24"
+                  cy="24"
+                  r="4"
+                  fill="url(#logo-grad)"
+                  opacity="0.6"
+                />
                 <defs>
                   <linearGradient
                     id="logo-grad"
@@ -102,8 +125,14 @@ export default async function LoginPage({
                     y2="44"
                   >
                     <stop stopColor="#1155cc" />
-                    <stop offset="0.5" stopColor="#51a3d5" />
-                    <stop offset="1" stopColor="#2dd4bf" />
+                    <stop
+                      offset="0.5"
+                      stopColor="#51a3d5"
+                    />
+                    <stop
+                      offset="1"
+                      stopColor="#2dd4bf"
+                    />
                   </linearGradient>
                 </defs>
               </svg>
@@ -121,15 +150,18 @@ export default async function LoginPage({
           {error && (
             <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4">
               <p className="text-sm font-medium text-red-800">
-                {error === 'session_invalid' 
-                  ? 'Your session has expired or is invalid. Please sign in again.'
-                  : 'An error occurred during authentication.'}
+                {error === "session_invalid"
+                  ? "Your session has expired or is invalid. Please sign in again."
+                  : "An error occurred during authentication."}
               </p>
               <p className="mt-2 text-xs text-red-600">
-                If you continue to experience issues, try{' '}
-                <a href="/intro" className="underline hover:text-red-700">
+                If you continue to experience issues, try{" "}
+                <a
+                  href="/intro"
+                  className="underline hover:text-red-700"
+                >
                   visiting the intro page
-                </a>{' '}
+                </a>{" "}
                 and clearing your session cookies.
               </p>
             </div>
@@ -139,7 +171,9 @@ export default async function LoginPage({
           <LoginProviders
             onSignIn={async (provider: string) => {
               "use server";
-              const backendUrl = process.env.NEXT_PUBLIC_LANGGRAPH_URL || "http://localhost:2024";
+              const backendUrl =
+                process.env.NEXT_PUBLIC_LANGGRAPH_URL ||
+                "http://localhost:2024";
               const cleanBackendUrl = backendUrl.replace(/\/+$/, "");
               redirect(`${cleanBackendUrl}/auth/login/${provider}`);
             }}

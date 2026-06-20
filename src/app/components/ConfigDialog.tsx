@@ -12,7 +12,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Loader2,
   ChevronDown,
@@ -24,6 +23,7 @@ import {
   Check,
 } from "lucide-react";
 import { StandaloneConfig, getConfig } from "@/lib/config";
+import { getBrowserSessionToken } from "@/lib/langgraph-client";
 
 interface ConfigDialogProps {
   open: boolean;
@@ -117,12 +117,13 @@ export function ConfigDialog({
     setExpandedSections(new Set(["storage", "model_factory"]));
 
     try {
-      const apiKey = process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
-      const response = await fetch(`${url}/storage/info`, {
+      const token = getBrowserSessionToken();
+      const cleanUrl = url.replace(/\/+$/, "");
+      const response = await fetch(`${cleanUrl}/storage/info`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          ...(apiKey ? { "X-API-Key": apiKey } : {}),
+          "X-API-Key": token,
         },
       });
 
@@ -290,7 +291,13 @@ export function ConfigDialog({
 
         {/* Content */}
         {storageInfo.status === "success" && storageInfo.data != null && (
-          <ScrollArea className="max-h-[400px]">
+          <div
+            className="max-h-[300px] overflow-y-auto rounded-b-md"
+            style={{
+              scrollbarWidth: "thin",
+              scrollbarColor: "#4b5563 #1f2937",
+            }}
+          >
             <div className="bg-[#0d1117] p-3 font-mono text-xs text-foreground">
               {typeof storageInfo.data === "object" &&
                 storageInfo.data !== null &&
@@ -302,7 +309,7 @@ export function ConfigDialog({
                   )
                 )}
             </div>
-          </ScrollArea>
+          </div>
         )}
 
         {storageInfo.status === "error" && storageInfo.error && (
@@ -319,16 +326,17 @@ export function ConfigDialog({
       open={open}
       onOpenChange={onOpenChange}
     >
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
-        <DialogHeader className="shrink-0">
+      <DialogContent className="sm:max-w-[600px] !flex !flex-col max-h-[85vh] gap-0 overflow-hidden">
+        <DialogHeader className="shrink-0 px-1 pb-4 border-b border-border">
           <DialogTitle>Configuration</DialogTitle>
           <DialogDescription>
             Configure your agent deployment settings. These settings are
             saved in your browser&apos;s local storage.
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="flex-1 pr-3">
-          <div className="grid gap-4 py-4">
+
+        <div className="flex-1 min-h-0 overflow-y-auto px-1 py-4">
+          <div className="grid gap-4">
             <div className="grid gap-2">
               <Label htmlFor="deploymentUrl">Deployment URL</Label>
               <Input
@@ -380,8 +388,9 @@ export function ConfigDialog({
               {renderStorageInfoResult()}
             </div>
           </div>
-        </ScrollArea>
-        <DialogFooter className="shrink-0">
+        </div>
+
+        <DialogFooter className="shrink-0 px-1 pt-4 border-t border-border">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}

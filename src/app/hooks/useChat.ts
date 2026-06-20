@@ -449,9 +449,9 @@ export function useChat({
     ? serverSnapshot?.files ?? localFiles
     : localFiles;
 
-  const effectiveNoWeb = shouldPreferServerSnapshot
+  const effectiveNoWeb = (shouldPreferServerSnapshot
     ? serverSnapshot?.no_web
-    : stream.values.no_web;
+    : stream.values.no_web) ?? false;
 
   return {
     stream,

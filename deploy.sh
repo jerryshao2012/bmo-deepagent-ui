@@ -14,6 +14,31 @@ fi
 
 echo "🚀 Starting deployment process for deepagent-ui..."
 
+# Fetch secrets from Azure Key Vault if available (overrides env vars)
+if [ -n "$KV_NAME" ]; then
+  echo "🔐 Attempting to fetch secrets from Azure Key Vault: $KV_NAME"
+  KV_LANGCHAIN_API_KEY=$(az keyvault secret show --vault-name $KV_NAME --name LANGCHAIN-API-KEY --query value -o tsv 2>/dev/null)
+  KV_AUTH_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-SECRET --query value -o tsv 2>/dev/null)
+  KV_AUTH_GITHUB_ID=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GITHUB-ID --query value -o tsv 2>/dev/null)
+  KV_AUTH_GITHUB_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GITHUB-SECRET --query value -o tsv 2>/dev/null)
+  KV_AUTH_GOOGLE_ID=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GOOGLE-ID --query value -o tsv 2>/dev/null)
+  KV_AUTH_GOOGLE_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GOOGLE-SECRET --query value -o tsv 2>/dev/null)
+
+  # Override env vars with Key Vault values if available
+  [ -n "$KV_LANGCHAIN_API_KEY" ] && export LANGCHAIN_API_KEY="$KV_LANGCHAIN_API_KEY" && echo "  ✓ LANGCHAIN_API_KEY from Key Vault"
+  [ -n "$KV_AUTH_SECRET" ] && export AUTH_SECRET="$KV_AUTH_SECRET" && echo "  ✓ AUTH_SECRET from Key Vault"
+  [ -n "$KV_AUTH_GITHUB_ID" ] && export AUTH_GITHUB_ID="$KV_AUTH_GITHUB_ID" && echo "  ✓ AUTH_GITHUB_ID from Key Vault"
+  [ -n "$KV_AUTH_GITHUB_SECRET" ] && export AUTH_GITHUB_SECRET="$KV_AUTH_GITHUB_SECRET" && echo "  ✓ AUTH_GITHUB_SECRET from Key Vault"
+  [ -n "$KV_AUTH_GOOGLE_ID" ] && export AUTH_GOOGLE_ID="$KV_AUTH_GOOGLE_ID" && echo "  ✓ AUTH_GOOGLE_ID from Key Vault"
+  [ -n "$KV_AUTH_GOOGLE_SECRET" ] && export AUTH_GOOGLE_SECRET="$KV_AUTH_GOOGLE_SECRET" && echo "  ✓ AUTH_GOOGLE_SECRET from Key Vault"
+
+  if [ -z "$KV_LANGCHAIN_API_KEY" ] && [ -z "$KV_AUTH_SECRET" ]; then
+    echo "  ⚠️  No secrets found in Key Vault, falling back to environment variables"
+  fi
+else
+  echo "  ⚠️  KV_NAME not set, using environment variables for secrets"
+fi
+
 # Get ACR credentials
 echo "🔑 Retrieving Azure Container Registry credentials..."
 export ACR_USERNAME=$(az acr credential show --name $ACR_NAME --query username -o tsv)

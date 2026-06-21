@@ -10,6 +10,9 @@ export ENV_NAME="env-name-deep-agents-$SEED"
 source ../deepagents-demo/deep_research/env.sh
 export NEXT_PUBLIC_LANGGRAPH_URL=$DEEP_RESEARCH_AGENT_URL
 
+# Key Vault name (fallback if deep_research env.sh is not available)
+export KV_NAME="${KV_NAME:-kv-deep-agents-ui-$SEED}"
+
 # Update .env.docker if it exists
 if [ -f .env.docker ]; then
   # Use a temporary file to avoid issues with read/write on the same file

@@ -142,6 +142,52 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const [ingestProgress, setIngestProgress] = useState<number | null>(null);
+  const [ingestPhase, setIngestPhase] = useState<string | null>(null);
+  const [isIngesting, setIsIngesting] = useState(false);
+  const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const checkIngestStatus = useCallback(async () => {
+    if (!currentThreadId) return;
+    try {
+      const appConfig = getConfig();
+      const deploymentUrl = appConfig?.deploymentUrl || "";
+      const token = getBrowserSessionToken();
+
+      const response = await fetch(`${deploymentUrl.replace(/\/+$/, "")}/threads/${currentThreadId}/wiki/status`, {
+        headers: { "X-API-Key": token },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.is_active) {
+          setIngestProgress(data.progress);
+          setIngestPhase(data.phase || "processing");
+          setIsIngesting(true);
+          pollTimeoutRef.current = setTimeout(checkIngestStatus, 1500);
+        } else {
+          setIngestProgress(data.wiki_ready ? 100 : null);
+          setIngestPhase(data.wiki_ready ? "ready" : null);
+          setIsIngesting(false);
+        }
+      } else {
+        setIsIngesting(false);
+      }
+    } catch (err) {
+      console.error("Failed to fetch wiki status", err);
+      setIsIngesting(false);
+    }
+  }, [currentThreadId]);
+
+  useEffect(() => {
+    if (currentThreadId) {
+      checkIngestStatus();
+    }
+    return () => {
+      if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
+    };
+  }, [currentThreadId, checkIngestStatus]);
+
   const fetchDocuments = useCallback(async () => {
     if (!currentThreadId) {
       setDocuments([]);
@@ -195,10 +241,16 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     try {
       let activeThreadId = currentThreadId;
       let isNewThread = false;
+
+      const getGraphId = (graphId?: string) => {
+        if (!graphId || graphId === "researcher") return "research";
+        return graphId;
+      };
+
       if (!activeThreadId) {
         const newThread = await client.threads.create({
           metadata: {
-            graph_id: assistant?.graph_id || "research",
+            graph_id: getGraphId(assistant?.graph_id),
           },
         });
         activeThreadId = newThread.thread_id;
@@ -207,7 +259,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         try {
           await client.threads.update(activeThreadId, {
             metadata: {
-              graph_id: assistant?.graph_id || "research",
+              graph_id: getGraphId(assistant?.graph_id),
             },
           });
         } catch (e) {
@@ -238,11 +290,26 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       }
 
       // Set the doc_folder state in the thread values so the agent uses this folder for research
-      await client.threads.updateState(activeThreadId, {
-        values: {
-          doc_folder: `docs/threads/${activeThreadId}`,
-        },
-      });
+      try {
+        await client.threads.updateState(activeThreadId, {
+          values: {
+            doc_folder: `docs/threads/${activeThreadId}`,
+          },
+        });
+      } catch (e) {
+        console.warn("Failed to set doc_folder in thread state:", e);
+      }
+
+      // Trigger wiki ingestion
+      try {
+        await fetch(`${deploymentUrl.replace(/\/+$/, "")}/threads/${activeThreadId}/wiki/ingest`, {
+          method: "POST",
+          headers: { "X-API-Key": token, "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+      } catch (err) {
+        console.error("Failed to trigger wiki ingestion:", err);
+      }
 
       // Clear the input value so the same file can be uploaded again if needed
       if (fileInputRef.current) {
@@ -253,6 +320,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         await setCurrentThreadId(activeThreadId);
       } else {
         fetchDocuments();
+        checkIngestStatus();
       }
     } catch (error) {
       console.error("Failed to upload files:", error);
@@ -295,24 +363,27 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
 
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const lastThreadIdRef = useRef<string | null>(null);
+  const lastNoWebRef = useRef<boolean | null | undefined>(undefined);
 
-  // Sync webSearchEnabled state with the thread's no_web configuration when thread loads or changes
+  // Sync webSearchEnabled state with the thread's no_web configuration when thread loads or changes.
+  // Uses refs to track previous values so local toggles don't trigger a re-sync.
   useEffect(() => {
-    if (currentThreadId !== lastThreadIdRef.current) {
+    const threadChanged = currentThreadId !== lastThreadIdRef.current;
+    const noWebChanged = no_web !== lastNoWebRef.current;
+
+    if (threadChanged) {
       lastThreadIdRef.current = currentThreadId;
+      lastNoWebRef.current = no_web;
       if (no_web !== undefined && no_web !== null) {
         setWebSearchEnabled(!no_web);
       } else {
         setWebSearchEnabled(true);
       }
-    } else if (no_web !== undefined && no_web !== null) {
-      // If the thread is the same but no_web changed on the server (e.g. after stream completes), sync it.
-      // But only if it's different from our current state, to avoid overwriting user's local toggle before submission.
-      if (webSearchEnabled === no_web) {
-        setWebSearchEnabled(!no_web);
-      }
+    } else if (noWebChanged && no_web !== undefined && no_web !== null) {
+      lastNoWebRef.current = no_web;
+      setWebSearchEnabled(!no_web);
     }
-  }, [no_web, currentThreadId, webSearchEnabled]);
+  }, [no_web, currentThreadId]);
 
   const localLatestStartedAt = useMemo(() => {
     const latestTiming = Object.values(messageTimings).sort(
@@ -361,9 +432,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     isLoading ||
     isThreadLoading ||
     isResolvingSelectedThreadStatus ||
-    !assistant;
+    !assistant ||
+    isIngesting;
   const showRunningMode =
-    isLoading || isSelectedThreadBusy || isResolvingSelectedThreadStatus;
+    isLoading || isSelectedThreadBusy || isResolvingSelectedThreadStatus || isIngesting;
 
   const handleSubmit = useCallback(
     (e?: FormEvent) => {
@@ -1027,6 +1099,20 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
               )}
             </div>
           )}
+          {isIngesting && ingestProgress !== null && (
+            <div className="mx-[18px] mt-4 mb-2">
+              <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
+                <span className="font-medium text-foreground/80">Ingesting documents... {ingestPhase ? `(${ingestPhase})` : ""}</span>
+                <span className="font-medium text-foreground/80">{ingestProgress}%</span>
+              </div>
+              <div className="w-full bg-secondary/50 rounded-full h-1.5 overflow-hidden">
+                <div 
+                  className="bg-primary h-full transition-all duration-300 ease-in-out" 
+                  style={{ width: `${ingestProgress}%` }} 
+                />
+              </div>
+            </div>
+          )}
           <form
             onSubmit={handleSubmit}
             className="flex flex-col"
@@ -1036,7 +1122,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={showRunningMode ? "Running..." : "Write your message..."}
+              placeholder={isIngesting ? "Ingesting documents..." : (showRunningMode ? "Running..." : "Write your message...")}
               disabled={composerLocked}
               className="font-inherit field-sizing-content flex-1 resize-none border-0 bg-transparent px-[18px] pb-[13px] pt-[14px] text-sm leading-7 text-primary outline-none placeholder:text-tertiary"
               rows={1}
@@ -1046,13 +1132,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                 <button
                   type="button"
                   onClick={() => setWebSearchEnabled((prev) => !prev)}
-                  disabled={composerLocked}
                   className={cn(
                     "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200",
                     webSearchEnabled
                       ? "border-[color-mix(in_srgb,var(--color-primary)_50%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_20%,transparent)]"
                       : "border-border bg-transparent text-tertiary hover:bg-secondary/10 hover:text-secondary",
-                    composerLocked && "opacity-50 cursor-not-allowed"
                   )}
                 >
                   <Globe size={14} className={webSearchEnabled ? "text-[var(--color-primary)]" : "text-tertiary"} />

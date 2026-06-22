@@ -148,6 +148,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const sseAbortRef = useRef<AbortController | null>(null);
   const currentThreadIdRef = useRef(currentThreadId);
   currentThreadIdRef.current = currentThreadId;
+  // Tracks a pending doc_folder that couldn't be set via updateState
+  // because the thread had no graph_id yet (no runs). It will be included
+  // in the first sendMessage call instead.
+  const pendingDocFolderRef = useRef<{ threadId: string; docFolder: string } | null>(null);
 
   // Open an SSE stream for real-time ingest progress.
   const startIngestProgressStream = useCallback((threadId: string) => {
@@ -375,7 +379,13 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           },
         });
       } catch (e) {
-        console.warn("Failed to set doc_folder in thread state:", e);
+        // updateState fails when the thread has no graph_id yet (no runs).
+        // Store it as pending so it gets included in the first sendMessage call.
+        console.warn("Failed to set doc_folder in thread state (will retry on first message):", e);
+        pendingDocFolderRef.current = {
+          threadId: activeThreadId,
+          docFolder: `docs/threads/${activeThreadId}`,
+        };
       }
 
       // Note: wiki ingestion is auto-triggered by the server (webapp.py) on upload.
@@ -518,10 +528,19 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       }
       const messageText = input;
       if (!messageText.trim() || composerLocked) return;
-      sendMessage(messageText, { no_web: !webSearchEnabled });
+      const stateUpdates: Record<string, any> = { no_web: !webSearchEnabled };
+      // Include pending doc_folder from a prior file upload that couldn't
+      // set thread state because no graph_id had been assigned yet.
+      // Only apply if it belongs to the current thread.
+      const pending = pendingDocFolderRef.current;
+      if (pending && pending.threadId === currentThreadId) {
+        stateUpdates.doc_folder = pending.docFolder;
+        pendingDocFolderRef.current = null;
+      }
+      sendMessage(messageText, stateUpdates);
       setInput("");
     },
-    [input, composerLocked, sendMessage, setInput, webSearchEnabled]
+    [input, composerLocked, sendMessage, setInput, webSearchEnabled, currentThreadId]
   );
 
   const handleKeyDown = useCallback(

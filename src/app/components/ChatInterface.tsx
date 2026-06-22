@@ -182,6 +182,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   useEffect(() => {
     if (currentThreadId) {
       checkIngestStatus();
+    } else {
+      // Reset ingest state when there's no thread (new thread)
+      setIsIngesting(false);
+      setIngestProgress(null);
+      setIngestPhase(null);
     }
     return () => {
       if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);

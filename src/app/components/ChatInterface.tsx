@@ -305,16 +305,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         console.warn("Failed to set doc_folder in thread state:", e);
       }
 
-      // Trigger wiki ingestion
-      try {
-        await fetch(`${deploymentUrl.replace(/\/+$/, "")}/threads/${activeThreadId}/wiki/ingest`, {
-          method: "POST",
-          headers: { "X-API-Key": token, "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
-      } catch (err) {
-        console.error("Failed to trigger wiki ingestion:", err);
-      }
+      // Note: wiki ingestion is auto-triggered by the server (webapp.py) on upload.
+      // No need to explicitly call /wiki/ingest here — the server registers
+      // progress in _active_ingests and /wiki/status will track it.
 
       // Clear the input value so the same file can be uploaded again if needed
       if (fileInputRef.current) {
@@ -323,10 +316,13 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
 
       if (isNewThread) {
         await setCurrentThreadId(activeThreadId);
-      } else {
-        fetchDocuments();
-        checkIngestStatus();
       }
+
+      // Always poll ingest status after upload (for both new and existing threads).
+      // The server auto-triggers ingestion on upload, so we start polling here
+      // to show the progress bar and lock the composer until ingestion completes.
+      fetchDocuments();
+      checkIngestStatus();
     } catch (error) {
       console.error("Failed to upload files:", error);
       alert(`Upload failed: ${error instanceof Error ? error.message : String(error)}`);

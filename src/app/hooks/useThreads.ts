@@ -3,7 +3,7 @@ import useSWR from "swr";
 import type { Thread } from "@langchain/langgraph-sdk";
 import { Client } from "@langchain/langgraph-sdk";
 import { getConfig } from "@/lib/config";
-import { createLangGraphClientConfig } from "@/lib/langgraph-client";
+import { createLangGraphClientConfig, getBrowserSessionToken } from "@/lib/langgraph-client";
 
 export interface ThreadItem {
   id: string;
@@ -252,7 +252,25 @@ export async function deleteThread(threadId: string): Promise<void> {
   if (!config) return;
 
   const apiKey = process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
+  const token = getBrowserSessionToken() || apiKey || "";
 
+  // 1. Clean up local wiki workspace and uploaded documents on the server.
+  try {
+    const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
+    const response = await fetch(`${cleanUrl}/threads/${threadId}/wiki`, {
+      method: "DELETE",
+      headers: {
+        "X-API-Key": token,
+      },
+    });
+    if (!response.ok) {
+      console.warn(`Failed to delete thread wiki and documents: ${response.status}`);
+    }
+  } catch (error) {
+    console.error("Failed to delete thread wiki and documents:", error);
+  }
+
+  // 2. Delete the thread in LangGraph
   const client = new Client(
     createLangGraphClientConfig({
       deploymentUrl: config.deploymentUrl,
@@ -334,6 +352,7 @@ export async function cleanupOldThreads(days: number = 7): Promise<void> {
   if (!config) return;
 
   const apiKey = process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
+  const token = getBrowserSessionToken() || apiKey || "";
 
   const client = new Client(
     createLangGraphClientConfig({
@@ -379,6 +398,27 @@ export async function cleanupOldThreads(days: number = 7): Promise<void> {
         // Only delete if thread hasn't been updated in the retention period
         if (updatedAt < cutoffDate) {
           try {
+            // Clean up the wiki and documents first!
+            try {
+              const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
+              const response = await fetch(`${cleanUrl}/threads/${thread.thread_id}/wiki`, {
+                method: "DELETE",
+                headers: {
+                  "X-API-Key": token,
+                },
+              });
+              if (!response.ok) {
+                console.warn(
+                  `[Cleanup] Failed to delete thread wiki and documents for thread ${thread.thread_id}: ${response.status}`
+                );
+              }
+            } catch (err) {
+              console.error(
+                `[Cleanup] Error deleting thread wiki and documents for thread ${thread.thread_id}:`,
+                err
+              );
+            }
+
             await client.threads.delete(thread.thread_id);
             deletedCount++;
             console.log(

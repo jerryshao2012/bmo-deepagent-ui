@@ -145,53 +145,101 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [ingestProgress, setIngestProgress] = useState<number | null>(null);
   const [ingestPhase, setIngestPhase] = useState<string | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
-  const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const sseAbortRef = useRef<AbortController | null>(null);
 
-  const checkIngestStatus = useCallback(async () => {
-    if (!currentThreadId) return;
-    try {
-      const appConfig = getConfig();
-      const deploymentUrl = appConfig?.deploymentUrl || "";
-      const token = getBrowserSessionToken();
+  // Open an SSE stream for real-time ingest progress.
+  const startIngestProgressStream = useCallback((threadId: string) => {
+    if (sseAbortRef.current) sseAbortRef.current.abort();
+    const controller = new AbortController();
+    sseAbortRef.current = controller;
 
-      const response = await fetch(`${deploymentUrl.replace(/\/+$/, "")}/threads/${currentThreadId}/wiki/status`, {
-        headers: { "X-API-Key": token },
-      });
+    const appConfig = getConfig();
+    const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
+    const token = getBrowserSessionToken();
 
-      if (response.ok) {
-        const data = await response.json();
+    // Show ingesting state immediately before the first SSE event arrives.
+    setIsIngesting(true);
+    setIngestProgress(0);
+    setIngestPhase("initializing");
+
+    (async () => {
+      try {
+        const response = await fetch(
+          `${deploymentUrl}/threads/${threadId}/wiki/progress`,
+          { headers: { "X-API-Key": token }, signal: controller.signal }
+        );
+        if (!response.ok || !response.body) { setIsIngesting(false); return; }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const frames = buf.split(/\n\n/);
+          buf = frames.pop() ?? "";
+
+          for (const frame of frames) {
+            const evtMatch = frame.match(/^event:\s*(.+)$/m);
+            const dataMatch = frame.match(/^data:\s*(.+)$/m);
+            if (!dataMatch) continue;
+            try {
+              const payload = JSON.parse(dataMatch[1]);
+              if ((evtMatch?.[1] ?? "progress") === "end") {
+                setIngestProgress(payload.wiki_ready ? 100 : null);
+                setIngestPhase(payload.wiki_ready ? "ready" : null);
+                setIsIngesting(false);
+                return;
+              }
+              setIngestProgress(typeof payload.progress === "number" ? payload.progress : null);
+              setIngestPhase(payload.phase ?? "processing");
+              setIsIngesting(true);
+            } catch { /* ignore malformed frames */ }
+          }
+        }
+      } catch (err: unknown) {
+        if (!(err instanceof Error && err.name === "AbortError")) {
+          console.error("Wiki SSE stream error:", err);
+        }
+        setIsIngesting(false);
+      }
+    })();
+  }, []);
+
+  // On thread change: check status once and open SSE stream if ingestion is active.
+  useEffect(() => {
+    if (!currentThreadId) {
+      setIsIngesting(false);
+      setIngestProgress(null);
+      setIngestPhase(null);
+      if (sseAbortRef.current) sseAbortRef.current.abort();
+      return;
+    }
+
+    const appConfig = getConfig();
+    const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
+    const token = getBrowserSessionToken();
+
+    fetch(`${deploymentUrl}/threads/${currentThreadId}/wiki/status`, {
+      headers: { "X-API-Key": token },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return;
         if (data.is_active) {
-          setIngestProgress(data.progress);
-          setIngestPhase(data.phase || "processing");
-          setIsIngesting(true);
-          pollTimeoutRef.current = setTimeout(checkIngestStatus, 1500);
+          startIngestProgressStream(currentThreadId);
         } else {
           setIngestProgress(data.wiki_ready ? 100 : null);
           setIngestPhase(data.wiki_ready ? "ready" : null);
           setIsIngesting(false);
         }
-      } else {
-        setIsIngesting(false);
-      }
-    } catch (err) {
-      console.error("Failed to fetch wiki status", err);
-      setIsIngesting(false);
-    }
-  }, [currentThreadId]);
+      })
+      .catch(() => setIsIngesting(false));
 
-  useEffect(() => {
-    if (currentThreadId) {
-      checkIngestStatus();
-    } else {
-      // Reset ingest state when there's no thread (new thread)
-      setIsIngesting(false);
-      setIngestProgress(null);
-      setIngestPhase(null);
-    }
-    return () => {
-      if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
-    };
-  }, [currentThreadId, checkIngestStatus]);
+    return () => { if (sseAbortRef.current) sseAbortRef.current.abort(); };
+  }, [currentThreadId, startIngestProgressStream]);
 
   const fetchDocuments = useCallback(async () => {
     if (!currentThreadId) {
@@ -318,11 +366,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         await setCurrentThreadId(activeThreadId);
       }
 
-      // Always poll ingest status after upload (for both new and existing threads).
-      // The server auto-triggers ingestion on upload, so we start polling here
-      // to show the progress bar and lock the composer until ingestion completes.
+      // Refresh doc list and start SSE stream for real-time ingest progress.
       fetchDocuments();
-      checkIngestStatus();
+      startIngestProgressStream(activeThreadId);
     } catch (error) {
       console.error("Failed to upload files:", error);
       alert(`Upload failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -434,6 +480,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     isThreadLoading ||
     isResolvingSelectedThreadStatus ||
     !assistant ||
+    isUploading ||
     isIngesting;
   const showRunningMode =
     isLoading || isSelectedThreadBusy || isResolvingSelectedThreadStatus || isIngesting;
@@ -1100,17 +1147,30 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
               )}
             </div>
           )}
-          {isIngesting && ingestProgress !== null && (
+          {(isUploading || isIngesting) && (
             <div className="mx-[18px] mt-4 mb-2">
               <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
-                <span className="font-medium text-foreground/80">Ingesting documents... {ingestPhase ? `(${ingestPhase})` : ""}</span>
-                <span className="font-medium text-foreground/80">{ingestProgress}%</span>
+                {isUploading ? (
+                  <span className="font-medium text-foreground/80">Uploading document...</span>
+                ) : (
+                  <span className="font-medium text-foreground/80">
+                    Ingesting documents
+                    {ingestPhase && ingestPhase !== "initializing" ? ` · ${ingestPhase}` : " · initializing…"}
+                  </span>
+                )}
+                {!isUploading && ingestProgress !== null && (
+                  <span className="font-medium text-foreground/80 tabular-nums">{ingestProgress}%</span>
+                )}
               </div>
               <div className="w-full bg-secondary/50 rounded-full h-1.5 overflow-hidden">
-                <div 
-                  className="bg-primary h-full transition-all duration-300 ease-in-out" 
-                  style={{ width: `${ingestProgress}%` }} 
-                />
+                {isUploading ? (
+                  <div className="bg-primary h-full w-full animate-pulse" />
+                ) : (
+                  <div
+                    className="bg-primary h-full transition-all duration-300 ease-in-out"
+                    style={{ width: `${ingestProgress ?? 0}%` }}
+                  />
+                )}
               </div>
             </div>
           )}
@@ -1123,7 +1183,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={isIngesting ? "Ingesting documents..." : (showRunningMode ? "Running..." : "Write your message...")}
+              placeholder={isUploading ? "Uploading document, please wait..." : isIngesting ? "Ingesting documents, please wait..." : (showRunningMode ? "Running..." : "Write your message...")}
               disabled={composerLocked}
               className="font-inherit field-sizing-content flex-1 resize-none border-0 bg-transparent px-[18px] pb-[13px] pt-[14px] text-sm leading-7 text-primary outline-none placeholder:text-tertiary"
               rows={1}

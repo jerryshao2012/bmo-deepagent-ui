@@ -146,6 +146,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [ingestPhase, setIngestPhase] = useState<string | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
   const sseAbortRef = useRef<AbortController | null>(null);
+  const currentThreadIdRef = useRef(currentThreadId);
+  currentThreadIdRef.current = currentThreadId;
 
   // Open an SSE stream for real-time ingest progress.
   const startIngestProgressStream = useCallback((threadId: string) => {
@@ -218,6 +220,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       return;
     }
 
+    let active = true;
+
     const appConfig = getConfig();
     const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
     const token = getBrowserSessionToken();
@@ -227,7 +231,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (!data) return;
+        if (!active || !data) return;
         if (data.is_active) {
           startIngestProgressStream(currentThreadId);
         } else {
@@ -236,47 +240,68 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           setIsIngesting(false);
         }
       })
-      .catch(() => setIsIngesting(false));
+      .catch(() => {
+        if (active) setIsIngesting(false);
+      });
 
-    return () => { if (sseAbortRef.current) sseAbortRef.current.abort(); };
+    return () => {
+      active = false;
+      if (sseAbortRef.current) sseAbortRef.current.abort();
+    };
   }, [currentThreadId, startIngestProgressStream]);
 
-  const fetchDocuments = useCallback(async () => {
-    if (!currentThreadId) {
-      setDocuments([]);
-      return;
-    }
-
-    try {
-      const appConfig = getConfig();
-      const deploymentUrl = appConfig?.deploymentUrl || "";
-      const token = getBrowserSessionToken();
-
-      const response = await fetch(
-        `${deploymentUrl.replace(/\/+$/, "")}/documents/list?folder=threads/${currentThreadId}`,
-        {
-          headers: {
-            "X-API-Key": token,
-          },
-        }
-      );
-
-      if (response.status === 404) {
+  const fetchDocuments = useCallback(
+    async (overrideThreadId?: string | null) => {
+      const threadIdAtStart =
+        overrideThreadId !== undefined ? overrideThreadId : currentThreadId;
+      if (!threadIdAtStart) {
         setDocuments([]);
         return;
       }
 
-      if (!response.ok) {
-        throw new Error(`Failed to list documents: ${response.status}`);
-      }
+      try {
+        const appConfig = getConfig();
+        const deploymentUrl = appConfig?.deploymentUrl || "";
+        const token = getBrowserSessionToken();
 
-      const data = await response.json();
-      const docs = (data.items || []).filter((item: any) => item.type === "file");
-      setDocuments(docs);
-    } catch (error) {
-      console.error("Failed to fetch documents:", error);
-    }
-  }, [currentThreadId]);
+        const response = await fetch(
+          `${deploymentUrl.replace(/\/+$/, "")}/documents/list?folder=threads/${threadIdAtStart}`,
+          {
+            headers: {
+              "X-API-Key": token,
+            },
+          }
+        );
+
+        if (threadIdAtStart !== currentThreadIdRef.current) {
+          return;
+        }
+
+        if (response.status === 404) {
+          setDocuments([]);
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`Failed to list documents: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const docs = (data.items || []).filter(
+          (item: any) => item.type === "file"
+        );
+
+        if (threadIdAtStart !== currentThreadIdRef.current) {
+          return;
+        }
+
+        setDocuments(docs);
+      } catch (error) {
+        console.error("Failed to fetch documents:", error);
+      }
+    },
+    [currentThreadId]
+  );
 
   useEffect(() => {
     fetchDocuments();
@@ -363,11 +388,12 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       }
 
       if (isNewThread) {
+        currentThreadIdRef.current = activeThreadId;
         await setCurrentThreadId(activeThreadId);
       }
 
       // Refresh doc list and start SSE stream for real-time ingest progress.
-      fetchDocuments();
+      fetchDocuments(activeThreadId);
       startIngestProgressStream(activeThreadId);
     } catch (error) {
       console.error("Failed to upload files:", error);
@@ -401,7 +427,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         throw new Error(`Failed to delete document: ${response.status}`);
       }
 
-      fetchDocuments();
+      fetchDocuments(currentThreadId);
     } catch (error) {
       console.error("Failed to delete document:", error);
       alert(`Delete failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -1148,28 +1174,50 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
             </div>
           )}
           {(isUploading || isIngesting) && (
-            <div className="mx-[18px] mt-4 mb-2">
-              <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
-                {isUploading ? (
-                  <span className="font-medium text-foreground/80">Uploading document...</span>
-                ) : (
-                  <span className="font-medium text-foreground/80">
-                    Ingesting documents
-                    {ingestPhase && ingestPhase !== "initializing" ? ` · ${ingestPhase}` : " · initializing…"}
+            <div className="mx-[18px] mt-4 mb-3">
+              <div className="flex justify-between items-center text-xs mb-2">
+                <div className="flex items-center gap-1.5">
+                  {isUploading ? (
+                    <>
+                      <div className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
+                      <span className="font-semibold text-foreground/90 tracking-wide">Uploading document...</span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      <span className="font-semibold text-foreground/90 tracking-wide">
+                        Ingesting documents
+                        {ingestPhase && ingestPhase !== "initializing" ? (
+                          <span className="text-muted-foreground font-normal"> · {ingestPhase}</span>
+                        ) : (
+                          <span className="text-muted-foreground font-normal"> · initializing…</span>
+                        )}
+                      </span>
+                    </>
+                  )}
+                </div>
+                {!isUploading && ingestProgress !== null && (
+                  <span className="font-semibold text-foreground/90 tabular-nums bg-secondary/15 px-2 py-0.5 rounded text-[10px]">
+                    {ingestProgress}%
                   </span>
                 )}
-                {!isUploading && ingestProgress !== null && (
-                  <span className="font-medium text-foreground/80 tabular-nums">{ingestProgress}%</span>
-                )}
               </div>
-              <div className="w-full bg-secondary/50 rounded-full h-1.5 overflow-hidden">
+              
+              <div className="relative w-full bg-secondary/10 dark:bg-white/5 border border-border/20 rounded-full h-3 p-[2px] overflow-hidden backdrop-blur-sm shadow-inner">
                 {isUploading ? (
-                  <div className="bg-primary h-full w-full animate-pulse" />
+                  <div className="h-full rounded-full bg-gradient-to-r from-[#51a3d5] to-[#1155cc] dark:from-[#2dd4bf] dark:to-[#1155cc] w-full relative">
+                    <div className="absolute inset-0 progress-bar-animated rounded-full opacity-45" />
+                  </div>
                 ) : (
                   <div
-                    className="bg-primary h-full transition-all duration-300 ease-in-out"
+                    className="h-full rounded-full bg-gradient-to-r from-[#51a3d5] to-[#1155cc] dark:from-[#2dd4bf] dark:to-[#1155cc] transition-all duration-500 ease-out relative shadow-[0_0_8px_rgba(81,163,213,0.3)]"
                     style={{ width: `${ingestProgress ?? 0}%` }}
-                  />
+                  >
+                    <div className="absolute inset-0 progress-bar-animated rounded-full opacity-45" />
+                    {(ingestProgress ?? 0) > 0 && (
+                      <div className="absolute right-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_#fff]" />
+                    )}
+                  </div>
                 )}
               </div>
             </div>

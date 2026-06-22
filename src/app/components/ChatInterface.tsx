@@ -330,22 +330,43 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       };
 
       if (!activeThreadId) {
+        const graphId = getGraphId(assistant?.graph_id);
         const newThread = await client.threads.create({
+          graphId,
           metadata: {
-            graph_id: getGraphId(assistant?.graph_id),
+            graph_id: graphId,
           },
         });
         activeThreadId = newThread.thread_id;
         isNewThread = true;
       } else {
+        // Ensure the thread has a graph_id in its metadata before uploading.
+        // Fetch existing metadata first and merge, following the same pattern
+        // used by updateThreadTitle / updateThreadFavorite.
+        const graphId = getGraphId(assistant?.graph_id);
         try {
+          const existing = await client.threads.get(activeThreadId);
+          const existingMetadata =
+            existing?.metadata && typeof existing.metadata === "object"
+              ? existing.metadata
+              : {};
           await client.threads.update(activeThreadId, {
             metadata: {
-              graph_id: getGraphId(assistant?.graph_id),
+              ...existingMetadata,
+              graph_id: graphId,
             },
           });
         } catch (e) {
-          console.warn("Failed to update thread metadata:", e);
+          console.error(
+            "Failed to assign graph_id to thread before upload. " +
+            "The thread may have no prior runs. Please send a message first.",
+            e
+          );
+          throw new Error(
+            "Cannot upload files yet — this thread has no assigned graph ID. " +
+            "Please send a message to start a conversation first, then try uploading again.",
+            { cause: e }
+          );
         }
       }
 
@@ -368,7 +389,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       });
 
       if (!response.ok) {
-        throw new Error(`Upload failed with status: ${response.status}`);
+        let detail = `HTTP ${response.status}`;
+        try {
+          const body = await response.json();
+          if (body?.detail) detail += `: ${body.detail}`;
+        } catch {
+          // Response body is not JSON; keep status-only message.
+        }
+        throw new Error(detail);
       }
 
       // Set the doc_folder state in the thread values so the agent uses this folder for research

@@ -363,7 +363,8 @@ function HomePageContent({ user }: { user: any }) {
   const handleSaveConfig = useCallback((newConfig: StandaloneConfig) => {
     saveConfig(newConfig);
     setConfig(newConfig);
-  }, []);
+    setAssistantId(newConfig.assistantId);
+  }, [setAssistantId]);
 
   const langsmithApiKey = process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
 

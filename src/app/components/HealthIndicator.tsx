@@ -65,7 +65,7 @@ export function HealthIndicator() {
       } catch (error) {
         // Routine health checks may fail when the backend is unreachable;
         // use warn instead of error to avoid noisy console output.
-        console.warn("Health check failed:", error);
+        console.warn("Health check failed:", error instanceof Error ? error.message : error);
         if (!cancelled) {
           setHealth({ isHealthy: false });
         }

@@ -347,6 +347,16 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         // used by updateThreadTitle / updateThreadFavorite.
         const graphId = getGraphId(assistant?.graph_id);
         try {
+          // Ensure the thread is registered on the server first (in case it hasn't had any runs yet)
+          await client.threads.create({
+            threadId: activeThreadId,
+            graphId,
+            ifExists: "do_nothing",
+            metadata: {
+              graph_id: graphId,
+            },
+          });
+
           const existing = await client.threads.get(activeThreadId);
           const existingMetadata =
             existing?.metadata && typeof existing.metadata === "object"
@@ -360,8 +370,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           });
         } catch (e) {
           console.error(
-            "Failed to assign graph_id to thread before upload. " +
-            "The thread may have no prior runs. Please send a message first.",
+            "Failed to assign graph_id to thread before upload.",
             e
           );
           throw new Error(

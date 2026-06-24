@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStream } from "@langchain/langgraph-sdk/react";
 import {
   type Message,
@@ -445,9 +445,12 @@ export function useChat({
     ? serverSnapshot?.ui
     : stream.values.ui;
 
-  const effectiveFiles = shouldPreferServerSnapshot
-    ? serverSnapshot?.files ?? localFiles
-    : localFiles;
+  const effectiveFiles = useMemo(() => {
+    return {
+      ...(serverSnapshot?.files ?? {}),
+      ...localFiles,
+    };
+  }, [serverSnapshot?.files, localFiles]);
 
   const effectiveNoWeb = (shouldPreferServerSnapshot
     ? serverSnapshot?.no_web

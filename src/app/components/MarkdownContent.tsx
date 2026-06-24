@@ -153,7 +153,7 @@ function preprocessMarkdown(content: string): string {
   // Pattern 1: ([/path/to/file.ext](page-ref)) — broken link inside outer parens
   // e.g. ([/bmo_ar2025.pdf](p. 30, 202))  →  (`/bmo_ar2025.pdf`, p. 30, 202)
   let result = content.replace(
-    /\(\[(\/[^\]]+)\]\(([^)]+)\)\)/g,
+    /\(\[(\/[^\]]+)]\(([^)]+)\)\)/g,
     (_match, path: string, pageRef: string) => {
       // Only rewrite if the "URL" looks like a page reference, not a real URL
       if (/^https?:\/\//i.test(pageRef.trim())) return _match;
@@ -164,7 +164,7 @@ function preprocessMarkdown(content: string): string {
   // Pattern 2: [/path/to/file.ext](page-ref) — bare broken link (no outer parens)
   // e.g. [/bmo_ar2025.pdf](p. 30)  →  `/bmo_ar2025.pdf`, p. 30
   result = result.replace(
-    /\[(\/[^\]]+)\]\(([^)]+)\)/g,
+    /\[(\/[^\]]+)]\(([^)]+)\)/g,
     (_match, path: string, pageRef: string) => {
       if (/^https?:\/\//i.test(pageRef.trim())) return _match;
       return `\`${path}\`, ${pageRef.trim()}`;
@@ -482,10 +482,10 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
                 if (!node) return { type: null, cleanNode: null };
                 
                 if (typeof node === "string") {
-                  const match = node.trim().match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i);
+                  const match = node.trim().match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)]/i);
                   if (match) {
                     const type = match[1].toLowerCase() as any;
-                    const cleanText = node.replace(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i, "");
+                    const cleanText = node.replace(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)]\s*/i, "");
                     return { type, cleanNode: cleanText };
                   }
                 }

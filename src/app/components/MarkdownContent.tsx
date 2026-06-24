@@ -139,36 +139,35 @@ const Mermaid: React.FC<MermaidProps> = ({ chart }) => {
  *
  * The LLM sometimes outputs `([/file.pdf](p. 30, 202))` where the page
  * reference ends up in the markdown URL position.  That is not a valid URL so
- * react-markdown silently drops the anchor.  This function converts those
- * patterns to plain-text `(/file.pdf, p. 30, 202)` before the parser sees them.
+ * react-markdown silently drops the anchor.  This function normalises those
+ * patterns to the display format: (`/file.pdf`, p. 30, 202)
  *
  * Patterns handled:
- *   ([/foo.pdf](p. 30, 202))   →  (/foo.pdf, p. 30, 202)
- *   [/foo.pdf](p. 30)          →  /foo.pdf, p. 30
- *   ([/foo.pdf](pp. 14, 30))   →  (/foo.pdf, pp. 14, 30)
+ *   ([/foo.pdf](p. 30, 202))   →  (`/foo.pdf`, p. 30, 202)
+ *   [/foo.pdf](p. 30)          →  `/foo.pdf`, p. 30
+ *   ([/foo.pdf](pp. 14, 30))   →  (`/foo.pdf`, pp. 14, 30)
  */
 function preprocessMarkdown(content: string): string {
   if (!content) return content;
 
-  // Pattern 1: ([/path/to/file.ext](page-ref)) — broken link inside parens
-  // Captures the outer parens so we keep the surrounding ( and )
-  // e.g. ([/bmo_ar2025.pdf](p. 30, 202))  →  (/bmo_ar2025.pdf, p. 30, 202)
+  // Pattern 1: ([/path/to/file.ext](page-ref)) — broken link inside outer parens
+  // e.g. ([/bmo_ar2025.pdf](p. 30, 202))  →  (`/bmo_ar2025.pdf`, p. 30, 202)
   let result = content.replace(
     /\(\[(\/[^\]]+)\]\(([^)]+)\)\)/g,
     (_match, path: string, pageRef: string) => {
       // Only rewrite if the "URL" looks like a page reference, not a real URL
       if (/^https?:\/\//i.test(pageRef.trim())) return _match;
-      return `(${path}, ${pageRef.trim()})`;
+      return `(\`${path}\`, ${pageRef.trim()})`;
     },
   );
 
   // Pattern 2: [/path/to/file.ext](page-ref) — bare broken link (no outer parens)
-  // e.g. [/bmo_ar2025.pdf](p. 30)  →  /bmo_ar2025.pdf, p. 30
+  // e.g. [/bmo_ar2025.pdf](p. 30)  →  `/bmo_ar2025.pdf`, p. 30
   result = result.replace(
     /\[(\/[^\]]+)\]\(([^)]+)\)/g,
     (_match, path: string, pageRef: string) => {
       if (/^https?:\/\//i.test(pageRef.trim())) return _match;
-      return `${path}, ${pageRef.trim()}`;
+      return `\`${path}\`, ${pageRef.trim()}`;
     },
   );
 

@@ -141,6 +141,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [documents, setDocuments] = useState<Array<{ name: string; size: number }>>([]);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounterRef = useRef(0);
 
   const [ingestProgress, setIngestProgress] = useState<number | null>(null);
   const [ingestPhase, setIngestPhase] = useState<string | null>(null);
@@ -315,9 +317,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = e.target.files;
-    if (!selectedFiles || selectedFiles.length === 0) return;
+  // Shared upload logic used by both file input and drag-and-drop.
+  const processUploadedFiles = async (selectedFiles: FileList) => {
+    if (selectedFiles.length === 0) return;
 
     setIsUploading(true);
     try {
@@ -441,6 +443,12 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     }
   };
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = e.target.files;
+    if (!selectedFiles || selectedFiles.length === 0) return;
+    await processUploadedFiles(selectedFiles);
+  };
+
   const handleDeleteDocument = async (filename: string) => {
     if (!currentThreadId) return;
 
@@ -548,6 +556,57 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     isIngesting;
   const showRunningMode =
     isLoading || isSelectedThreadBusy || isResolvingSelectedThreadStatus || isIngesting;
+
+  // ── Drag-and-drop handlers ──────────────────────────────────────────────
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only track file drags (not internal element drags).
+    if (e.dataTransfer?.types?.includes("Files")) {
+      dragCounterRef.current += 1;
+      if (dragCounterRef.current === 1) {
+        setIsDragOver(true);
+      }
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = "copy";
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer?.types?.includes("Files")) {
+      dragCounterRef.current -= 1;
+      if (dragCounterRef.current <= 0) {
+        dragCounterRef.current = 0;
+        setIsDragOver(false);
+      }
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current = 0;
+      setIsDragOver(false);
+
+      if (composerLocked || isUploading) return;
+
+      const droppedFiles = e.dataTransfer?.files;
+      if (!droppedFiles || droppedFiles.length === 0) return;
+
+      await processUploadedFiles(droppedFiles);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [composerLocked, isUploading]
+  );
 
   const handleSubmit = useCallback(
     (e?: FormEvent) => {
@@ -839,7 +898,27 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   }, [interrupt]);
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div
+      className="relative flex flex-1 flex-col overflow-hidden"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drag-and-drop overlay */}
+      {isDragOver && (
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-xl border-2 border-dashed border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] backdrop-blur-[1px]">
+          <div className="flex flex-col items-center gap-2 rounded-xl bg-background/90 px-8 py-6 shadow-lg">
+            <Paperclip size={32} className="text-[var(--color-primary)]" />
+            <span className="text-sm font-semibold text-foreground">
+              Drop files to upload
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Files will be attached to this thread
+            </span>
+          </div>
+        </div>
+      )}
       <div
         className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
         ref={scrollRef}

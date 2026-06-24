@@ -1,8 +1,8 @@
 "use client";
 
-import { createContext, useContext, useMemo, ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, ReactNode } from "react";
 import { Client } from "@langchain/langgraph-sdk";
-import { createLangGraphClientConfig } from "@/lib/langgraph-client";
+import { createLangGraphClientConfig, installGlobalAuthInterceptor, startProactiveSessionRefresh } from "@/lib/langgraph-client";
 
 interface ClientContextValue {
   client: Client;
@@ -21,6 +21,20 @@ export function ClientProvider({
   deploymentUrl,
   apiKey,
 }: ClientProviderProps) {
+  // Install the global 401 fetch interceptor once on mount.
+  // On 401 it first tries to refresh the session; only redirects to
+  // /login if the refresh also fails.
+  useEffect(() => {
+    installGlobalAuthInterceptor();
+  }, []);
+
+  // Proactively refresh the session every 20 minutes to keep it alive
+  // while the user is active (the backend session TTL is 24 h).
+  useEffect(() => {
+    if (!deploymentUrl) return;
+    return startProactiveSessionRefresh(deploymentUrl, 20);
+  }, [deploymentUrl]);
+
   const client = useMemo(() => {
     return new Client(createLangGraphClientConfig({ deploymentUrl, apiKey }));
   }, [deploymentUrl, apiKey]);

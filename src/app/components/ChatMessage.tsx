@@ -86,7 +86,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(
     const handleCopy = useCallback(() => {
       navigator.clipboard.writeText(messageContent).then(() => {
         setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        setTimeout(() => setCopied(false), 4000);
       });
     }, [messageContent]);
 

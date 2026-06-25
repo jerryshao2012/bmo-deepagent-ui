@@ -24,10 +24,12 @@ export function FilesPopover({
   files,
   setFiles,
   editDisabled,
+  onDocumentClick,
 }: {
   files: Record<string, unknown>;
   setFiles: (files: Record<string, unknown>) => Promise<void>;
   editDisabled: boolean;
+  onDocumentClick?: (filePath: string, page?: number, slide?: number) => void;
 }) {
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   const filesRef = useRef(files);
@@ -110,6 +112,7 @@ export function FilesPopover({
           onSaveFile={handleSaveFile}
           onClose={() => setSelectedFile(null)}
           editDisabled={editDisabled}
+          onDocumentClick={onDocumentClick}
         />
       )}
     </>
@@ -120,7 +123,8 @@ export const TasksFilesSidebar = React.memo<{
   todos: TodoItem[];
   files: Record<string, unknown>;
   setFiles: (files: Record<string, unknown>) => Promise<void>;
-}>(({ todos, files, setFiles }) => {
+  onDocumentClick?: (filePath: string, page?: number, slide?: number) => void;
+}>(({ todos, files, setFiles, onDocumentClick }) => {
   const { isLoading, interrupt } = useChatContext();
   const [tasksOpen, setTasksOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
@@ -260,6 +264,7 @@ export const TasksFilesSidebar = React.memo<{
               files={files}
               setFiles={setFiles}
               editDisabled={isLoading === true || interrupt !== undefined}
+              onDocumentClick={onDocumentClick}
             />
           )}
         </div>

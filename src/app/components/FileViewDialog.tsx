@@ -57,7 +57,8 @@ export const FileViewDialog = React.memo<{
   onSaveFile: (fileName: string, content: string) => Promise<void>;
   onClose: () => void;
   editDisabled: boolean;
-}>(({ file, onSaveFile, onClose, editDisabled }) => {
+  onDocumentClick?: (filePath: string, page?: number, slide?: number) => void;
+}>(({ file, onSaveFile, onClose, editDisabled, onDocumentClick }) => {
   const [isEditingMode, setIsEditingMode] = useState(file === null);
   // Keep original filename (with /) for server submission
   const [originalFileName, setOriginalFileName] = useState(String(file?.path || ""));
@@ -302,7 +303,7 @@ export const FileViewDialog = React.memo<{
               <TabsContent value="preview" className="flex-1 flex flex-col min-h-0 data-[state=inactive]:hidden">
                 <ScrollArea className="bg-surface h-full w-full rounded-md border border-border">
                   <div className="p-6">
-                    <MarkdownContent content={fileContent} />
+                    <MarkdownContent content={fileContent} onDocumentClick={onDocumentClick} />
                   </div>
                   <ScrollBar orientation="horizontal" />
                 </ScrollArea>
@@ -314,7 +315,7 @@ export const FileViewDialog = React.memo<{
                 {fileContent ? (
                   isMarkdown ? (
                     <div className="rounded-md p-6">
-                      <MarkdownContent content={fileContent} />
+                      <MarkdownContent content={fileContent} onDocumentClick={onDocumentClick} />
                     </div>
                   ) : (
                     <div className="overflow-x-auto">

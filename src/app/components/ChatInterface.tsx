@@ -41,6 +41,7 @@ import { useStickToBottom } from "use-stick-to-bottom";
 import { FilesPopover } from "@/app/components/TasksFilesSidebar";
 import { useThreadStatus } from "@/app/hooks/useThreads";
 import { useQueryState } from "nuqs";
+import { DocumentViewerDialog, type DocumentViewerState } from "@/app/components/viewers/DocumentViewerDialog";
 
 interface ChatInterfaceProps {
   assistant: Assistant | null;
@@ -143,6 +144,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounterRef = useRef(0);
+  const [documentViewerState, setDocumentViewerState] = useState<DocumentViewerState | null>(null);
+
+  const handleDocumentClick = useCallback((filePath: string, page?: number, slide?: number) => {
+    setDocumentViewerState({ filePath, page, slide });
+  }, []);
 
   const [ingestProgress, setIngestProgress] = useState<number | null>(null);
   const [ingestPhase, setIngestPhase] = useState<string | null>(null);
@@ -989,6 +995,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                     stream={stream}
                     onResumeInterrupt={resumeInterrupt}
                     graphId={assistant?.graph_id}
+                    onDocumentClick={handleDocumentClick}
                   />
                 );
               })}
@@ -1261,6 +1268,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                           editDisabled={
                             isLoading || interrupt !== undefined
                           }
+                          onDocumentClick={handleDocumentClick}
                         />
                       </div>
                     )}
@@ -1276,16 +1284,25 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                                 backgroundColor: "var(--color-file-button)",
                               }}
                             >
-                              <FileText
-                                size={24}
-                                className="mx-auto text-muted-foreground"
-                              />
-                              <span className="mx-auto block w-full truncate break-words text-center text-sm leading-relaxed text-foreground px-1">
-                                {doc.name}
-                              </span>
-                              <span className="text-[10px] text-muted-foreground">
-                                {(doc.size / 1024).toFixed(1)} KB
-                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleDocumentClick(`/${doc.name}`)
+                                }
+                                className="flex flex-col items-center justify-center space-y-1 w-full cursor-pointer"
+                                title={`View ${doc.name}`}
+                              >
+                                <FileText
+                                  size={24}
+                                  className="mx-auto text-muted-foreground"
+                                />
+                                <span className="mx-auto block w-full truncate break-words text-center text-sm leading-relaxed text-foreground px-1">
+                                  {doc.name}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  {(doc.size / 1024).toFixed(1)} KB
+                                </span>
+                              </button>
                               
                               <button
                                 type="button"
@@ -1444,6 +1461,13 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           </form>
         </div>
       </div>
+      {documentViewerState && currentThreadId && (
+        <DocumentViewerDialog
+          state={documentViewerState}
+          threadId={currentThreadId}
+          onClose={() => setDocumentViewerState(null)}
+        />
+      )}
     </div>
   );
 });

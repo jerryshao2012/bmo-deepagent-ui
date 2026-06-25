@@ -31,6 +31,7 @@ interface ChatMessageProps {
   stream?: any;
   onResumeInterrupt?: (value: any) => void;
   graphId?: string;
+  onDocumentClick?: (filePath: string, page?: number, slide?: number) => void;
 }
 
 export const ChatMessage = React.memo<ChatMessageProps>(
@@ -46,6 +47,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(
     stream,
     onResumeInterrupt,
     graphId,
+    onDocumentClick,
   }) => {
     const isUser = message.type === "human";
     const messageContent = extractStringFromMessageContent(message);
@@ -138,7 +140,10 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                     {messageContent}
                   </p>
                 ) : hasContent ? (
-                  <MarkdownContent content={messageContent} />
+                  <MarkdownContent
+                    content={messageContent}
+                    onDocumentClick={onDocumentClick}
+                  />
                 ) : null}
               </div>
               {isUser && (
@@ -227,6 +232,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                         <div className="mb-4">
                           <MarkdownContent
                             content={extractSubAgentContent(subAgent.input)}
+                            onDocumentClick={onDocumentClick}
                           />
                         </div>
                         {subAgent.output && (
@@ -236,6 +242,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                             </h4>
                             <MarkdownContent
                               content={extractSubAgentContent(subAgent.output)}
+                              onDocumentClick={onDocumentClick}
                             />
                           </>
                         )}

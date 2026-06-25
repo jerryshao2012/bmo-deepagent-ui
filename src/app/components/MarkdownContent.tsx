@@ -138,20 +138,13 @@ const Mermaid: React.FC<MermaidProps> = ({ chart }) => {
  * Normalises document citation patterns produced by the LLM so they render
  * consistently as:  (`/file.pdf`, p. N)
  *
- * Four patterns are handled (all file extensions: .pdf .docx .pptx .xlsx,
- * including their .pdf.md / .pdf.txt wiki-raw variants):
+ * Citation patterns handled (all file extensions: .pdf .docx .pptx .xlsx,
+ * including their .pdf.md / .pdf.txt wiki-raw variants).
  *
- *  1. ([/file.ext](p. N))        — broken markdown link in parens
- *     →  (`/file.ext`, p. N)
- *
- *  2. [/file.ext](p. N)          — bare broken markdown link
- *     →  `/file.ext`, p. N
- *
- *  3. (Source: /file.ext, p. N)  — plain-text "Source:" prefix citation
- *     →  (Source: `/file.ext`, p. N)
- *
- *  4. (/file.ext, p. N)          — plain path citation in parens, no backticks
- *     →  (`/file.ext`, p. N)
+ * All patterns produce a plain markdown link  [label](/path.ext)  where the
+ * href is the actual file path.  Page / slide info is kept in the label text.
+ * A capture-phase click handler on the container div intercepts these links
+ * and opens the document viewer dialog instead of navigating the browser.
  */
 function preprocessMarkdown(content: string): string {
   if (!content) return content;
@@ -161,38 +154,46 @@ function preprocessMarkdown(content: string): string {
   const DOC = /\/[A-Za-z0-9._\-/]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?/i.source;
 
   // Pattern 1: ([/file.ext](page-ref)) — broken markdown link inside outer parens
-  // e.g. ([/bmo_ar2025.pdf](p. 30, 202))  →  (`/bmo_ar2025.pdf`, p. 30, 202)
+  // e.g. ([/bmo_ar2025.pdf](p. 30))  →  [/bmo_ar2025.pdf, p. 30](/bmo_ar2025.pdf)
   let result = content.replace(
     new RegExp(`\\(\\[(${DOC})\\]\\(([^)]+)\\)\\)`, "gi"),
-    (_match, path: string, pageRef: string) => {
-      if (/^https?:\/\//i.test(pageRef.trim())) return _match;
-      return `(\`${path}\`, ${pageRef.trim()})`;
+    (match, path: string, pageRef: string) => {
+      if (/^https?:\/\//i.test(pageRef.trim())) return match;
+      const label = `${path}, ${pageRef.trim()}`.replace(/\|/g, "\\|");
+      return `[${label}](${path})`;
     },
   );
 
   // Pattern 2: [/file.ext](page-ref) — bare broken markdown link (no outer parens)
-  // e.g. [/bmo_ar2025.pdf](p. 30)  →  `/bmo_ar2025.pdf`, p. 30
+  // e.g. [/bmo_ar2025.pdf](p. 30)  →  [/bmo_ar2025.pdf, p. 30](/bmo_ar2025.pdf)
   result = result.replace(
     new RegExp(`\\[(${DOC})\\]\\(([^)]+)\\)`, "gi"),
-    (_match, path: string, pageRef: string) => {
-      if (/^https?:\/\//i.test(pageRef.trim())) return _match;
-      return `\`${path}\`, ${pageRef.trim()}`;
+    (match, path: string, pageRef: string) => {
+      if (/^https?:\/\//i.test(pageRef.trim())) return match;
+      const label = `${path}, ${pageRef.trim()}`.replace(/\|/g, "\\|");
+      return `[${label}](${path})`;
     },
   );
 
   // Pattern 3: (Source: /file.ext, p. N) — plain-text "Source:" prefix citation
-  // e.g. (Source: /bmo_ar2025.pdf, p. 69)  →  (Source: `/bmo_ar2025.pdf`, p. 69)
+  // e.g. (Source: /bmo_ar2025.pdf, p. 69)  →  (Source: [/bmo_ar2025.pdf, p. 69](/bmo_ar2025.pdf))
   result = result.replace(
     new RegExp(`\\(Source:\\s+(${DOC})([^)]*)\\)`, "gi"),
-    (_match, path: string, rest: string) => `(Source: \`${path}\`${rest})`,
+    (match, path: string, rest: string) => {
+      const label = `${path}${rest}`.replace(/\|/g, "\\|");
+      return `(Source: [${label}](${path}))`;
+    },
   );
 
-  // Pattern 4: (/file.ext, p. N) — plain path in parens, not yet backtick-wrapped
-  // e.g. (/bmo_ar2025.pdf, p. 69)  →  (`/bmo_ar2025.pdf`, p. 69)
+  // Pattern 4: (/file.ext, p. N) — plain path citation in parens
+  // e.g. (/bmo_ar2025.pdf, p. 100)  →  ([/bmo_ar2025.pdf, p. 100](/bmo_ar2025.pdf))
   // Negative lookahead (?!`) prevents double-wrapping already-fixed citations.
   result = result.replace(
-    new RegExp(`\\((?!\`)(${DOC})([^)]*)\\)`, "gi"),
-    (_match, path: string, rest: string) => `(\`${path}\`${rest})`,
+    new RegExp(`\\((?![\`\\(])(${DOC})([^)]*)\\)`, "gi"),
+    (match, path: string, rest: string) => {
+      const label = `${path}${rest}`.replace(/\|/g, "\\|");
+      return `([${label}](${path}))`;
+    },
   );
 
   return result;
@@ -203,10 +204,62 @@ interface MarkdownContentProps {
   content: string;
   className?: string;
   light?: boolean;
+  onDocumentClick?: (filePath: string, page?: number, slide?: number) => void;
 }
 
+// Regex matching any bare document-path href produced by preprocessMarkdown.
+const DOC_HREF_RE = /^(\/[A-Za-z0-9._\-/]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?)(?:\?([^#]*))?(?:#(.*))?$/i;
+
 export const MarkdownContent = React.memo<MarkdownContentProps>(
-  ({ content, className = "", light = false }) => {
+  ({ content, className = "", light = false, onDocumentClick }) => {
+    // Capture-phase click handler: intercepts ALL anchor clicks inside this
+    // container before the browser (or Next.js router) can navigate.
+    const handleLinkCapture = React.useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!onDocumentClick) return;
+        const anchor = (e.target as HTMLElement).closest("a");
+        if (!anchor) return;
+        const href = anchor.getAttribute("href") ?? "";
+
+        const m = DOC_HREF_RE.exec(href);
+        if (!m) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const filePath = m[1];
+        const qs = m[2] ?? "";
+        const hash = m[3] ?? "";
+        const params = new URLSearchParams(qs);
+        const hashParams = new URLSearchParams(hash);
+        
+        let page: number | undefined;
+        let slide: number | undefined;
+
+        // 1. First try to parse page from visible text, as LLMs often hallucinate wrong URL params
+        const text = anchor.textContent ?? "";
+        const slideM = text.match(/slide\s*(\d+)/i);
+        const pageM = text.match(/(?:p\.?|page)\s*(\d+)/i);
+        
+        if (slideM) {
+          slide = parseInt(slideM[1], 10);
+        } else if (pageM) {
+          page = parseInt(pageM[1], 10);
+        }
+
+        // 2. Fallback to URL query or hash params if text doesn't contain a page
+        if (!page && !slide) {
+          const pageStr = params.get("page") || hashParams.get("page");
+          const slideStr = params.get("slide") || hashParams.get("slide");
+          if (pageStr) page = parseInt(pageStr, 10);
+          if (slideStr) slide = parseInt(slideStr, 10);
+        }
+
+        onDocumentClick(filePath, page, slide);
+      },
+      [onDocumentClick]
+    );
+
     return (
       <div
         className={cn(
@@ -214,6 +267,7 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
           light ? "text-zinc-800 bg-white" : "text-foreground",
           className
         )}
+        onClickCapture={handleLinkCapture}
       >
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
@@ -476,6 +530,9 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
               className?: string;
               children?: React.ReactNode;
             }) {
+              // Document links (/path.pdf) are intercepted by the container's
+              // onClickCapture handler — no special handling needed here.
+              // Just render all links normally; external ones open in a new tab.
               return (
                 <a
                   href={href}

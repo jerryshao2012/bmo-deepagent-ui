@@ -153,13 +153,30 @@ function preprocessMarkdown(content: string): string {
   // Covers /raw/file.pdf.md and /file.pdf alike.
   const DOC = /\/[A-Za-z0-9._\-/]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?/i.source;
 
+  // Pattern 0: [label]([/file.ext](/file.ext)) or [label]([/file.ext](page-ref)) — double-nested link
+  // e.g. [bmo_ar2025.pdf, p. 30]([/bmo_ar2025.pdf](/bmo_ar2025.pdf))  →  [bmo_ar2025.pdf, p. 30](/bmo_ar2025.pdf)
+  let result = content.replace(
+    new RegExp(`\\[([^\\]]+)\\]\\(\\[(${DOC})\\]\\(([^)]+)\\)\\)`, "gi"),
+    (match, label: string, path: string, pageRef: string) => {
+      const cleanPageRef = pageRef.trim();
+      if (cleanPageRef === path || /^https?:\/\//i.test(cleanPageRef)) {
+        return `[${label}](${path})`;
+      }
+      return `[${label}, ${cleanPageRef}](${path})`;
+    },
+  );
+
   // Pattern 1: ([/file.ext](page-ref)) — broken markdown link inside outer parens
   // e.g. ([/bmo_ar2025.pdf](p. 30))  →  [/bmo_ar2025.pdf, p. 30](/bmo_ar2025.pdf)
-  let result = content.replace(
+  result = result.replace(
     new RegExp(`\\(\\[(${DOC})\\]\\(([^)]+)\\)\\)`, "gi"),
     (match, path: string, pageRef: string) => {
       if (/^https?:\/\//i.test(pageRef.trim())) return match;
-      const label = `${path}, ${pageRef.trim()}`.replace(/\|/g, "\\|");
+      const cleanPageRef = pageRef.trim();
+      if (cleanPageRef === path) {
+        return `[${path}](${path})`;
+      }
+      const label = `${path}, ${cleanPageRef}`.replace(/\|/g, "\\|");
       return `[${label}](${path})`;
     },
   );
@@ -170,7 +187,11 @@ function preprocessMarkdown(content: string): string {
     new RegExp(`\\[(${DOC})\\]\\(([^)]+)\\)`, "gi"),
     (match, path: string, pageRef: string) => {
       if (/^https?:\/\//i.test(pageRef.trim())) return match;
-      const label = `${path}, ${pageRef.trim()}`.replace(/\|/g, "\\|");
+      const cleanPageRef = pageRef.trim();
+      if (cleanPageRef === path) {
+        return `[${path}](${path})`;
+      }
+      const label = `${path}, ${cleanPageRef}`.replace(/\|/g, "\\|");
       return `[${label}](${path})`;
     },
   );
@@ -219,9 +240,18 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
         if (!onDocumentClick) return;
         const anchor = (e.target as HTMLElement).closest("a");
         if (!anchor) return;
-        const href = anchor.getAttribute("href") ?? "";
+        let href = anchor.getAttribute("href") ?? "";
 
-        const m = DOC_HREF_RE.exec(href);
+        // Decode URL-encoded characters (e.g. %5B -> [) to handle raw markdown links
+        try {
+          href = decodeURIComponent(href);
+        } catch (err) {}
+
+        // Extract the clean document path if the href is nested (e.g. [/file.pdf](/file.pdf))
+        const nestedMatch = href.match(/\[?(\/[A-Za-z0-9._\-/]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?)\]?(?:\([^)]*\))?/i);
+        const cleanHref = nestedMatch ? nestedMatch[1] : href;
+
+        const m = DOC_HREF_RE.exec(cleanHref);
         if (!m) return;
 
         e.preventDefault();

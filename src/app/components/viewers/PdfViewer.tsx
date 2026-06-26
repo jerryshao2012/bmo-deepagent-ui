@@ -40,6 +40,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
   const [pageLabels, setPageLabels] = useState<string[] | null>(null);
   const [inputVal, setInputVal] = useState("");
   const renderTasksRef = useRef<any[]>([]);
+  const renderedPagesRef = useRef<Map<number, number>>(new Map()); // pageNum -> zoom level
   const hasScrolledRef = useRef(false);
   const lastZoomRef = useRef(zoom);
   const lastInitialPageRef = useRef(initialPage);
@@ -115,47 +116,70 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdfData]);
 
-  // Render all visible pages
-  const renderPages = useCallback(async () => {
-    if (!pdfDoc) return;
-
-    // Cancel previous renders
+  // Cancel running renders and clear cache when document or zoom changes
+  useEffect(() => {
     renderTasksRef.current.forEach((t) => t.cancel());
     renderTasksRef.current = [];
+    renderedPagesRef.current.clear();
+  }, [pdfDoc, zoom]);
 
-    const pagePromises: Promise<void>[] = [];
-    for (let i = 1; i <= numPages; i++) {
-      const promise = (async (pageNum: number) => {
-        const canvas = canvasRefs.current.get(pageNum);
-        if (!canvas) return;
-
-        try {
-          const page = await pdfDoc.getPage(pageNum);
-          const viewport = page.getViewport({ scale: zoom * window.devicePixelRatio });
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return;
-
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          canvas.style.width = `${viewport.width / window.devicePixelRatio}px`;
-          canvas.style.height = `${viewport.height / window.devicePixelRatio}px`;
-
-          const renderTask = page.render({ canvasContext: ctx, viewport });
-          renderTasksRef.current.push(renderTask);
-          await renderTask.promise;
-        } catch {
-          // Ignore cancelled renders
-        }
-      })(i);
-      pagePromises.push(promise);
-    }
-
-    await Promise.all(pagePromises);
-  }, [pdfDoc, numPages, zoom]);
-
+  // Intersection Observer to render pages on demand as they scroll into view
   useEffect(() => {
-    renderPages();
-  }, [renderPages]);
+    if (!containerRef.current || !pdfDoc || loading) return;
+
+    const renderPage = async (pageNum: number) => {
+      // If already rendered at this zoom, skip
+      if (renderedPagesRef.current.get(pageNum) === zoom) return;
+
+      const canvas = canvasRefs.current.get(pageNum);
+      if (!canvas) return;
+
+      try {
+        renderedPagesRef.current.set(pageNum, zoom); // mark as rendering/rendered
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: zoom * window.devicePixelRatio });
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = `${viewport.width / window.devicePixelRatio}px`;
+        canvas.style.height = `${viewport.height / window.devicePixelRatio}px`;
+
+        const renderTask = page.render({ canvasContext: ctx, viewport });
+        renderTasksRef.current.push(renderTask);
+        await renderTask.promise;
+      } catch (e) {
+        // If failed/cancelled, remove from rendered map so it can retry
+        renderedPagesRef.current.delete(pageNum);
+      }
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const pageNum = parseInt((entry.target as HTMLElement).dataset.page || "0", 10);
+            if (pageNum >= 1 && pageNum <= numPages) {
+              renderPage(pageNum);
+            }
+          }
+        });
+      },
+      {
+        root: containerRef.current,
+        rootMargin: "800px 0px", // Render pages within 800px of viewport
+        threshold: 0.01,
+      }
+    );
+
+    const pageElements = containerRef.current.querySelectorAll("[data-page]");
+    pageElements.forEach((el) => observer.observe(el));
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [pdfDoc, numPages, zoom, loading]);
 
   // Scroll to initial page when dimensions are known
   useLayoutEffect(() => {

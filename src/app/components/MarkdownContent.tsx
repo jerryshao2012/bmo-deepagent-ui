@@ -153,9 +153,12 @@ function preprocessMarkdown(content: string): string {
   // Covers /raw/file.pdf.md and /file.pdf alike.
   const DOC = /\/[A-Za-z0-9._\-/]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?/i.source;
 
+  // Strip backticks surrounding document paths so they can be processed and rendered as clickable links
+  let result = content.replace(new RegExp(`\`(${DOC})\``, "gi"), "$1");
+
   // Pattern 0: [label]([/file.ext](/file.ext)) or [label]([/file.ext](page-ref)) — double-nested link
   // e.g. [bmo_ar2025.pdf, p. 30]([/bmo_ar2025.pdf](/bmo_ar2025.pdf))  →  [bmo_ar2025.pdf, p. 30](/bmo_ar2025.pdf)
-  let result = content.replace(
+  result = result.replace(
     new RegExp(`\\[([^\\]]+)\\]\\(\\[(${DOC})\\]\\(([^)]+)\\)\\)`, "gi"),
     (match, label: string, path: string, pageRef: string) => {
       const cleanPageRef = pageRef.trim();

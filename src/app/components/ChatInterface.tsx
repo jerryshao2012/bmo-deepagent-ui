@@ -154,10 +154,13 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [documentViewerState, setDocumentViewerState] = useState<DocumentViewerState | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
 
-  const handleDocumentClick = useCallback((filePath: string, page?: number, slide?: number) => {
-    setSelectedFile(null); // Clear selected file when opening a document
-    setDocumentViewerState({ filePath, page, slide });
-  }, []);
+  const handleDocumentClick = useCallback(
+    (filePath: string, page?: number, slide?: number, quote?: string) => {
+      setSelectedFile(null); // Clear selected file when opening a document
+      setDocumentViewerState({ filePath, page, slide, quote });
+    },
+    []
+  );
 
   const handleFileClick = useCallback((file: FileItem) => {
     setDocumentViewerState(null); // Clear selected doc when opening a file

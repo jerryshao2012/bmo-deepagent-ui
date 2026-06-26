@@ -22,6 +22,8 @@ export interface DocumentViewerState {
   filePath: string;
   page?: number;
   slide?: number;
+  /** Surrounding-sentence quote used to highlight the referenced passage. */
+  quote?: string;
 }
 
 interface DocumentViewerPanelProps {
@@ -234,16 +236,25 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
               <p className="text-sm text-red-500">{error}</p>
             </div>
           ) : docType === "pdf" && docData ? (
-            <PdfViewer pdfData={docData} initialPage={state.page} />
+            <PdfViewer
+              pdfData={docData}
+              initialPage={state.page}
+              highlightQuote={state.quote}
+            />
           ) : docType === "docx" && docData ? (
-            <DocxViewer docxData={docData} initialPage={state.page} />
+            <DocxViewer
+              docxData={docData}
+              initialPage={state.page}
+              highlightQuote={state.quote}
+            />
           ) : docType === "xlsx" && docData ? (
-            <XlsxViewer xlsxData={docData} />
+            <XlsxViewer xlsxData={docData} highlightQuote={state.quote} />
           ) : docType === "pptx" ? (
             <PptxViewer
               filePath={state.filePath}
               threadId={threadId}
               initialSlide={state.slide ?? state.page}
+              highlightQuote={state.quote}
             />
           ) : null}
         </div>

@@ -156,6 +156,55 @@ function preprocessMarkdown(content: string): string {
   // Strip backticks surrounding document paths so they can be processed and rendered as clickable links
   let result = content.replace(new RegExp(`\`(${DOC})\``, "gi"), "$1");
 
+  // Multi-page citations (e.g. (/bmo_ar2025.pdf, pp. 91, 100))
+  // Transform them into individual clickable page links so that each page number opens its respective page.
+  result = result.replace(
+    new RegExp(`\\((?:Source:\\s+)?(${DOC}),\\s*(?:p\\.?|pp\\.?|page|pages)\\s*(\\d+(?:\\s*,\\s*\\d+)+)\\)`, "gi"),
+    (match, path: string, pageListStr: string) => {
+      const hasSource = match.toLowerCase().includes("source:");
+      const pages = pageListStr.split(",").map(p => p.trim());
+      const links = pages.map((p, idx) => {
+        if (idx === 0) {
+          return `[${path}, p. ${p}](${path}?page=${p})`;
+        } else {
+          return `[p. ${p}](${path}?page=${p})`;
+        }
+      });
+      const prefix = hasSource ? "Source: " : "";
+      return `(${prefix}${links.join(", ")})`;
+    }
+  );
+
+  result = result.replace(
+    new RegExp(`\\(\\[(${DOC})\\]\\((?:p\\.?|pp\\.?|page|pages)\\s*(\\d+(?:\\s*,\\s*\\d+)+)\\)\\)`, "gi"),
+    (match, path: string, pageListStr: string) => {
+      const pages = pageListStr.split(",").map(p => p.trim());
+      const links = pages.map((p, idx) => {
+        if (idx === 0) {
+          return `[${path}, p. ${p}](${path}?page=${p})`;
+        } else {
+          return `[p. ${p}](${path}?page=${p})`;
+        }
+      });
+      return `(${links.join(", ")})`;
+    }
+  );
+
+  result = result.replace(
+    new RegExp(`\\[(${DOC})\\]\\((?:p\\.?|pp\\.?|page|pages)\\s*(\\d+(?:\\s*,\\s*\\d+)+)\\)`, "gi"),
+    (match, path: string, pageListStr: string) => {
+      const pages = pageListStr.split(",").map(p => p.trim());
+      const links = pages.map((p, idx) => {
+        if (idx === 0) {
+          return `[${path}, p. ${p}](${path}?page=${p})`;
+        } else {
+          return `[p. ${p}](${path}?page=${p})`;
+        }
+      });
+      return links.join(", ");
+    }
+  );
+
   // Pattern 0: [label]([/file.ext](/file.ext)) or [label]([/file.ext](page-ref)) — double-nested link
   // e.g. [bmo_ar2025.pdf, p. 30]([/bmo_ar2025.pdf](/bmo_ar2025.pdf))  →  [bmo_ar2025.pdf, p. 30](/bmo_ar2025.pdf)
   result = result.replace(
@@ -228,11 +277,112 @@ interface MarkdownContentProps {
   content: string;
   className?: string;
   light?: boolean;
-  onDocumentClick?: (filePath: string, page?: number, slide?: number) => void;
+  onDocumentClick?: (
+    filePath: string,
+    page?: number,
+    slide?: number,
+    quote?: string
+  ) => void;
 }
 
 // Regex matching any bare document-path href produced by preprocessMarkdown.
 const DOC_HREF_RE = /^(\/[A-Za-z0-9._\-/]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?)(?:\?([^#]*))?(?:#(.*))?$/i;
+
+/**
+ * Derive a highlight `quote` from the response text surrounding a citation
+ * link. We take the block-level ancestor (<p>/<li>/<td>/…), locate the link
+ * inside it, pick the sentence that contains it, then strip the citation
+ * label/parenthetical so the quote is just the referenced prose.
+ *
+ * Returns the cleaned quote, or undefined if nothing useful could be derived.
+ */
+function extractSurroundingQuote(anchor: HTMLAnchorElement): string | undefined {
+  const block = anchor.closest("p, li, td, blockquote, dd, dt, div");
+  if (!block) return undefined;
+
+  const blockText = block.textContent ?? "";
+  const linkText = (anchor.textContent ?? "").trim();
+  if (!blockText) return undefined;
+
+  // Offset of the link within the block's flat text, via a Range.
+  let linkOffset = -1;
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(block);
+    const linkRange = document.createRange();
+    linkRange.selectNodeContents(anchor);
+    // Measure text up to the start of the link.
+    const upto = range.cloneRange();
+    upto.setEnd(
+      anchor.parentNode ? anchor : block,
+      Array.from(block.childNodes).indexOf((anchor.parentNode ?? anchor) as unknown as ChildNode)
+    );
+    linkOffset = upto.toString().length;
+  } catch {
+    // fall through to indexOf
+  }
+  if (linkOffset === -1) {
+    linkOffset = blockText.indexOf(linkText);
+  }
+
+  // Split into sentences and pick the one containing the link.
+  // Avoid splitting on abbreviations like p., pp., e.g., i.e., etc.
+  const sentences = blockText.split(/(?<!\b(?:p|pp|e\.g|i\.e|al|vs|etc)\b\.)(?<=[.!?])\s+/i);
+
+  let cumulative = 0;
+  let target = "";
+  let targetIndex = -1;
+  for (let i = 0; i < sentences.length; i++) {
+    const s = sentences[i];
+    const sStart = blockText.indexOf(s, cumulative);
+    const sEnd = sStart + s.length;
+    if (linkOffset >= sStart && linkOffset < sEnd) {
+      target = s;
+      targetIndex = i;
+      break;
+    }
+    cumulative = sEnd;
+  }
+
+  if (!target) {
+    target = blockText;
+    targetIndex = sentences.length - 1;
+  }
+
+  // Remove the citation label and common surrounding citation artifacts.
+  let quote = target;
+  if (linkText) {
+    quote = quote.replace(linkText, " ");
+  }
+  quote = quote
+    .replace(/\(\s*(?:Source:\s*)?\[[^\]]*\]\([^)]*\)\s*\)/gi, " ") // ([…](…))
+    .replace(/\(\s*Source:\s*\]/gi, " ")
+    .replace(/\(\s*Source:\s*/gi, " ")
+    .replace(/\)\s*$/, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Determine if the quote is mostly just citation noise (paths, page references, digits, parentheses)
+  // by checking a heavily stripped version of it.
+  const cleanDOC = /[A-Za-z0-9._\-/]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?/gi;
+  let testQuote = quote.replace(cleanDOC, " ");
+  testQuote = testQuote.replace(/\b(?:p|pp|page|pages|slide|slides)\b/gi, " ");
+  testQuote = testQuote.replace(/\b\d+\b/gi, " ");
+  testQuote = testQuote.replace(/[(),\/#?=&:|-]/g, " ");
+  testQuote = testQuote.replace(/\s+/g, " ").trim();
+
+  // If the quote is too short or is mostly citation noise, fall back to
+  // the preceding sentence (because citations are often isolated in their own sentence).
+  if (quote.length < 15 || testQuote.length < 10) {
+    if (targetIndex > 0) {
+      quote = sentences[targetIndex - 1];
+    } else {
+      quote = blockText.replace(linkText, " ").replace(/\s+/g, " ").trim();
+    }
+  }
+
+  return quote || undefined;
+}
 
 export const MarkdownContent = React.memo<MarkdownContentProps>(
   ({ content, className = "", light = false, onDocumentClick }) => {
@@ -290,7 +440,10 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
           if (slideStr) slide = parseInt(slideStr, 10);
         }
 
-        onDocumentClick(filePath, page, slide);
+        // 3. Derive a highlight `quote` from the sentence surrounding the link.
+        const quote = extractSurroundingQuote(anchor);
+
+        onDocumentClick(filePath, page, slide, quote);
       },
       [onDocumentClick]
     );

@@ -31,7 +31,12 @@ interface ChatMessageProps {
   stream?: any;
   onResumeInterrupt?: (value: any) => void;
   graphId?: string;
-  onDocumentClick?: (filePath: string, page?: number, slide?: number) => void;
+  onDocumentClick?: (
+    filePath: string,
+    page?: number,
+    slide?: number,
+    quote?: string
+  ) => void;
 }
 
 export const ChatMessage = React.memo<ChatMessageProps>(

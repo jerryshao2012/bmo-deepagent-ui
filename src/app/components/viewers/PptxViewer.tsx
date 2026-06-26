@@ -13,11 +13,17 @@ import { MarkdownContent } from "@/app/components/MarkdownContent";
 import {
   fetchDocumentExtract,
 } from "@/app/components/viewers/documentUtils";
+import {
+  clearHighlights,
+  highlightTextInElement,
+} from "@/app/utils/documentHighlight";
 
 interface PptxViewerProps {
   filePath: string;
   threadId: string;
   initialSlide?: number;
+  /** Surrounding-sentence quote to highlight in the cited slide. */
+  highlightQuote?: string;
 }
 
 interface SlideSection {
@@ -58,6 +64,7 @@ export const PptxViewer: React.FC<PptxViewerProps> = ({
   filePath,
   threadId,
   initialSlide,
+  highlightQuote,
 }) => {
   const [slides, setSlides] = useState<SlideSection[]>([]);
   const [currentSlide, setCurrentSlide] = useState(1);
@@ -116,6 +123,22 @@ export const PptxViewer: React.FC<PptxViewerProps> = ({
     },
     [slides.length]
   );
+
+  // Highlight the cited passage in the target slide
+  useEffect(() => {
+    if (!initialSlide || slides.length === 0) return;
+    const container = slideRefs.current.get(initialSlide);
+    if (!container) return;
+
+    requestAnimationFrame(() => {
+      clearHighlights(container);
+      if (highlightQuote) {
+        highlightTextInElement(container, highlightQuote);
+        const mark = container.querySelector<HTMLElement>("mark.cite-highlight");
+        mark?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  }, [slides, highlightQuote, initialSlide]);
 
   // Track current slide on scroll
   const handleScroll = useCallback(() => {

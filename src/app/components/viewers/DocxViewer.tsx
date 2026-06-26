@@ -2,15 +2,22 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
+import {
+  clearHighlights,
+  highlightTextInElement,
+} from "@/app/utils/documentHighlight";
 
 interface DocxViewerProps {
   docxData: ArrayBuffer;
   initialPage?: number;
+  /** Surrounding-sentence quote to highlight in the rendered document. */
+  highlightQuote?: string;
 }
 
 export const DocxViewer: React.FC<DocxViewerProps> = ({
   docxData,
   initialPage,
+  highlightQuote,
 }) => {
   const [html, setHtml] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -67,6 +74,20 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
       });
     }
   }, [initialPage, html]);
+
+  // Highlight the cited passage after the HTML is mounted.
+  useEffect(() => {
+    if (!contentRef.current || !html) return;
+    const container = contentRef.current;
+    requestAnimationFrame(() => {
+      clearHighlights(container);
+      if (highlightQuote) {
+        highlightTextInElement(container, highlightQuote);
+        const mark = container.querySelector<HTMLElement>("mark.cite-highlight");
+        mark?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  }, [html, highlightQuote]);
 
   if (loading) {
     return (

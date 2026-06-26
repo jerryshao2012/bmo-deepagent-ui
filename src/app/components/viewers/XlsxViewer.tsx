@@ -1,13 +1,20 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { Loader2, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import {
+  clearHighlights,
+  highlightTextInElement,
+} from "@/app/utils/documentHighlight";
+
 interface XlsxViewerProps {
   xlsxData: ArrayBuffer;
   initialSheet?: string;
+  /** Surrounding-sentence quote to highlight in the sheet. */
+  highlightQuote?: string;
 }
 
 // Column letter conversion (0 → A, 26 → AA, etc.)
@@ -24,12 +31,14 @@ function colToLetter(col: number): string {
 export const XlsxViewer: React.FC<XlsxViewerProps> = ({
   xlsxData,
   initialSheet,
+  highlightQuote,
 }) => {
   const [workbook, setWorkbook] = useState<any>(null);
   const [xlsxModule, setXlsxModule] = useState<any>(null);
   const [activeSheet, setActiveSheet] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,6 +96,21 @@ export const XlsxViewer: React.FC<XlsxViewerProps> = ({
     return Math.max(...sheetData.map((row) => row.length));
   }, [sheetData]);
 
+  // Highlight the cited passage in the active sheet
+  useEffect(() => {
+    if (!tableRef.current || !sheetData) return;
+    const container = tableRef.current;
+    
+    requestAnimationFrame(() => {
+      clearHighlights(container);
+      if (highlightQuote) {
+        highlightTextInElement(container, highlightQuote);
+        const mark = container.querySelector<HTMLElement>("mark.cite-highlight");
+        mark?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  }, [sheetData, activeSheet, highlightQuote]);
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -136,7 +160,7 @@ export const XlsxViewer: React.FC<XlsxViewerProps> = ({
 
       {/* Sheet content */}
       <div className="flex-1 overflow-auto bg-white">
-        <table className="border-collapse text-sm">
+        <table ref={tableRef} className="border-collapse text-sm">
           <thead className="sticky top-0 z-10">
             <tr>
               <th className="sticky left-0 z-20 border border-zinc-300 bg-zinc-200 px-2 py-1 text-xs font-medium text-zinc-600">

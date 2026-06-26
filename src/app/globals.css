@@ -464,6 +464,21 @@ button {
   text-decoration-color: #f85149;
 }
 
+/* Document Citation Highlights */
+.cite-highlight {
+  background-color: rgba(250, 204, 21, 0.55);  /* yellow highlighter */
+  border-radius: 2px;
+  padding: 0 1px;
+  box-shadow: -1px 0 0 rgba(250,204,21,0.55), 1px 0 0 rgba(250,204,21,0.55);
+}
+.pdf-highlight-rect {
+  position: absolute;
+  background-color: rgba(250, 204, 21, 0.45);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  border-radius: 1px;
+}
+
 /* ===========================
    Sign-In Page Animations
    =========================== */

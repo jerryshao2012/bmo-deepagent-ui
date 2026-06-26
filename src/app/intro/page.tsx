@@ -79,6 +79,7 @@ function IntroPageContent() {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const hasFallenBackRef = useRef<boolean>(false);
 
   // Prevent background body scroll when the telemetry dialog is open
   useEffect(() => {
@@ -96,6 +97,7 @@ function IntroPageContent() {
   // Load initial content from localStorage once threadId resolves
   useEffect(() => {
     if (threadId) {
+      hasFallenBackRef.current = false;
       const cached = localStorage.getItem(`markdown_thread_${threadId}`);
       if (cached) {
         setSharedText(cached);
@@ -107,6 +109,7 @@ function IntroPageContent() {
     if (!threadId) return;
     if (eventSourceRef.current) return;
 
+    hasFallenBackRef.current = true;
     setWsStatus("fallback");
     console.log("Initiating HTTP streaming (SSE) fallback for thread:", threadId);
 
@@ -156,6 +159,11 @@ function IntroPageContent() {
   const connectWS = useCallback(() => {
     if (!threadId) return;
     
+    // If we have already fallen back to HTTP, do not attempt WS reconnection
+    if (hasFallenBackRef.current) {
+      return;
+    }
+
     // If socket is already open or currently connecting, skip
     if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
       return;
@@ -221,21 +229,15 @@ function IntroPageContent() {
       setSocket(null);
       wsRef.current = null;
 
-      // If we closed because of an error, we would have transitioned to fallback already
-      if (wsStatus === "connecting") {
-        console.log("WebSocket failed to connect, falling back to HTTP stream...");
-        startFallbackSSE();
-      } else if (wsStatus === "connected") {
-        setWsStatus("disconnected");
-        // Automatically try to reconnect after 5 seconds
-        if (!reconnectTimeoutRef.current) {
-          console.log("Scheduling automatic WebSocket reconnect in 5 seconds...");
-          reconnectTimeoutRef.current = setTimeout(() => {
-            reconnectTimeoutRef.current = null;
-            connectWS();
-          }, 5000);
-        }
+      // If we have already triggered fallback, ignore this close event
+      if (hasFallenBackRef.current) {
+        return;
       }
+
+      // Automatically fallback if closing while still in connecting state
+      // Otherwise schedule standard reconnection
+      console.log("WebSocket connection failed or closed, falling back to HTTP stream...");
+      startFallbackSSE();
     };
 
     ws.onerror = (error) => {
@@ -248,7 +250,7 @@ function IntroPageContent() {
       setSocket(null);
       startFallbackSSE();
     };
-  }, [threadId, startFallbackSSE, wsStatus]);
+  }, [threadId, startFallbackSSE]);
 
   // Main connection management effect
   useEffect(() => {
@@ -1617,9 +1619,10 @@ function IntroPageContent() {
                   </h3>
                   <button
                     onClick={() => {
-                      if (wsStatus === "disconnected") {
+                      if (wsStatus === "disconnected" || wsStatus === "fallback") {
                         toast.promise(
                           new Promise<void>((resolve) => {
+                            hasFallenBackRef.current = false;
                             connectWS();
                             resolve();
                           }),

@@ -2,11 +2,11 @@
 
 import React, { useMemo, useCallback, useState, useEffect } from "react";
 import { FileText, Copy, Download, Edit, Save, X, Loader2 } from "lucide-react";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { toast } from "sonner";
@@ -52,7 +52,7 @@ const LANGUAGE_MAP: Record<string, string> = {
   makefile: "makefile",
 };
 
-export const FileViewDialog = React.memo<{
+export const FileViewPanel = React.memo<{
   file: FileItem | null;
   onSaveFile: (fileName: string, content: string) => Promise<void>;
   onClose: () => void;
@@ -172,22 +172,13 @@ export const FileViewDialog = React.memo<{
   }, [displayFileName, fileContent, hasContentChanged]);
 
   return (
-    <Dialog
-      open={true}
-      onOpenChange={onClose}
+    <div
+      className={cn(
+        "flex flex-col h-full w-full bg-background/95 backdrop-blur-md overflow-hidden",
+        isFullscreen ? "fixed inset-0 z-50 p-6" : "p-4"
+      )}
     >
-      <DialogContent
-        showCloseButton={false}
-        className={cn(
-          "!max-w-none flex flex-col p-6 transition-all duration-300 ease-in-out border border-border shadow-2xl backdrop-blur-md bg-background/95",
-          isFullscreen
-            ? "h-screen max-h-screen w-screen rounded-none border-none p-6"
-            : "h-[80vh] max-h-[80vh] w-[90vw] rounded-xl"
-        )}
-      >
-        <DialogTitle className="sr-only">
-          {file?.path || "New File"}
-        </DialogTitle>
+
         <div className="mb-4 flex items-center justify-between border-b border-border pb-4 select-none">
           <div className="flex min-w-0 items-center gap-2">
             {/* macOS-style Window Control Dots */}
@@ -395,9 +386,8 @@ export const FileViewDialog = React.memo<{
             </div>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+    </div>
   );
 });
 
-FileViewDialog.displayName = "FileViewDialog";
+FileViewPanel.displayName = "FileViewPanel";

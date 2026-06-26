@@ -25,7 +25,7 @@ export interface DocumentViewerState {
   slide?: number;
 }
 
-interface DocumentViewerDialogProps {
+interface DocumentViewerPanelProps {
   state: DocumentViewerState | null;
   threadId: string;
   onClose: () => void;
@@ -53,7 +53,7 @@ function detectDocType(filePath: string): DocType {
   }
 }
 
-export const DocumentViewerDialog: React.FC<DocumentViewerDialogProps> = ({
+export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
   state,
   threadId,
   onClose,
@@ -125,22 +125,13 @@ export const DocumentViewerDialog: React.FC<DocumentViewerDialogProps> = ({
   if (!state) return null;
 
   return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent
-        showCloseButton={false}
-        className={cn(
-          "!max-w-none flex flex-col p-6 transition-all duration-300 ease-in-out border border-border shadow-2xl backdrop-blur-md bg-background/95",
-          isFullscreen
-            ? "h-screen max-h-screen w-screen rounded-none border-none p-6"
-            : "h-[85vh] max-h-[85vh] w-[92vw] rounded-xl"
-        )}
-      >
-        <DialogTitle className="sr-only">
-          {state.filePath}
-        </DialogTitle>
-        <DialogDescription className="sr-only">
-          Document viewer for Deep Research files.
-        </DialogDescription>
+    <div
+      className={cn(
+        "flex flex-col h-full w-full bg-background/95 backdrop-blur-md overflow-hidden",
+        isFullscreen ? "fixed inset-0 z-50 p-6" : "p-4"
+      )}
+    >
+
 
         {/* Header bar */}
         <div className="mb-4 flex items-center justify-between border-b border-border pb-4 select-none">
@@ -257,7 +248,6 @@ export const DocumentViewerDialog: React.FC<DocumentViewerDialogProps> = ({
             />
           ) : null}
         </div>
-      </DialogContent>
-    </Dialog>
+    </div>
   );
 };

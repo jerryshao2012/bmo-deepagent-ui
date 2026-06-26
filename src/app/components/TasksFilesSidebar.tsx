@@ -18,33 +18,24 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import type { TodoItem, FileItem } from "@/app/types/types";
 import { useChatContext } from "@/providers/ChatProvider";
 import { cn } from "@/lib/utils";
-import { FileViewDialog } from "@/app/components/FileViewDialog";
-
 export function FilesPopover({
   files,
   setFiles,
   editDisabled,
   onDocumentClick,
+  onFileClick,
 }: {
   files: Record<string, unknown>;
   setFiles: (files: Record<string, unknown>) => Promise<void>;
   editDisabled: boolean;
   onDocumentClick?: (filePath: string, page?: number, slide?: number) => void;
+  onFileClick?: (file: FileItem) => void;
 }) {
-  const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   const filesRef = useRef(files);
 
   useEffect(() => {
     filesRef.current = files;
   }, [files]);
-
-  const handleSaveFile = useCallback(
-    async (fileName: string, content: string) => {
-      await setFiles({ ...filesRef.current, [fileName]: content });
-      setSelectedFile({ path: fileName, content: content });
-    },
-    [setFiles]
-  );
 
   return (
     <>
@@ -78,7 +69,7 @@ export function FilesPopover({
                 key={filePath}
                 type="button"
                 onClick={() =>
-                  setSelectedFile({ path: filePath, content: fileContent })
+                  onFileClick?.({ path: filePath, content: fileContent })
                 }
                 className="cursor-pointer space-y-1 truncate rounded-md border border-border px-2 py-3 shadow-sm transition-colors"
                 style={{
@@ -106,15 +97,6 @@ export function FilesPopover({
         </div>
       )}
 
-      {selectedFile && (
-        <FileViewDialog
-          file={selectedFile}
-          onSaveFile={handleSaveFile}
-          onClose={() => setSelectedFile(null)}
-          editDisabled={editDisabled}
-          onDocumentClick={onDocumentClick}
-        />
-      )}
     </>
   );
 }
@@ -124,7 +106,8 @@ export const TasksFilesSidebar = React.memo<{
   files: Record<string, unknown>;
   setFiles: (files: Record<string, unknown>) => Promise<void>;
   onDocumentClick?: (filePath: string, page?: number, slide?: number) => void;
-}>(({ todos, files, setFiles, onDocumentClick }) => {
+  onFileClick?: (file: FileItem) => void;
+}>(({ todos, files, setFiles, onDocumentClick, onFileClick }) => {
   const { isLoading, interrupt } = useChatContext();
   const [tasksOpen, setTasksOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
@@ -265,6 +248,7 @@ export const TasksFilesSidebar = React.memo<{
               setFiles={setFiles}
               editDisabled={isLoading === true || interrupt !== undefined}
               onDocumentClick={onDocumentClick}
+              onFileClick={onFileClick}
             />
           )}
         </div>

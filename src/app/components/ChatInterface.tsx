@@ -41,7 +41,14 @@ import { useStickToBottom } from "use-stick-to-bottom";
 import { FilesPopover } from "@/app/components/TasksFilesSidebar";
 import { useThreadStatus } from "@/app/hooks/useThreads";
 import { useQueryState } from "nuqs";
-import { DocumentViewerDialog, type DocumentViewerState } from "@/app/components/viewers/DocumentViewerDialog";
+import { DocumentViewerPanel, type DocumentViewerState } from "@/app/components/viewers/DocumentViewerPanel";
+import { FileViewPanel } from "@/app/components/FileViewPanel";
+import type { FileItem } from "@/app/types/types";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 
 interface ChatInterfaceProps {
   assistant: Assistant | null;
@@ -145,9 +152,16 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounterRef = useRef(0);
   const [documentViewerState, setDocumentViewerState] = useState<DocumentViewerState | null>(null);
+  const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
 
   const handleDocumentClick = useCallback((filePath: string, page?: number, slide?: number) => {
+    setSelectedFile(null); // Clear selected file when opening a document
     setDocumentViewerState({ filePath, page, slide });
+  }, []);
+
+  const handleFileClick = useCallback((file: FileItem) => {
+    setDocumentViewerState(null); // Clear selected doc when opening a file
+    setSelectedFile(file);
   }, []);
 
   const [ingestProgress, setIngestProgress] = useState<number | null>(null);
@@ -920,7 +934,6 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Drag-and-drop overlay */}
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-xl border-2 border-dashed border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] backdrop-blur-[1px]">
           <div className="flex flex-col items-center gap-2 rounded-xl bg-background/90 px-8 py-6 shadow-lg">
@@ -934,6 +947,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           </div>
         </div>
       )}
+      <ResizablePanelGroup direction="horizontal">
+        <ResizablePanel id="chat-content" order={1} defaultSize={100} className="relative flex flex-col min-w-0">
       <div
         className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
         ref={scrollRef}
@@ -1269,6 +1284,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                             isLoading || interrupt !== undefined
                           }
                           onDocumentClick={handleDocumentClick}
+                          onFileClick={handleFileClick}
                         />
                       </div>
                     )}
@@ -1461,13 +1477,33 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           </form>
         </div>
       </div>
-      {documentViewerState && currentThreadId && (
-        <DocumentViewerDialog
-          state={documentViewerState}
-          threadId={currentThreadId}
-          onClose={() => setDocumentViewerState(null)}
-        />
+      </ResizablePanel>
+      {(documentViewerState || selectedFile) && (
+        <>
+          <ResizableHandle withHandle />
+          <ResizablePanel id="doc-viewer" order={2} defaultSize={40} minSize={30} className="relative flex flex-col border-l border-border bg-background/50">
+            {documentViewerState && currentThreadId ? (
+              <DocumentViewerPanel
+                state={documentViewerState}
+                threadId={currentThreadId}
+                onClose={() => setDocumentViewerState(null)}
+              />
+            ) : selectedFile ? (
+              <FileViewPanel
+                file={selectedFile}
+                onSaveFile={async (fileName, content) => {
+                  await setFiles({ ...files, [fileName]: content });
+                  setSelectedFile({ path: fileName, content });
+                }}
+                onClose={() => setSelectedFile(null)}
+                editDisabled={isLoading || interrupt !== undefined}
+                onDocumentClick={handleDocumentClick}
+              />
+            ) : null}
+          </ResizablePanel>
+        </>
       )}
+      </ResizablePanelGroup>
     </div>
   );
 });

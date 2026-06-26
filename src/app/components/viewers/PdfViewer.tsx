@@ -2,6 +2,7 @@
 
 import React, {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useCallback,
@@ -42,7 +43,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
   const renderTasksRef = useRef<any[]>([]);
   const hasScrolledRef = useRef(false);
   const lastZoomRef = useRef(zoom);
-  const lastInitialPageRef = useRef(initialPage);
+  const lastInitialPageRef = useRef(initialPage !== undefined ? initialPage + 1 : undefined);
+  if (initialPage !== undefined) {
+    const oneBased = initialPage + 1;
+    if (oneBased !== lastInitialPageRef.current) {
+      lastInitialPageRef.current = oneBased;
+      hasScrolledRef.current = false;
+    }
+  }
 
   // Load PDF document
   useEffect(() => {
@@ -79,17 +87,17 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
         }
 
         let targetPage = 1;
-        if (initialPage) {
+        if (initialPage !== undefined) {
+          const oneBased = initialPage + 1;
           if (labels) {
-            const labelStr = initialPage.toString();
-            const idx = labels.indexOf(labelStr);
+            const idx = labels.indexOf(oneBased.toString());
             if (idx !== -1) {
               targetPage = idx + 1;
             } else {
-              targetPage = Math.min(Math.max(initialPage, 1), doc.numPages);
+              targetPage = Math.min(Math.max(oneBased, 1), doc.numPages);
             }
           } else {
-            targetPage = Math.min(Math.max(initialPage, 1), doc.numPages);
+            targetPage = Math.min(Math.max(oneBased, 1), doc.numPages);
           }
         }
         setCurrentPage(targetPage);
@@ -150,20 +158,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
     renderPages();
   }, [renderPages]);
 
-  // Reset scroll lock when initialPage prop changes
-  useEffect(() => {
-    if (initialPage !== lastInitialPageRef.current) {
-      lastInitialPageRef.current = initialPage;
-      hasScrolledRef.current = false;
-    }
-  }, [initialPage]);
-
   // Scroll to initial page when dimensions are known
-  useEffect(() => {
-    if (initialPage && containerRef.current && defaultPageSize && !loading && !hasScrolledRef.current) {
-      let targetPage = initialPage;
+  useLayoutEffect(() => {
+    if (initialPage !== undefined && containerRef.current && defaultPageSize && !loading && !hasScrolledRef.current) {
+      const oneBased = initialPage + 1;
+      let targetPage = oneBased;
       if (pageLabels) {
-        const idx = pageLabels.indexOf(initialPage.toString());
+        const idx = pageLabels.indexOf(oneBased.toString());
         if (idx !== -1) {
           targetPage = idx + 1;
         }
@@ -173,10 +174,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
       );
       if (target) {
         hasScrolledRef.current = true;
-        // Small timeout to allow browser layout to update with the new placeholder heights
-        setTimeout(() => {
-          target.scrollIntoView({ behavior: "auto", block: "start" });
-        }, 50);
+        target.scrollIntoView({ behavior: "auto", block: "start" });
       }
     }
   }, [initialPage, defaultPageSize, numPages, pageLabels, loading]);
@@ -188,17 +186,29 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
   }, [currentPage, pageLabels]);
 
   // Scroll to current page when zoom changes to maintain context
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (zoom !== lastZoomRef.current) {
+      const scaleRatio = zoom / lastZoomRef.current;
       lastZoomRef.current = zoom;
+      
+      // Synchronously resize canvases to prevent layout shifts while async render happens
+      canvasRefs.current.forEach((canvas) => {
+        if (canvas.style.width && canvas.style.height) {
+          const w = parseFloat(canvas.style.width);
+          const h = parseFloat(canvas.style.height);
+          if (!isNaN(w) && !isNaN(h)) {
+            canvas.style.width = `${w * scaleRatio}px`;
+            canvas.style.height = `${h * scaleRatio}px`;
+          }
+        }
+      });
+
       if (containerRef.current && defaultPageSize) {
         const target = containerRef.current.querySelector(
           `[data-page="${currentPage}"]`
         );
         if (target) {
-          setTimeout(() => {
-            target.scrollIntoView({ behavior: "auto", block: "start" });
-          }, 50);
+          target.scrollIntoView({ behavior: "auto", block: "start" });
         }
       }
     }
@@ -349,7 +359,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
               type="text"
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
-              className="h-7 w-18 text-center text-sm"
+              className="h-7 w-12 text-center text-sm"
             />
             <span className="text-sm text-muted-foreground">/ {numPages}</span>
           </form>
@@ -411,7 +421,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
             disabled={!defaultPageSize}
           >
             <ArrowLeftRight size={14} className="mr-1" />
-            Fit Width
           </Button>
           <Button
             variant="ghost"
@@ -421,7 +430,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
             disabled={!defaultPageSize}
           >
             <ArrowUpDown size={14} className="mr-1" />
-            Fit Height
           </Button>
         </div>
       </div>
@@ -437,13 +445,19 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
             "[data-page]"
           );
           const containerRect = containerRef.current.getBoundingClientRect();
+          const containerCenter = containerRect.top + containerRect.height / 2;
+          
+          let bestPage = 1;
           for (const page of pages) {
             const rect = page.getBoundingClientRect();
-            if (rect.top >= containerRect.top) {
-              setCurrentPage(parseInt(page.dataset.page || "1", 10));
+            // If the top of the page is below the vertical center of the container,
+            // we stop, and use the previous page we saw as the current one.
+            if (rect.top > containerCenter) {
               break;
             }
+            bestPage = parseInt(page.dataset.page || "1", 10);
           }
+          setCurrentPage(bestPage);
         }}
       >
         <div className="mx-auto flex flex-col items-center gap-4">
@@ -470,7 +484,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
               <div
                 className="pointer-events-none absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white"
               >
-                {pageNum}
+                {pageLabels && pageLabels[pageNum - 1] ? pageLabels[pageNum - 1] : pageNum}
               </div>
             </div>
           ))}

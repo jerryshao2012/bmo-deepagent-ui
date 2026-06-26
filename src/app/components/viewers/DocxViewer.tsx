@@ -93,7 +93,7 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
       className="h-full overflow-auto bg-white p-8 text-zinc-900"
     >
       <div
-        className="docx-content mx-auto max-w-3xl [&_a]:text-blue-600 [&_a:underline]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-zinc-300 [&_blockquote]:pl-4 [&_blockquote]:italic [&_h1]:mb-3 [&_h1]:mt-6 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-lg [&_h3]:font-semibold [&_img]:max-w-full [&_img]:rounded [&_li]:ml-6 [&_li]:list-disc [&_ol]:ml-6 [&_ol]:list-decimal [&_p]:mb-3 [&_p]:leading-relaxed [&_table]:border-collapse [&_td]:border [&_td]:border-zinc-300 [&_td]:px-3 [&_td]:py-1.5 [&_th]:border [&_th]:border-zinc-400 [&_th]:bg-zinc-100 [&_th]:px-3 [&_th]:py-1.5 [&_th]:font-semibold [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:ml-6"
+        className="docx-content mx-auto max-w-3xl [&_a]:text-blue-600 [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-zinc-300 [&_blockquote]:pl-4 [&_blockquote]:italic [&_h1]:mb-3 [&_h1]:mt-6 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-lg [&_h3]:font-semibold [&_img]:max-w-full [&_img]:rounded [&_li]:ml-6 [&_li]:list-disc [&_ol]:ml-6 [&_ol]:list-decimal [&_p]:mb-3 [&_p]:leading-relaxed [&_table]:border-collapse [&_td]:border [&_td]:border-zinc-300 [&_td]:px-3 [&_td]:py-1.5 [&_th]:border [&_th]:border-zinc-400 [&_th]:bg-zinc-100 [&_th]:px-3 [&_th]:py-1.5 [&_th]:font-semibold [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:ml-6"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>

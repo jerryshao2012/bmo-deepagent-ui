@@ -16,35 +16,15 @@ else
   echo "✅ Resource Group created successfully."
 fi
 
-# 1. Ensure the registry exists
-echo "📦 Checking Container Registry status..."
-if az acr show --name $ACR_NAME --resource-group $RESOURCE_GROUP &> /dev/null; then
-  echo "✅ Container Registry '$ACR_NAME' already exists. Skipping creation."
-else
-  echo "✨ Creating new Container Registry '$ACR_NAME' in resource group '$RESOURCE_GROUP'..."
-  az acr create --resource-group $RESOURCE_GROUP --name $ACR_NAME --sku Standard --admin-enabled true
-  if [ $? -ne 0 ]; then
-    echo "❌ Failed to create Container Registry."
-    exit 1
-  fi
-  echo "✅ Container Registry created successfully."
-fi
-
-# 2. Ensure you are logged in to ACR
-echo "🔑 Logging in to Azure Container Registry '$ACR_NAME'..."
-az acr login --name $ACR_NAME
-if [ $? -ne 0 ]; then
-  echo "❌ ACR login failed."
+# Skip ACR provisioning and login since we are using Docker Hub.
+# Expecting DOCKER_HUB_USERNAME to be set in the environment or .env
+if [ -z "$DOCKER_HUB_USERNAME" ]; then
+  echo "❌ Error: DOCKER_HUB_USERNAME is not set. Please set it in your .env file."
   exit 1
 fi
-echo "✅ Successfully logged in to ACR."
 
-# 3. Build locally and push since ACR Tasks are blocked on this subscription
-# Note: Since ACR Tasks (az acr build) is blocked by Azure for this subscription,
-# we need to build it locally and push it.
 echo "🔨 Building Docker image locally for linux/amd64..."
-ACR_LOGIN_SERVER=$(az acr show --name $ACR_NAME --query loginServer --output tsv)
-FULL_IMAGE_NAME="$ACR_LOGIN_SERVER/deepagent-ui:latest"
+FULL_IMAGE_NAME="$DOCKER_HUB_USERNAME/deepagent-ui:latest"
 
 docker build --platform linux/amd64 -t $FULL_IMAGE_NAME .
 if [ $? -ne 0 ]; then

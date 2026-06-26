@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM node:20-bookworm-slim AS builder
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 COPY package.json yarn.lock* ./
@@ -14,7 +14,7 @@ ENV NEXT_PRIVATE_SKIP_CANARY_CHECK=1
 ENV NEXT_DISABLE_SWC_MINIFY=1
 RUN NEXT_TELEMETRY_DISABLED=1 yarn build
 
-FROM node:20-bookworm-slim AS runner
+FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

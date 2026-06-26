@@ -39,12 +39,13 @@ else
   echo "  ⚠️  KV_NAME not set, using environment variables for secrets"
 fi
 
-# Get ACR credentials
-echo "🔑 Retrieving Azure Container Registry credentials..."
-export ACR_USERNAME=$(az acr credential show --name $ACR_NAME --query username -o tsv)
-export ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query 'passwords[0].value' -o tsv)
-echo "✅ Credentials retrieved successfully."
-
+# Validate Docker Hub credentials
+echo "🔑 Checking Docker Hub credentials..."
+if [ -z "$DOCKER_HUB_USERNAME" ] || [ -z "$DOCKER_HUB_PAT" ]; then
+  echo "❌ Error: DOCKER_HUB_USERNAME or DOCKER_HUB_PAT is not set. Please set them in your .env file."
+  exit 1
+fi
+echo "✅ Credentials found."
 # Get the agent's internal FQDN
 echo "🔍 Fetching internal FQDN for deep-research-agent-$SEED..."
 AGENT_FQDN=$(az containerapp show \
@@ -67,20 +68,21 @@ if [ -n "$UI_FQDN" ]; then
   echo "📝 Container app 'deepagent-ui' already exists. Updating with new image..."
   echo "✅ UI FQDN: https://$UI_FQDN"
   
-  # Ensure the container app has registry credentials configured for the current ACR
-  echo "🔑 Setting registry credentials for $ACR_NAME.azurecr.io..."
+  # Ensure the container app has registry credentials configured for Docker Hub
+  echo "🔑 Setting registry credentials for docker.io..."
   az containerapp registry set \
     --name deepagent-ui \
     --resource-group $RESOURCE_GROUP \
-    --server $ACR_NAME.azurecr.io \
-    --username $ACR_USERNAME \
-    --password $ACR_PASSWORD
+    --server docker.io \
+    --username $DOCKER_HUB_USERNAME \
+    --password $DOCKER_HUB_PAT
   
   # Update the container app with the new image and ensure all environment variables are set
   az containerapp update \
     --name deepagent-ui \
     --resource-group $RESOURCE_GROUP \
-    --image $ACR_NAME.azurecr.io/deepagent-ui:latest \
+    --image docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest \
+    --min-replicas 0 \
     --set-env-vars \
       NEXT_PUBLIC_LANGGRAPH_URL=${NEXT_PUBLIC_LANGGRAPH_URL:-https://$AGENT_FQDN} \
       NEXT_PUBLIC_ASSISTANT_ID=${NEXT_PUBLIC_ASSISTANT_ID:-research} \
@@ -107,13 +109,13 @@ else
     --name deepagent-ui \
     --resource-group $RESOURCE_GROUP \
     --environment $ENV_NAME \
-    --image $ACR_NAME.azurecr.io/deepagent-ui:latest \
-    --registry-server $ACR_NAME.azurecr.io \
-    --registry-username $ACR_USERNAME \
-    --registry-password $ACR_PASSWORD \
+    --image docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest \
+    --registry-server docker.io \
+    --registry-username $DOCKER_HUB_USERNAME \
+    --registry-password $DOCKER_HUB_PAT \
     --target-port 3000 \
     --ingress external \
-    --min-replicas 1 \
+    --min-replicas 0 \
     --cpu 1.0 \
     --memory 2Gi \
     --env-vars \

@@ -92,6 +92,7 @@ export const PptxViewer: React.FC<PptxViewerProps> = ({
     return () => {
       cancelled = true;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filePath, threadId]);
 
   // Jump to initial slide

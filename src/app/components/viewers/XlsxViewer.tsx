@@ -62,6 +62,7 @@ export const XlsxViewer: React.FC<XlsxViewerProps> = ({
     return () => {
       cancelled = true;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [xlsxData]);
 
   // Render the active sheet as an HTML table with row/column headers
@@ -78,7 +79,7 @@ export const XlsxViewer: React.FC<XlsxViewerProps> = ({
       blankrows: false,
     });
     return rows;
-  }, [workbook, activeSheet]);
+  }, [workbook, activeSheet, xlsxModule]);
 
   // Detect the max column count for proper header rendering
   const maxCols = useMemo(() => {

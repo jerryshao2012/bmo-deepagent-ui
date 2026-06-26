@@ -6,7 +6,6 @@ import React, {
   useRef,
   useState,
   useCallback,
-  useMemo,
 } from "react";
 import {
   ChevronLeft,
@@ -43,11 +42,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
   const renderTasksRef = useRef<any[]>([]);
   const hasScrolledRef = useRef(false);
   const lastZoomRef = useRef(zoom);
-  const lastInitialPageRef = useRef(initialPage !== undefined ? initialPage + 1 : undefined);
+  const lastInitialPageRef = useRef(initialPage);
   if (initialPage !== undefined) {
-    const oneBased = initialPage + 1;
-    if (oneBased !== lastInitialPageRef.current) {
-      lastInitialPageRef.current = oneBased;
+    if (initialPage !== lastInitialPageRef.current) {
+      lastInitialPageRef.current = initialPage;
       hasScrolledRef.current = false;
     }
   }
@@ -71,7 +69,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
           const page1 = await doc.getPage(1);
           const vp = page1.getViewport({ scale: 1.0 });
           setDefaultPageSize({ width: vp.width, height: vp.height });
-        } catch (e) {
+        } catch {
           // ignore error if page 1 fails
         }
 
@@ -82,22 +80,22 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
         try {
           labels = await doc.getPageLabels();
           setPageLabels(labels);
-        } catch (e) {
+        } catch {
           // ignore page labels error
         }
 
         let targetPage = 1;
         if (initialPage !== undefined) {
-          const oneBased = initialPage + 1;
+          // initialPage is already 1-based (from citation text like "p. 75")
           if (labels) {
-            const idx = labels.indexOf(oneBased.toString());
+            const idx = labels.indexOf(initialPage.toString());
             if (idx !== -1) {
               targetPage = idx + 1;
             } else {
-              targetPage = Math.min(Math.max(oneBased, 1), doc.numPages);
+              targetPage = Math.min(Math.max(initialPage, 1), doc.numPages);
             }
           } else {
-            targetPage = Math.min(Math.max(oneBased, 1), doc.numPages);
+            targetPage = Math.min(Math.max(initialPage, 1), doc.numPages);
           }
         }
         setCurrentPage(targetPage);
@@ -114,6 +112,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
       renderTasksRef.current.forEach((t) => t.cancel());
       renderTasksRef.current = [];
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdfData]);
 
   // Render all visible pages
@@ -152,7 +151,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
     }
 
     await Promise.all(pagePromises);
-  }, [pdfDoc, numPages, zoom, loading]);
+  }, [pdfDoc, numPages, zoom]);
 
   useEffect(() => {
     renderPages();
@@ -161,10 +160,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
   // Scroll to initial page when dimensions are known
   useLayoutEffect(() => {
     if (initialPage !== undefined && containerRef.current && defaultPageSize && !loading && !hasScrolledRef.current) {
-      const oneBased = initialPage + 1;
-      let targetPage = oneBased;
+      // initialPage is already 1-based
+      let targetPage = initialPage;
       if (pageLabels) {
-        const idx = pageLabels.indexOf(oneBased.toString());
+        const idx = pageLabels.indexOf(initialPage.toString());
         if (idx !== -1) {
           targetPage = idx + 1;
         }
@@ -256,7 +255,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
         const targetZoom = availableWidth / vp.width;
         setZoom(Math.max(0.1, Number(targetZoom.toFixed(2))));
       }
-    } catch (e) {
+    } catch {
       if (defaultPageSize) {
         const availableWidth = containerRef.current.clientWidth - 32;
         const targetZoom = availableWidth / defaultPageSize.width;
@@ -275,7 +274,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ pdfData, initialPage }) =>
         const targetZoom = availableHeight / vp.height;
         setZoom(Math.max(0.1, Number(targetZoom.toFixed(2))));
       }
-    } catch (e) {
+    } catch {
       if (defaultPageSize) {
         const availableHeight = containerRef.current.clientHeight - 32;
         const targetZoom = availableHeight / defaultPageSize.height;

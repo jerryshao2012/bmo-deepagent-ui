@@ -245,7 +245,9 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
         // Decode URL-encoded characters (e.g. %5B -> [) to handle raw markdown links
         try {
           href = decodeURIComponent(href);
-        } catch (err) {}
+        } catch {
+          // ignore malformed URIs and keep the original href
+        }
 
         // Extract the clean document path if the href is nested (e.g. [/file.pdf](/file.pdf))
         const nestedMatch = href.match(/\[?(\/[A-Za-z0-9._\-/]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?)\]?(?:\([^)]*\))?/i);

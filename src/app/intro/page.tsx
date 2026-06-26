@@ -47,7 +47,7 @@ function IntroPageContent() {
   });
   
   const [socket, setSocket] = useState<WebSocket | null>(null);
-  const [wsStatus, setWsStatus] = useState<"connected" | "disconnected" | "connecting">("disconnected");
+  const [wsStatus, setWsStatus] = useState<"connected" | "disconnected" | "connecting" | "fallback">("disconnected");
   const [sharedText, setSharedText] = useState<string>("");
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
   const [isTelemetryFullscreen, setIsTelemetryFullscreen] = useState<boolean>(false);
@@ -78,6 +78,7 @@ function IntroPageContent() {
 
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   // Prevent background body scroll when the telemetry dialog is open
   useEffect(() => {
@@ -102,6 +103,56 @@ function IntroPageContent() {
     }
   }, [threadId]);
 
+  const startFallbackSSE = useCallback(() => {
+    if (!threadId) return;
+    if (eventSourceRef.current) return;
+
+    setWsStatus("fallback");
+    console.log("Initiating HTTP streaming (SSE) fallback for thread:", threadId);
+
+    const eventSource = new EventSource(`/api/ws-fallback?threadId=${threadId}`);
+    eventSourceRef.current = eventSource;
+
+    eventSource.addEventListener("sync", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "sync") {
+          setSharedText(data.content);
+          if (data.content) {
+            localStorage.setItem(`markdown_thread_${threadId}`, data.content);
+          } else {
+            localStorage.removeItem(`markdown_thread_${threadId}`);
+          }
+        }
+      } catch (err) {
+        console.error("SSE error parsing message:", err);
+      }
+    });
+
+    eventSource.onerror = (error) => {
+      console.error("SSE stream error:", error);
+    };
+  }, [threadId]);
+
+  const sendFallbackUpdate = useCallback(async (val: string, immediate = false) => {
+    try {
+      await fetch("/api/ws-fallback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          threadId,
+          type: "update",
+          content: val,
+          immediate,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to send content update via HTTP fallback:", err);
+    }
+  }, [threadId]);
+
   const connectWS = useCallback(() => {
     if (!threadId) return;
     
@@ -115,6 +166,12 @@ function IntroPageContent() {
       reconnectTimeoutRef.current = null;
     }
 
+    // Close any active fallback EventSource before attempting WS
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
     setWsStatus("connecting");
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -122,8 +179,16 @@ function IntroPageContent() {
     const wsUrl = `${protocol}//${host}/api/ws?threadId=${threadId}`;
 
     console.log("Attempting WebSocket connection for thread:", threadId);
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    let ws: WebSocket | null = null;
+    
+    try {
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+    } catch (e) {
+      console.error("WebSocket constructor failed, falling back to HTTP stream:", e);
+      startFallbackSSE();
+      return;
+    }
 
     ws.onopen = () => {
       console.log("WebSocket connected for thread:", threadId);
@@ -132,7 +197,7 @@ function IntroPageContent() {
 
       // Retrieve local offline content from localStorage and initialize sync on the server
       const localContent = localStorage.getItem(`markdown_thread_${threadId}`) || "";
-      ws.send(JSON.stringify({ type: "init", content: localContent }));
+      ws?.send(JSON.stringify({ type: "init", content: localContent }));
     };
 
     ws.onmessage = (event) => {
@@ -154,23 +219,36 @@ function IntroPageContent() {
     ws.onclose = () => {
       console.log("WebSocket closed");
       setSocket(null);
-      setWsStatus("disconnected");
       wsRef.current = null;
 
-      // Automatically try to reconnect after 5 seconds
-      if (!reconnectTimeoutRef.current) {
-        console.log("Scheduling automatic WebSocket reconnect in 5 seconds...");
-        reconnectTimeoutRef.current = setTimeout(() => {
-          reconnectTimeoutRef.current = null;
-          connectWS();
-        }, 5000);
+      // If we closed because of an error, we would have transitioned to fallback already
+      if (wsStatus === "connecting") {
+        console.log("WebSocket failed to connect, falling back to HTTP stream...");
+        startFallbackSSE();
+      } else if (wsStatus === "connected") {
+        setWsStatus("disconnected");
+        // Automatically try to reconnect after 5 seconds
+        if (!reconnectTimeoutRef.current) {
+          console.log("Scheduling automatic WebSocket reconnect in 5 seconds...");
+          reconnectTimeoutRef.current = setTimeout(() => {
+            reconnectTimeoutRef.current = null;
+            connectWS();
+          }, 5000);
+        }
       }
     };
 
     ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
+      console.error("WebSocket error, falling back to HTTP stream:", error);
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      setSocket(null);
+      startFallbackSSE();
     };
-  }, [threadId]);
+  }, [threadId, startFallbackSSE, wsStatus]);
 
   // Main connection management effect
   useEffect(() => {
@@ -185,6 +263,10 @@ function IntroPageContent() {
         wsRef.current.onclose = null;
         wsRef.current.close();
         wsRef.current = null;
+      }
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
       }
       setSocket(null);
       setWsStatus("disconnected");
@@ -209,6 +291,8 @@ function IntroPageContent() {
     }
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "update", content: val }));
+    } else if (wsStatus === "fallback") {
+      sendFallbackUpdate(val);
     }
   };
 
@@ -217,6 +301,8 @@ function IntroPageContent() {
     localStorage.removeItem(`markdown_thread_${threadId}`);
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "update", content: "" }));
+    } else if (wsStatus === "fallback") {
+      sendFallbackUpdate("");
     }
     toast.success("Content removed from local and server storage.");
   };
@@ -230,11 +316,15 @@ function IntroPageContent() {
         // Save to server immediately if content is not empty
         if (socket && socket.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({ type: "update", content: text, immediate: true }));
+        } else if (wsStatus === "fallback") {
+          sendFallbackUpdate(text, true);
         }
       } else {
         localStorage.removeItem(`markdown_thread_${threadId}`);
         if (socket && socket.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({ type: "update", content: "" }));
+        } else if (wsStatus === "fallback") {
+          sendFallbackUpdate("");
         }
       }
     } catch (err) {
@@ -1545,6 +1635,8 @@ function IntroPageContent() {
                       "flex select-none items-center gap-2 rounded-full px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider transition-all duration-300",
                       wsStatus === "connected" &&
                         "cursor-default border border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
+                      wsStatus === "fallback" &&
+                        "cursor-default border border-sky-500/20 bg-sky-500/10 text-sky-400",
                       wsStatus === "connecting" &&
                         "animate-pulse cursor-default border border-amber-500/20 bg-amber-500/10 text-amber-400",
                       wsStatus === "disconnected" &&
@@ -1553,6 +1645,8 @@ function IntroPageContent() {
                     title={
                       wsStatus === "connected"
                         ? "Websocket Synced (Connected)"
+                        : wsStatus === "fallback"
+                        ? "HTTP Stream Synced (Fallback)"
                         : wsStatus === "connecting"
                         ? "Websocket Connecting..."
                         : "Websocket Disconnected (Click to Reconnect)"
@@ -1563,6 +1657,8 @@ function IntroPageContent() {
                         "h-2 w-2 rounded-full",
                         wsStatus === "connected" &&
                           "animate-pulse bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]",
+                        wsStatus === "fallback" &&
+                          "animate-pulse bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.6)]",
                         wsStatus === "connecting" &&
                           "animate-pulse bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]",
                         wsStatus === "disconnected" &&

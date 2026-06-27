@@ -1196,7 +1196,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                     })();
 
                     const wikiTrigger = (() => {
-                      if (!currentThreadId) return null;
+                      if (documents.length === 0 || !currentThreadId) return null;
                       return (
                         <button
                           type="button"
@@ -1286,7 +1286,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                         </span>
                       </button>
                     )}
-                    {currentThreadId && (
+                    {documents.length > 0 && currentThreadId && (
                       <button
                         type="button"
                         className="inline-flex items-center gap-2 py-3 pr-4 first:pl-[18px] aria-expanded:font-semibold"
@@ -1407,7 +1407,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                       </div>
                     )}
 
-                    {metaOpen === "wiki" && currentThreadId && (
+                    {metaOpen === "wiki" && documents.length > 0 && currentThreadId && (
                       <div className="my-3 h-72 overflow-hidden rounded-md border border-border bg-card/40">
                         <WikiTreeViewer
                           threadId={currentThreadId}

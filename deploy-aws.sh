@@ -358,6 +358,7 @@ cat > "$TASK_DEF_FILE" <<EOF
         { "name": "PORT", "value": "3000" }
       ],
       "secrets": [
+        { "name": "UPLOAD_API_KEY", "valueFrom": "${SECRET_ARN}:UPLOAD-API-KEY::" },
         { "name": "NEXT_PUBLIC_LANGSMITH_API_KEY", "valueFrom": "${SECRET_ARN}:LANGCHAIN-API-KEY::" },
         { "name": "AUTH_SECRET", "valueFrom": "${SECRET_ARN}:AUTH-SECRET::" },
         { "name": "AUTH_GITHUB_ID", "valueFrom": "${SECRET_ARN}:AUTH-GITHUB-ID::" },

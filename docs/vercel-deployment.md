@@ -46,7 +46,7 @@ In the **Configure Project** screen, configure the following:
 | `NEXT_PUBLIC_ASSISTANT_ID` | `research` | The ID of your assistant. |
 | `AUTH_SECRET` | *[Your Secret]* | A random secure string used for authentication encryption (you can copy this from your local `.env` or Key Vault). |
 | `AUTH_TRUST_HOST` | `true` | Tells Auth.js to trust the Vercel hosting domain. |
-| `LANGCHAIN_API_KEY` | *[YOUR_LANGCHAIN_API_KEY_HERE]* | Your Langchain API key for authentication. |
+| `UPLOAD_API_KEY` | *[YOUR_UPLOAD_API_KEY_HERE]* | Your API key for authentication. |
 
 ---
 

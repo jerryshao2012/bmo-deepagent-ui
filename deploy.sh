@@ -17,6 +17,7 @@ echo "🚀 Starting deployment process for deepagent-ui..."
 # Fetch secrets from Azure Key Vault if available (overrides env vars)
 if [ -n "$KV_NAME" ]; then
   echo "🔐 Attempting to fetch secrets from Azure Key Vault: $KV_NAME"
+  KV_UPLOAD_API_KEY=$(az keyvault secret show --vault-name $KV_NAME --name UPLOAD-API-KEY --query value -o tsv 2>/dev/null)
   KV_LANGCHAIN_API_KEY=$(az keyvault secret show --vault-name $KV_NAME --name LANGCHAIN-API-KEY --query value -o tsv 2>/dev/null)
   KV_AUTH_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-SECRET --query value -o tsv 2>/dev/null)
   KV_AUTH_GITHUB_ID=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GITHUB-ID --query value -o tsv 2>/dev/null)
@@ -25,6 +26,7 @@ if [ -n "$KV_NAME" ]; then
   KV_AUTH_GOOGLE_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GOOGLE-SECRET --query value -o tsv 2>/dev/null)
 
   # Override env vars with Key Vault values if available
+  [ -n "$KV_UPLOAD_API_KEY" ] && export UPLOAD_API_KEY="$KV_UPLOAD_API_KEY" && echo "  ✓ UPLOAD_API_KEY from Key Vault"
   [ -n "$KV_LANGCHAIN_API_KEY" ] && export LANGCHAIN_API_KEY="$KV_LANGCHAIN_API_KEY" && echo "  ✓ LANGCHAIN_API_KEY from Key Vault"
   [ -n "$KV_AUTH_SECRET" ] && export AUTH_SECRET="$KV_AUTH_SECRET" && echo "  ✓ AUTH_SECRET from Key Vault"
   [ -n "$KV_AUTH_GITHUB_ID" ] && export AUTH_GITHUB_ID="$KV_AUTH_GITHUB_ID" && echo "  ✓ AUTH_GITHUB_ID from Key Vault"
@@ -33,6 +35,9 @@ if [ -n "$KV_NAME" ]; then
   [ -n "$KV_AUTH_GOOGLE_SECRET" ] && export AUTH_GOOGLE_SECRET="$KV_AUTH_GOOGLE_SECRET" && echo "  ✓ AUTH_GOOGLE_SECRET from Key Vault"
 
   if [ -z "$KV_LANGCHAIN_API_KEY" ] && [ -z "$KV_AUTH_SECRET" ]; then
+    echo "  ⚠️  No secrets found in Key Vault, falling back to environment variables"
+  fi
+  if [ -z "$KV_UPLOAD_API_KEY" ] && [ -z "$KV_AUTH_SECRET" ]; then
     echo "  ⚠️  No secrets found in Key Vault, falling back to environment variables"
   fi
 else
@@ -86,6 +91,7 @@ if [ -n "$UI_FQDN" ]; then
     --set-env-vars \
       NEXT_PUBLIC_LANGGRAPH_URL=${NEXT_PUBLIC_LANGGRAPH_URL:-https://$AGENT_FQDN} \
       NEXT_PUBLIC_ASSISTANT_ID=${NEXT_PUBLIC_ASSISTANT_ID:-research} \
+      UPLOAD_API_KEY=$UPLOAD_API_KEY \
       NEXT_PUBLIC_LANGSMITH_API_KEY=$LANGCHAIN_API_KEY \
       AUTH_SECRET=$AUTH_SECRET \
       AUTH_GITHUB_ID=$AUTH_GITHUB_ID \
@@ -121,6 +127,7 @@ else
     --env-vars \
       NEXT_PUBLIC_LANGGRAPH_URL=${NEXT_PUBLIC_LANGGRAPH_URL:-https://$AGENT_FQDN} \
       NEXT_PUBLIC_ASSISTANT_ID=${NEXT_PUBLIC_ASSISTANT_ID:-research} \
+      UPLOAD_API_KEY=$UPLOAD_API_KEY \
       NEXT_PUBLIC_LANGSMITH_API_KEY=$LANGCHAIN_API_KEY \
       AUTH_SECRET=$AUTH_SECRET \
       AUTH_GITHUB_ID=$AUTH_GITHUB_ID \

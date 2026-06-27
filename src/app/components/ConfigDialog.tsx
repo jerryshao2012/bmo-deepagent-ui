@@ -38,6 +38,7 @@ import {
   FolderUp,
   FileArchive,
   Trash2,
+  Lock,
 } from "lucide-react";
 import { StandaloneConfig, getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
@@ -85,6 +86,8 @@ interface StorageInfoState {
   error: string | null;
 }
 
+const DIAGNOSTICS_PASSKEY_HASH = "447d8562c6f18fcacc6cc0442ec73e4fbc3e55b44e1212a790ee665bfeb17cd3";
+
 export function ConfigDialog({
   open,
   onOpenChange,
@@ -117,6 +120,9 @@ export function ConfigDialog({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const [isDraggingSkill, setIsDraggingSkill] = useState(false);
+  const [isDiagnosticsUnlocked, setIsDiagnosticsUnlocked] = useState(false);
+  const [passkeyInput, setPasskeyInput] = useState("");
+  const [passkeyError, setPasskeyError] = useState("");
 
   const handleCopySkillName = async (name: string) => {
     try {
@@ -282,6 +288,9 @@ export function ConfigDialog({
       setStorageInfo({ status: "idle", data: null, error: null });
       setCopied(false);
       setActiveTab("basic");
+      setIsDiagnosticsUnlocked(false);
+      setPasskeyInput("");
+      setPasskeyError("");
     }
   }, [open]);
 
@@ -308,6 +317,33 @@ export function ConfigDialog({
       }
       return next;
     });
+  };
+
+  const handleVerifyPasskey = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!passkeyInput) {
+      setPasskeyError("Passkey is required.");
+      return;
+    }
+
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(passkeyInput.trim());
+      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+      if (hashHex === DIAGNOSTICS_PASSKEY_HASH) {
+        setIsDiagnosticsUnlocked(true);
+        setPasskeyError("");
+        setPasskeyInput("");
+        fetchStorageInfo();
+      } else {
+        setPasskeyError("Incorrect passkey. Please try again.");
+      }
+    } catch (err) {
+      setPasskeyError("Failed to verify passkey.");
+    }
   };
 
   const fetchStorageInfo = async () => {
@@ -845,28 +881,63 @@ export function ConfigDialog({
                     Query storage usage and run LLM model factory health checks.
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={fetchStorageInfo}
-                  disabled={storageInfo.status === "loading"}
-                  className="shrink-0 h-8 text-xs"
-                >
-                  {storageInfo.status === "loading" ? (
-                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Server className="mr-2 h-3.5 w-3.5" />
-                  )}
-                  {storageInfo.status === "loading"
-                    ? "Querying..."
-                    : storageInfo.status === "success"
-                      ? "Refresh"
-                      : "Run Diagnostics"}
-                </Button>
+                {isDiagnosticsUnlocked && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchStorageInfo}
+                    disabled={storageInfo.status === "loading"}
+                    className="shrink-0 h-8 text-xs"
+                  >
+                    {storageInfo.status === "loading" ? (
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Server className="mr-2 h-3.5 w-3.5" />
+                    )}
+                    {storageInfo.status === "loading"
+                      ? "Querying..."
+                      : storageInfo.status === "success"
+                        ? "Refresh"
+                        : "Run Diagnostics"}
+                  </Button>
+                )}
               </div>
 
-              {storageInfo.status === "idle" ? (
+              {!isDiagnosticsUnlocked ? (
+                <div className="p-6 text-center rounded-lg border border-border bg-card shadow-sm space-y-4 my-2">
+                  <div className="flex justify-center">
+                    <div className="p-3 bg-muted/50 rounded-full">
+                      <Lock className="w-6 h-6 text-muted-foreground" />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-semibold">Diagnostics Protected</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Please enter the passkey to access server diagnostics.
+                    </p>
+                  </div>
+                  <form onSubmit={handleVerifyPasskey} className="flex flex-col items-center space-y-2.5 max-w-xs mx-auto pt-1">
+                    <Input
+                      type="password"
+                      placeholder="Enter Passkey"
+                      value={passkeyInput}
+                      onChange={(e) => {
+                        setPasskeyInput(e.target.value);
+                        setPasskeyError("");
+                      }}
+                      className="h-8 text-xs text-center"
+                      autoFocus
+                    />
+                    {passkeyError && (
+                      <p className="text-[11px] text-destructive font-medium">{passkeyError}</p>
+                    )}
+                    <Button type="submit" size="sm" className="h-8 text-xs w-full">
+                      Unlock & Continue
+                    </Button>
+                  </form>
+                </div>
+              ) : storageInfo.status === "idle" ? (
                 <div className="p-6 text-center text-xs text-muted-foreground rounded-lg border border-dashed border-border bg-muted/10">
                   Click &quot;Run Diagnostics&quot; above to query storage capacity and model availability from the backend server.
                 </div>

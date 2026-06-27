@@ -97,7 +97,7 @@ You can get the Deployment URL and Assistant ID from the terminal output and `la
 - **Deployment URL**: The URL for the LangGraph deployment you are connecting to
 - **Assistant ID**: The ID of the assistant or agent you want to use
 
-**Note:** When deploying to production, the application uses a server-side API proxy that automatically adds the `X-API-Key` header from the `LANGCHAIN_API_KEY` environment variable. Health check endpoints (`/health`, `/ok`) bypass authentication.
+**Note:** When deploying to production, the application uses a server-side API proxy that automatically adds the `X-API-Key` header from the `UPLOAD_API_KEY` environment variable. Health check endpoints (`/health`, `/ok`) bypass authentication.
 
 **Usage**
 
@@ -119,6 +119,7 @@ You can optionally set environment variables instead of using the settings dialo
 
 ```env
 # For production deployments - used by server-side API proxy
+UPLOAD_API_KEY="your_api_key_here"
 LANGCHAIN_API_KEY="lsv2_xxxx"
 
 # For local development - optional fallback
@@ -126,7 +127,7 @@ NEXT_PUBLIC_LANGSMITH_API_KEY="lsv2_xxxx"
 ```
 
 **Authentication Architecture:**
-- **Production**: All API requests (except health checks) are proxied through `/api/proxy` which adds the `X-API-Key` header from `LANGCHAIN_API_KEY`
+- **Production**: All API requests (except health checks) are proxied through `/api/proxy` which adds the `X-API-Key` header from `UPLOAD_API_KEY`
 - **Health Checks**: Endpoints `/health` and `/ok` bypass authentication
 - **Local Development**: Can optionally use `NEXT_PUBLIC_LANGSMITH_API_KEY` for direct client-side authentication
 

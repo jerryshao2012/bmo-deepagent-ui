@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState, useRef } from "react";
 import { Loader2, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Toolbar, ToolbarGroup, ToolbarButton } from "@/components/ui/toolbar";
 
 import {
   clearHighlights,
@@ -142,20 +143,21 @@ export const XlsxViewer: React.FC<XlsxViewerProps> = ({
     <div className="flex h-full flex-col">
       {/* Sheet tabs */}
       {workbook.SheetNames.length > 1 && (
-        <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-muted/30 px-3 py-2">
-          {workbook.SheetNames.map((name: string) => (
-            <Button
-              key={name}
-              variant={name === activeSheet ? "default" : "ghost"}
-              size="sm"
-              className="h-7 shrink-0 text-xs"
-              onClick={() => setActiveSheet(name)}
-            >
-              <Table2 size={12} className="mr-1" />
-              {name}
-            </Button>
-          ))}
-        </div>
+        <Toolbar variant="default" className="overflow-x-auto justify-start">
+          <ToolbarGroup className="overflow-x-auto">
+            {workbook.SheetNames.map((name: string) => (
+              <ToolbarButton
+                key={name}
+                variant={name === activeSheet ? "default" : "ghost"}
+                className="h-7 shrink-0 text-xs px-2.5"
+                onClick={() => setActiveSheet(name)}
+              >
+                <Table2 size={12} className="mr-1" />
+                {name}
+              </ToolbarButton>
+            ))}
+          </ToolbarGroup>
+        </Toolbar>
       )}
 
       {/* Sheet content */}

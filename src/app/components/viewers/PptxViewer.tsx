@@ -9,6 +9,12 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Toolbar,
+  ToolbarGroup,
+  ToolbarButton,
+  ToolbarLabel,
+} from "@/components/ui/toolbar";
 import { MarkdownContent } from "@/app/components/MarkdownContent";
 import {
   fetchDocumentExtract,
@@ -190,18 +196,20 @@ export const PptxViewer: React.FC<PptxViewerProps> = ({
   return (
     <div className="flex h-full flex-col">
       {/* Slide navigation toolbar */}
-      <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
+      <Toolbar variant="default">
+        <ToolbarGroup>
+          <ToolbarButton
             onClick={() => goToSlide(currentSlide - 1)}
             disabled={currentSlide <= 1}
+            tooltip="Previous slide"
           >
             <ChevronLeft size={16} />
-          </Button>
-          <div className="flex items-center gap-1">
+          </ToolbarButton>
+
+          <form
+            onSubmit={(e) => e.preventDefault()}
+            className="flex items-center gap-1"
+          >
             <Input
               type="number"
               min={1}
@@ -213,25 +221,25 @@ export const PptxViewer: React.FC<PptxViewerProps> = ({
               }}
               className="h-7 w-14 text-center text-sm"
             />
-            <span className="text-sm text-muted-foreground">
-              / {slides.length}
-            </span>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
+            <ToolbarLabel>/ {slides.length}</ToolbarLabel>
+          </form>
+
+          <ToolbarButton
             onClick={() => goToSlide(currentSlide + 1)}
             disabled={currentSlide >= slides.length}
+            tooltip="Next slide"
           >
             <ChevronRight size={16} />
-          </Button>
-        </div>
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Presentation size={14} />
-          Slide {currentSlide} of {slides.length}
-        </div>
-      </div>
+          </ToolbarButton>
+        </ToolbarGroup>
+
+        <ToolbarGroup>
+          <ToolbarLabel className="flex items-center gap-1.5">
+            <Presentation size={14} />
+            Slide {currentSlide} of {slides.length}
+          </ToolbarLabel>
+        </ToolbarGroup>
+      </Toolbar>
 
       {/* Slides list */}
       <div

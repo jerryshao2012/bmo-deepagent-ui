@@ -26,6 +26,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Toolbar,
+  ToolbarGroup,
+  ToolbarButton,
+  ToolbarSeparator,
+  ToolbarLabel,
+} from "@/components/ui/toolbar";
 
 interface PdfViewerProps {
   pdfData: ArrayBuffer;
@@ -557,32 +564,21 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   return (
     <div className="flex h-full flex-col">
       {/* Page navigation toolbar */}
-      <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
-        <div className="flex items-center gap-1">
-          <TooltipProvider delayDuration={200}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0"
-                  onClick={() => {
-                    setCurrentPage((p) => Math.max(p - 1, 1));
-                    const target = containerRef.current?.querySelector(
-                      `[data-page="${Math.max(currentPage - 1, 1)}"]`
-                    );
-                    target?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }}
-                  disabled={currentPage <= 1}
-                >
-                  <ChevronLeft size={16} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Previous page</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+      <Toolbar variant="default">
+        <ToolbarGroup>
+          <ToolbarButton
+            onClick={() => {
+              setCurrentPage((p) => Math.max(p - 1, 1));
+              const target = containerRef.current?.querySelector(
+                `[data-page="${Math.max(currentPage - 1, 1)}"]`
+              );
+              target?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            disabled={currentPage <= 1}
+            tooltip="Previous page"
+          >
+            <ChevronLeft size={16} />
+          </ToolbarButton>
 
           <form onSubmit={handleGoToPage} className="flex items-center gap-1">
             <Input
@@ -591,129 +587,76 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               onChange={(e) => setInputVal(e.target.value)}
               className="h-7 w-12 text-center text-sm"
             />
-            <span className="text-sm text-muted-foreground">/ {numPages}</span>
+            <ToolbarLabel>/ {numPages}</ToolbarLabel>
           </form>
 
-          <TooltipProvider delayDuration={200}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0"
-                  onClick={() => {
-                    setCurrentPage((p) => Math.min(p + 1, numPages));
-                    const target = containerRef.current?.querySelector(
-                      `[data-page="${Math.min(currentPage + 1, numPages)}"]`
-                    );
-                    target?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }}
-                  disabled={currentPage >= numPages}
-                >
-                  <ChevronRight size={16} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Next page</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
+          <ToolbarButton
+            onClick={() => {
+              setCurrentPage((p) => Math.min(p + 1, numPages));
+              const target = containerRef.current?.querySelector(
+                `[data-page="${Math.min(currentPage + 1, numPages)}"]`
+              );
+              target?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            disabled={currentPage >= numPages}
+            tooltip="Next page"
+          >
+            <ChevronRight size={16} />
+          </ToolbarButton>
+        </ToolbarGroup>
 
-        <div className="flex items-center gap-1">
-          <TooltipProvider delayDuration={200}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0"
-                  onClick={zoomOut}
-                  disabled={!canZoomOut}
-                >
-                  <ZoomOut size={16} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Zoom out</p>
-              </TooltipContent>
-            </Tooltip>
+        <ToolbarGroup>
+          <ToolbarButton
+            onClick={zoomOut}
+            disabled={!canZoomOut}
+            tooltip="Zoom out"
+          >
+            <ZoomOut size={16} />
+          </ToolbarButton>
 
-            <span className="w-14 text-center text-sm text-muted-foreground">
-              {Math.round(zoom * 100)}%
-            </span>
+          <ToolbarLabel className="w-14 text-center">
+            {Math.round(zoom * 100)}%
+          </ToolbarLabel>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0"
-                  onClick={zoomIn}
-                  disabled={!canZoomIn}
-                >
-                  <ZoomIn size={16} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Zoom in</p>
-              </TooltipContent>
-            </Tooltip>
+          <ToolbarButton
+            onClick={zoomIn}
+            disabled={!canZoomIn}
+            tooltip="Zoom in"
+          >
+            <ZoomIn size={16} />
+          </ToolbarButton>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="ml-1 h-7 px-2 text-xs"
-                  onClick={() => setZoom(1.0)}
-                  disabled={zoom === 1.0}
-                >
-                  <Maximize2 size={14} className="mr-1" />
-                  1:1
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Actual size (1:1)</p>
-              </TooltipContent>
-            </Tooltip>
+          <ToolbarSeparator />
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  onClick={handleFitWidth}
-                  disabled={!defaultPageSize}
-                >
-                  <ArrowLeftRight size={14} className="mr-1" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Fit to width</p>
-              </TooltipContent>
-            </Tooltip>
+          <ToolbarButton
+            onClick={() => setZoom(1.0)}
+            disabled={zoom === 1.0}
+            tooltip="Actual size (1:1)"
+            className="h-7 px-2"
+          >
+            <Maximize2 size={14} className="mr-1" />
+            1:1
+          </ToolbarButton>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  onClick={handleFitHeight}
-                  disabled={!defaultPageSize}
-                >
-                  <ArrowUpDown size={14} className="mr-1" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Fit to height</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-      </div>
+          <ToolbarButton
+            onClick={handleFitWidth}
+            disabled={!defaultPageSize}
+            tooltip="Fit to width"
+            className="h-7 px-2"
+          >
+            <ArrowLeftRight size={14} />
+          </ToolbarButton>
+
+          <ToolbarButton
+            onClick={handleFitHeight}
+            disabled={!defaultPageSize}
+            tooltip="Fit to height"
+            className="h-7 px-2"
+          >
+            <ArrowUpDown size={14} />
+          </ToolbarButton>
+        </ToolbarGroup>
+      </Toolbar>
 
       {/* PDF pages */}
       <div

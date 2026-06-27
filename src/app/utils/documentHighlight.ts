@@ -130,9 +130,62 @@ export function findBestRange(
   }
 
   if (bestWinStart !== -1 && bestScore >= 0.4) {
-    const charStart = tokenCharOffset(normHaystack, bestWinStart);
-    const charEnd = tokenCharEndOffset(normHaystack, bestWinStart + windowSize);
-    return toRawRange(charStart, charEnd);
+    const stopWords = new Set(["the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "as", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did"]);
+    const quoteKeywords = quoteTokens.filter(t => !stopWords.has(t));
+    const leadingKeywords = Array.from(new Set(quoteKeywords)).slice(0, 4);
+
+    // Find the first token in the window that matches one of the leading keywords to align the start precisely
+    let firstLeadIdx = -1;
+    for (let j = bestWinStart; j < bestWinStart + windowSize; j++) {
+      const ht = haystackTokens[j];
+      const matchesLead = leadingKeywords.some(lk => ht === lk || (ht.length >= 4 && lk.startsWith(ht)) || (lk.length >= 4 && ht.startsWith(lk)));
+      if (matchesLead) {
+        firstLeadIdx = j;
+        break;
+      }
+    }
+
+    const finalStart = firstLeadIdx !== -1 ? firstLeadIdx : bestWinStart;
+
+    // Find the last matching token in the window
+    let lastMatchIdx = -1;
+    for (let j = bestWinStart + windowSize - 1; j >= bestWinStart; j--) {
+      const ht = haystackTokens[j];
+      if (quoteTokens.includes(ht)) {
+        lastMatchIdx = j;
+        break;
+      }
+    }
+    const finalEndBase = lastMatchIdx !== -1 ? lastMatchIdx + 1 : bestWinStart + windowSize;
+
+    // Expand the end to the right to include any nearby matching keywords of the quote
+    let finalEnd = finalEndBase;
+    let lastKeywordMatch = finalEndBase - 1;
+    for (let j = finalEndBase; j < Math.min(haystackTokens.length, finalEndBase + 60); j++) {
+      const ht = haystackTokens[j];
+      const matchesKeyword = quoteKeywords.some(kw => ht === kw || (ht.length >= 4 && kw.startsWith(ht)) || (kw.length >= 4 && ht.startsWith(kw)));
+      if (matchesKeyword) {
+        if (j - lastKeywordMatch <= 8) {
+          finalEnd = j + 1;
+          lastKeywordMatch = j;
+        }
+      }
+    }
+
+    let charStart = tokenCharOffset(normHaystack, finalStart);
+    let charEnd = tokenCharEndOffset(normHaystack, finalEnd);
+
+    // Expand the end of the range to the nearest sentence boundary (first . or ! or ? followed by space, or end of text)
+    const rawStart = normToRaw[charStart] ?? 0;
+    let rawEnd = charEnd > 0 && charEnd - 1 < normToRaw.length ? normToRaw[charEnd - 1] + 1 : haystackText.length;
+
+    const restText = haystackText.slice(rawEnd);
+    const sentenceEndMatch = restText.match(/^[^.!?]*[.!?](?=\s|$)/);
+    if (sentenceEndMatch) {
+      rawEnd += sentenceEndMatch[0].length;
+    }
+
+    return { start: rawStart, end: Math.max(rawStart + 1, rawEnd) };
   }
 
   // 3. 4-word and 3-word n-grams of the quote (for heavily paraphrased text).

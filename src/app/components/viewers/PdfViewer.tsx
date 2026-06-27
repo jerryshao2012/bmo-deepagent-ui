@@ -116,16 +116,36 @@ function computePdfHighlightRects(
       Math.hypot(transform[1], transform[3]) || item.height || 10;
     // transform[4]=e is the left x; transform[5]=f is the baseline y (PDF,
     // origin bottom-left). Convert to top-left origin screen coords.
-    const left = transform[4];
+    const baseLeft = transform[4];
     const top = pageHeight - transform[5] - fontHeight;
-    const width =
+    const baseWidth =
       typeof item.width === "number" && item.width > 0
         ? item.width
         : (item.str?.length || 1) * fontHeight * 0.5;
+
+    // Calculate precise sub-rectangle matching the character range overlap
+    const itemStr = item.str ?? "";
+    let localStart = Math.max(0, range.start - seg.start);
+    const localEnd = Math.min(seg.len, range.end - seg.start);
+
+    // If the match starts very close to the start of the segment (e.g. within 10 chars, covering 'As the'), align to 0
+    if (localStart > 0 && localStart <= 10) {
+      localStart = 0;
+    }
+
+    let highlightLeft = baseLeft;
+    let highlightWidth = baseWidth;
+    if (itemStr.length > 0 && localEnd > localStart) {
+      const leftRatio = localStart / itemStr.length;
+      const widthRatio = (localEnd - localStart) / itemStr.length;
+      highlightLeft = baseLeft + leftRatio * baseWidth;
+      highlightWidth = widthRatio * baseWidth;
+    }
+
     rects.push({
-      left,
+      left: highlightLeft,
       top,
-      width: Math.max(width, 4),
+      width: Math.max(highlightWidth, 4),
       height: Math.max(fontHeight, 6),
     });
   }

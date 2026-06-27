@@ -22,6 +22,7 @@ import {
   Paperclip,
   FileText,
   X,
+  Database,
 } from "lucide-react";
 import { useClient } from "@/providers/ClientProvider";
 import { getConfig } from "@/lib/config";
@@ -39,6 +40,7 @@ import { useChatContext } from "@/providers/ChatProvider";
 import { cn } from "@/lib/utils";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { FilesPopover } from "@/app/components/TasksFilesSidebar";
+import { WikiTreeViewer } from "@/app/components/WikiTreeViewer";
 import { useThreadStatus } from "@/app/hooks/useThreads";
 import { useQueryState } from "nuqs";
 import { DocumentViewerPanel, type DocumentViewerState } from "@/app/components/viewers/DocumentViewerPanel";
@@ -110,7 +112,7 @@ const getStatusIcon = (status: TodoItem["status"], className?: string) => {
 
 export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [currentThreadId, setCurrentThreadId] = useQueryState("threadId");
-  const [metaOpen, setMetaOpen] = useState<"tasks" | "files" | "documents" | null>(null);
+  const [metaOpen, setMetaOpen] = useState<"tasks" | "files" | "documents" | "wiki" | null>(null);
   const tasksContainerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -167,12 +169,33 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     setSelectedFile(file);
   }, []);
 
+  const [wikiFileCount, setWikiFileCount] = useState<number | null>(null);
   const [ingestProgress, setIngestProgress] = useState<number | null>(null);
   const [ingestPhase, setIngestPhase] = useState<string | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
   const sseAbortRef = useRef<AbortController | null>(null);
   const currentThreadIdRef = useRef(currentThreadId);
   currentThreadIdRef.current = currentThreadId;
+
+  useEffect(() => {
+    if (!currentThreadId) {
+      setWikiFileCount(null);
+      return;
+    }
+    const appConfig = getConfig();
+    const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
+    const token = getBrowserSessionToken();
+    fetch(`${deploymentUrl}/threads/${currentThreadId}/wiki/tree`, {
+      headers: token ? { "X-API-Key": token } : {},
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.file_count === "number") {
+          setWikiFileCount(data.file_count);
+        }
+      })
+      .catch(() => {});
+  }, [currentThreadId]);
   // Tracks a pending doc_folder that couldn't be set via updateState
   // because the thread had no graph_id yet (no runs). It will be included
   // in the first sendMessage call instead.
@@ -1172,6 +1195,30 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                       );
                     })();
 
+                    const wikiTrigger = (() => {
+                      if (!currentThreadId) return null;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMetaOpen((prev) =>
+                              prev === "wiki" ? null : "wiki"
+                            )
+                          }
+                          className="flex flex-shrink-0 cursor-pointer items-center gap-2 px-[18px] py-3 text-left text-sm"
+                          {...getAriaExpandedProps(metaOpen === "wiki")}
+                        >
+                          <Database size={16} className="text-primary" />
+                          Wiki
+                          {wikiFileCount !== null && (
+                            <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
+                              {wikiFileCount}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })();
+
                     return (
                       <div className="flex justify-between items-center w-full min-w-0 overflow-hidden">
                         <div className="flex-1 min-w-0">
@@ -1180,6 +1227,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                         <div className="flex flex-shrink-0 items-center">
                           {filesTrigger}
                           {docsTrigger}
+                          {wikiTrigger}
                         </div>
                       </div>
                     );
@@ -1189,7 +1237,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
 
               {metaOpen && (
                 <>
-                  <div className="sticky top-0 flex items-stretch bg-sidebar text-sm">
+                  <div className="sticky top-0 z-20 flex items-stretch bg-sidebar border-b border-border shadow-xs text-sm">
                     {hasTasks && (
                       <button
                         type="button"
@@ -1236,6 +1284,25 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                         <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
                           {documents.length}
                         </span>
+                      </button>
+                    )}
+                    {currentThreadId && (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 py-3 pr-4 first:pl-[18px] aria-expanded:font-semibold"
+                        onClick={() =>
+                          setMetaOpen((prev) =>
+                            prev === "wiki" ? null : "wiki"
+                          )
+                        }
+                        {...getAriaExpandedProps(metaOpen === "wiki")}
+                      >
+                        Wiki
+                        {wikiFileCount !== null && (
+                          <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
+                            {wikiFileCount}
+                          </span>
+                        )}
                       </button>
                     )}
                     <button
@@ -1337,6 +1404,16 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                             </div>
                           ))}
                         </div>
+                      </div>
+                    )}
+
+                    {metaOpen === "wiki" && currentThreadId && (
+                      <div className="my-3 h-72 overflow-hidden rounded-md border border-border bg-card/40">
+                        <WikiTreeViewer
+                          threadId={currentThreadId}
+                          onSelectFile={handleFileClick}
+                          onFileCountChange={setWikiFileCount}
+                        />
                       </div>
                     )}
                   </div>

@@ -121,3 +121,38 @@ export function buildDocumentDownloadUrl(
     filename
   )}?${params.toString()}`;
 }
+
+/**
+ * Asynchronously fetches a document blob with auth headers and triggers a browser download.
+ */
+export async function downloadDocument(
+  filePath: string,
+  threadId: string
+): Promise<void> {
+  const appConfig = getConfig();
+  const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
+  const token = getBrowserSessionToken();
+  const { folder, filename } = resolveDocumentLocation(filePath, threadId);
+  const params = new URLSearchParams({ folder });
+  const url = `${deploymentUrl}/documents/download/${encodeURIComponent(
+    filename
+  )}?${params.toString()}`;
+
+  const res = await fetch(url, {
+    headers: token ? { "X-API-Key": token } : {},
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to download document (${res.status})`);
+  }
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filePath.replace(/^\/+/, "");
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(blobUrl);
+}
+

@@ -5,6 +5,7 @@ import {
   Download,
   FileText,
   Loader2,
+  Highlighter,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -14,9 +15,15 @@ import { DocxViewer } from "@/app/components/viewers/DocxViewer";
 import { XlsxViewer } from "@/app/components/viewers/XlsxViewer";
 import { PptxViewer } from "@/app/components/viewers/PptxViewer";
 import {
-  buildDocumentDownloadUrl,
+  downloadDocument,
   fetchDocumentArrayBuffer,
 } from "@/app/components/viewers/documentUtils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export interface DocumentViewerState {
   filePath: string;
@@ -44,9 +51,11 @@ function detectDocType(filePath: string): DocType {
     case "docx":
       return "docx";
     case "xlsx":
+      return "xlsx";
     case "xls":
       return "xlsx";
     case "pptx":
+      return "pptx";
     case "ppt":
       return "pptx";
     default:
@@ -63,6 +72,12 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [highlightEnabled, setHighlightEnabled] = useState(true);
+
+  // Reset highlight enabled to true when state or file changes
+  useEffect(() => {
+    setHighlightEnabled(true);
+  }, [state?.filePath]);
 
   const docType = useMemo(
     () => (state ? detectDocType(state.filePath) : "unsupported"),
@@ -112,18 +127,19 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
     };
   }, [state]);
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!state) return;
-    const url = buildDocumentDownloadUrl(state.filePath, threadId);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = state.filePath.replace(/^\/+/, "");
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      await downloadDocument(state.filePath, threadId);
+    } catch (e) {
+      console.error("Failed to download document:", e);
+      toast.error("Failed to download document");
+    }
   };
 
   if (!state) return null;
+
+  const currentQuote = highlightEnabled ? state.quote : undefined;
 
   return (
     <div
@@ -132,64 +148,85 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
         isFullscreen ? "fixed inset-0 z-50 p-6" : "p-4"
       )}
     >
-
-
         {/* Header bar */}
         <div className="mb-4 flex items-center justify-between border-b border-border pb-4 select-none">
           <div className="flex min-w-0 items-center gap-2">
             {/* macOS-style Window Control Dots */}
-            <div className="flex items-center gap-[6px] mr-2 shrink-0 group/dots py-1 px-1">
-              <button
-                onClick={onClose}
-                className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#FF5F56] border border-[#E0443E] active:bg-[#BF403A] focus:outline-none transition-colors"
-                aria-label="Close"
-              >
-                <svg
-                  className="absolute h-[5px] w-[5px] text-[#4C0002] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100"
-                  viewBox="0 0 6 6"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                >
-                  <path d="M1 1l4 4M5 1L1 5" />
-                </svg>
-              </button>
-              <button
-                onClick={() =>
-                  toast.info("Minimize is not supported in browser dialog")
-                }
-                className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#FFBD2E] border border-[#DFA023] active:bg-[#C08E1A] focus:outline-none transition-colors"
-                aria-label="Minimize"
-              >
-                <svg
-                  className="absolute h-[5px] w-[5px] text-[#5C3E00] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100"
-                  viewBox="0 0 6 6"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                >
-                  <path d="M1 3h4" />
-                </svg>
-              </button>
-              <button
-                onClick={() => setIsFullscreen((prev) => !prev)}
-                className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#27C93F] border border-[#1AAB29] active:bg-[#12821B] focus:outline-none transition-colors"
-                aria-label="Toggle Fullscreen"
-              >
-                <svg
-                  className="absolute h-[5px] w-[5px] text-[#003300] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100"
-                  viewBox="0 0 6 6"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                >
-                  <path d="M1.5 4.5l3-3 M1.5 2.5v2h2 M4.5 3.5v-2h-2" />
-                </svg>
-              </button>
-            </div>
+            <TooltipProvider delayDuration={200}>
+              <div className="flex items-center gap-[6px] mr-2 shrink-0 group/dots py-1 px-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={onClose}
+                      className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#FF5F56] border border-[#E0443E] active:bg-[#BF403A] focus:outline-none transition-colors"
+                      aria-label="Close"
+                    >
+                      <svg
+                        className="absolute h-[5px] w-[5px] text-[#4C0002] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100"
+                        viewBox="0 0 6 6"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                        strokeLinecap="round"
+                      >
+                        <path d="M1 1l4 4M5 1L1 5" />
+                      </svg>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <p>Close</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() =>
+                        toast.info("Minimize is not supported in browser dialog")
+                      }
+                      className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#FFBD2E] border border-[#DFA023] active:bg-[#C08E1A] focus:outline-none transition-colors"
+                      aria-label="Minimize"
+                    >
+                      <svg
+                        className="absolute h-[5px] w-[5px] text-[#5C3E00] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100"
+                        viewBox="0 0 6 6"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                        strokeLinecap="round"
+                      >
+                        <path d="M1 3h4" />
+                      </svg>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <p>Minimize</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => setIsFullscreen((prev) => !prev)}
+                      className="relative flex h-3 w-3 items-center justify-center rounded-full bg-[#27C93F] border border-[#1AAB29] active:bg-[#12821B] focus:outline-none transition-colors"
+                      aria-label="Toggle Fullscreen"
+                    >
+                      <svg
+                        className="absolute h-[5px] w-[5px] text-[#003300] opacity-0 transition-opacity duration-150 group-hover/dots:opacity-100"
+                        viewBox="0 0 6 6"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                        strokeLinecap="round"
+                      >
+                        <path d="M1.5 4.5l3-3 M1.5 2.5v2h2 M4.5 3.5v-2h-2" />
+                      </svg>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <p>Toggle Fullscreen</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
             <div className="h-4 w-[1px] bg-border mr-2 shrink-0" />
             <FileText className="text-primary/50 h-5 w-5 shrink-0" />
             <span className="overflow-hidden text-ellipsis whitespace-nowrap text-base font-medium text-primary">
@@ -197,15 +234,45 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <Button
-              onClick={handleDownload}
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2"
-            >
-              <Download size={16} className="mr-1" />
-              Download
-            </Button>
+            <TooltipProvider delayDuration={200}>
+              {state.quote && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      onClick={() => setHighlightEnabled((prev) => !prev)}
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        "h-8 w-8 rounded-md transition-all duration-200",
+                        highlightEnabled 
+                          ? "bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 hover:text-amber-600" 
+                          : "text-muted-foreground hover:!text-zinc-100 hover:!bg-zinc-800"
+                      )}
+                    >
+                      <Highlighter size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <p>{highlightEnabled ? "Turn off highlights" : "Highlight referenced text"}</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={handleDownload}
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-md text-muted-foreground hover:!text-zinc-100 hover:!bg-zinc-800 transition-all duration-200"
+                  >
+                    <Download size={16} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <p>Download file</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
 
@@ -239,22 +306,22 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
             <PdfViewer
               pdfData={docData}
               initialPage={state.page}
-              highlightQuote={state.quote}
+              highlightQuote={currentQuote}
             />
           ) : docType === "docx" && docData ? (
             <DocxViewer
               docxData={docData}
               initialPage={state.page}
-              highlightQuote={state.quote}
+              highlightQuote={currentQuote}
             />
           ) : docType === "xlsx" && docData ? (
-            <XlsxViewer xlsxData={docData} highlightQuote={state.quote} />
+            <XlsxViewer xlsxData={docData} highlightQuote={currentQuote} />
           ) : docType === "pptx" ? (
             <PptxViewer
               filePath={state.filePath}
               threadId={threadId}
               initialSlide={state.slide ?? state.page}
-              highlightQuote={state.quote}
+              highlightQuote={currentQuote}
             />
           ) : null}
         </div>

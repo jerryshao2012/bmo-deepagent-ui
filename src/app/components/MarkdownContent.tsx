@@ -368,7 +368,7 @@ function extractSurroundingQuote(anchor: HTMLAnchorElement): string | undefined 
   let testQuote = quote.replace(cleanDOC, " ");
   testQuote = testQuote.replace(/\b(?:p|pp|page|pages|slide|slides)\b/gi, " ");
   testQuote = testQuote.replace(/\b\d+\b/gi, " ");
-  testQuote = testQuote.replace(/[(),\/#?=&:|-]/g, " ");
+  testQuote = testQuote.replace(new RegExp('[(),/#?=&:|-]', 'g'), " ");
   testQuote = testQuote.replace(/\s+/g, " ").trim();
 
   // If the quote is too short or is mostly citation noise, fall back to

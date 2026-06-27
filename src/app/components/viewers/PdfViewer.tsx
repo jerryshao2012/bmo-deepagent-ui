@@ -20,6 +20,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { findBestRange } from "@/app/utils/documentHighlight";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface PdfViewerProps {
   pdfData: ArrayBuffer;
@@ -553,21 +559,30 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       {/* Page navigation toolbar */}
       <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
-            onClick={() => {
-              setCurrentPage((p) => Math.max(p - 1, 1));
-              const target = containerRef.current?.querySelector(
-                `[data-page="${Math.max(currentPage - 1, 1)}"]`
-              );
-              target?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-            disabled={currentPage <= 1}
-          >
-            <ChevronLeft size={16} />
-          </Button>
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  onClick={() => {
+                    setCurrentPage((p) => Math.max(p - 1, 1));
+                    const target = containerRef.current?.querySelector(
+                      `[data-page="${Math.max(currentPage - 1, 1)}"]`
+                    );
+                    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  disabled={currentPage <= 1}
+                >
+                  <ChevronLeft size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Previous page</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
           <form onSubmit={handleGoToPage} className="flex items-center gap-1">
             <Input
@@ -579,73 +594,124 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             <span className="text-sm text-muted-foreground">/ {numPages}</span>
           </form>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
-            onClick={() => {
-              setCurrentPage((p) => Math.min(p + 1, numPages));
-              const target = containerRef.current?.querySelector(
-                `[data-page="${Math.min(currentPage + 1, numPages)}"]`
-              );
-              target?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-            disabled={currentPage >= numPages}
-          >
-            <ChevronRight size={16} />
-          </Button>
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  onClick={() => {
+                    setCurrentPage((p) => Math.min(p + 1, numPages));
+                    const target = containerRef.current?.querySelector(
+                      `[data-page="${Math.min(currentPage + 1, numPages)}"]`
+                    );
+                    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  disabled={currentPage >= numPages}
+                >
+                  <ChevronRight size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Next page</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
 
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
-            onClick={zoomOut}
-            disabled={!canZoomOut}
-          >
-            <ZoomOut size={16} />
-          </Button>
-          <span className="w-14 text-center text-sm text-muted-foreground">
-            {Math.round(zoom * 100)}%
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
-            onClick={zoomIn}
-            disabled={!canZoomIn}
-          >
-            <ZoomIn size={16} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-1 h-7 px-2 text-xs"
-            onClick={() => setZoom(1.0)}
-            disabled={zoom === 1.0}
-          >
-            <Maximize2 size={14} className="mr-1" />
-            1:1
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={handleFitWidth}
-            disabled={!defaultPageSize}
-          >
-            <ArrowLeftRight size={14} className="mr-1" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={handleFitHeight}
-            disabled={!defaultPageSize}
-          >
-            <ArrowUpDown size={14} className="mr-1" />
-          </Button>
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  onClick={zoomOut}
+                  disabled={!canZoomOut}
+                >
+                  <ZoomOut size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Zoom out</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <span className="w-14 text-center text-sm text-muted-foreground">
+              {Math.round(zoom * 100)}%
+            </span>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  onClick={zoomIn}
+                  disabled={!canZoomIn}
+                >
+                  <ZoomIn size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Zoom in</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-1 h-7 px-2 text-xs"
+                  onClick={() => setZoom(1.0)}
+                  disabled={zoom === 1.0}
+                >
+                  <Maximize2 size={14} className="mr-1" />
+                  1:1
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Actual size (1:1)</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={handleFitWidth}
+                  disabled={!defaultPageSize}
+                >
+                  <ArrowLeftRight size={14} className="mr-1" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Fit to width</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={handleFitHeight}
+                  disabled={!defaultPageSize}
+                >
+                  <ArrowUpDown size={14} className="mr-1" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Fit to height</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 

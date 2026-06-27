@@ -172,8 +172,8 @@ export function findBestRange(
       }
     }
 
-    let charStart = tokenCharOffset(normHaystack, finalStart);
-    let charEnd = tokenCharEndOffset(normHaystack, finalEnd);
+    const charStart = tokenCharOffset(normHaystack, finalStart);
+    const charEnd = tokenCharEndOffset(normHaystack, finalEnd);
 
     // Expand the end of the range to the nearest sentence boundary (first . or ! or ? followed by space, or end of text)
     const rawStart = normToRaw[charStart] ?? 0;

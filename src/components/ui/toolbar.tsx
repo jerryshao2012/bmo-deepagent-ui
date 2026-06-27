@@ -48,25 +48,34 @@ export interface ToolbarButtonProps
   extends React.ComponentProps<typeof Button> {
   tooltip?: string;
   tooltipSide?: "top" | "bottom" | "left" | "right";
+  isIconOnly?: boolean;
 }
 
 export function ToolbarButton({
   tooltip,
   tooltipSide = "bottom",
+  isIconOnly,
   className,
   variant = "ghost",
   size = "sm",
   children,
   ...props
 }: ToolbarButtonProps) {
+  const hasTextChild = React.Children.toArray(children).some(
+    (child) => typeof child === "string" || typeof child === "number"
+  );
+  
+  const autoIconOnly = isIconOnly !== undefined ? isIconOnly : !hasTextChild;
+
   const btn = (
     <Button
       variant={variant}
       size={size}
       className={cn(
-        size === "sm" && !className?.includes("px-") && !className?.includes("w-")
-          ? "h-7 w-7 p-0"
-          : "h-7 text-xs",
+        "h-7 text-xs font-medium transition-colors",
+        autoIconOnly || size === "icon"
+          ? "w-7 p-0 flex shrink-0 items-center justify-center"
+          : "px-2.5 gap-1.5 inline-flex shrink-0 items-center justify-center",
         className
       )}
       {...props}

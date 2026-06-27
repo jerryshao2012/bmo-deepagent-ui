@@ -221,21 +221,21 @@ export const FileViewPanel = React.memo<{
                   disabled={editDisabled}
                   tooltip="Edit file"
                 >
-                  <Edit size={16} className="mr-1" />
+                  <Edit size={16} />
                   Edit
                 </ToolbarButton>
                 <ToolbarButton
                   onClick={handleCopy}
                   tooltip="Copy content"
                 >
-                  <Copy size={16} className="mr-1" />
+                  <Copy size={16} />
                   Copy
                 </ToolbarButton>
                 <ToolbarButton
                   onClick={handleDownload}
                   tooltip="Download file"
                 >
-                  <Download size={16} className="mr-1" />
+                  <Download size={16} />
                   Download
                 </ToolbarButton>
               </>

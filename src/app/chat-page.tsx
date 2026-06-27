@@ -312,6 +312,7 @@ function HomePageInner({
 
             <ResizablePanel
               id="chat"
+              defaultSize={sidebar ? 75 : 100}
               className="relative flex flex-col"
               order={2}
             >

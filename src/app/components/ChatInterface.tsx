@@ -974,7 +974,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         </div>
       )}
       <ResizablePanelGroup direction="horizontal">
-        <ResizablePanel id="chat-content" order={1} defaultSize={60} className="relative flex flex-col min-w-0">
+        <ResizablePanel id="chat-content" order={1} defaultSize={documentViewerState || selectedFile ? 60 : 100} className="relative flex flex-col min-w-0">
       <div
         className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
         ref={scrollRef}

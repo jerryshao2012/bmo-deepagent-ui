@@ -37,10 +37,11 @@ import {
   Upload,
   FolderUp,
   FileArchive,
+  Trash2,
 } from "lucide-react";
 import { StandaloneConfig, getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
-import { fetchAvailableSkills, uploadSkill, SkillItem } from "@/lib/skills";
+import { fetchAvailableSkills, uploadSkill, deleteSkill, SkillItem } from "@/lib/skills";
 
 async function scanFileSystemEntry(entry: any, path: string = ""): Promise<{ file: File; path: string }[]> {
   const results: { file: File; path: string }[] = [];
@@ -224,6 +225,28 @@ export function ConfigDialog({
       });
     } finally {
       setUploadingSkill(false);
+    }
+  };
+
+  const [deletingSkillId, setDeletingSkillId] = useState<string | null>(null);
+
+  const handleDeleteSkill = async (skillId: string) => {
+    if (!confirm(`Are you sure you want to remove the uploaded skill "${skillId}"?`)) return;
+
+    setDeletingSkillId(skillId);
+    setUploadStatus(null);
+
+    try {
+      const res = await deleteSkill(skillId, deploymentUrl);
+      setUploadStatus({ type: "success", message: res.message });
+      await loadSkills();
+    } catch (err) {
+      setUploadStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setDeletingSkillId(null);
     }
   };
 
@@ -770,6 +793,21 @@ export function ConfigDialog({
                                 <Copy className="h-3 w-3" />
                               )}
                             </button>
+                            {(skill.isRemovable || skill.source === "uploaded") && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSkill(skill.id)}
+                                disabled={deletingSkillId === skill.id}
+                                className="opacity-0 group-hover/skill:opacity-100 transition-opacity p-0.5 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-400 shrink-0"
+                                title="Remove uploaded skill"
+                              >
+                                {deletingSkillId === skill.id ? (
+                                  <Loader2 className="h-3 w-3 animate-spin text-red-400" />
+                                ) : (
+                                  <Trash2 className="h-3 w-3" />
+                                )}
+                              </button>
+                            )}
                           </div>
                           {skill.category && (
                             <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground border border-border/50">

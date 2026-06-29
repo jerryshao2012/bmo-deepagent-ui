@@ -143,8 +143,19 @@ function IntroPageContent() {
       }
     });
 
-    eventSource.onerror = (error) => {
-      console.error("SSE stream error:", error);
+    eventSource.onerror = () => {
+      if (eventSource.readyState === EventSource.CLOSED) {
+        // Fatal: server returned non-200, or close() was called explicitly
+        console.error(
+          "[SSE Fallback] Connection permanently closed. Will not auto-reconnect."
+        );
+        hasFallenBackRef.current = false; // Allow future WS reconnection attempts
+        eventSourceRef.current = null;
+      } else if (eventSource.readyState === EventSource.CONNECTING) {
+        // Expected: EventSource is auto-reconnecting after a timeout or transient failure
+        console.log("[SSE Fallback] Reconnecting to SSE stream...");
+        setWsStatus("fallback");
+      }
     };
   }, [threadId]);
 

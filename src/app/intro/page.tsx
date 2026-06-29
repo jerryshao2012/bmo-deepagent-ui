@@ -138,7 +138,7 @@ function IntroPageContent() {
       try {
         const token = getBrowserSessionToken();
         const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
-        const res = await fetch(`${cleanUrl}/threads/${threadId}/state`, {
+        const res = await fetch(`${cleanUrl}/chat_threads/${threadId}/state`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -171,7 +171,7 @@ function IntroPageContent() {
       try {
         const token = getBrowserSessionToken();
         const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
-        const res = await fetch(`${cleanUrl}/threads/${threadId}/state`, {
+        const res = await fetch(`${cleanUrl}/chat_threads/${threadId}/state`, {
           headers: {
             "Content-Type": "application/json",
             "X-API-Key": token || "",

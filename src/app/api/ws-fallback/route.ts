@@ -3,15 +3,32 @@ import { NextRequest } from "next/server";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs"; // nodejs runtime to maintain in-memory state
 
-// In-memory thread content store
-// NOTE: This resets on Vercel deploys. For persistence, use a database.
-const threadStore = new Map<string, string>();
-
-// ── Subscriber management for persistent SSE streams ─────────────────────
+// ── Shared state (bridged with server.cjs WebSocket when available) ──────
+// When running with server.cjs, the global state is pre-initialized so the
+// WebSocket server and this SSE route share the same Maps.  On Vercel or
+// other serverless platforms where server.cjs is absent we fall back to
+// module-local state.
 
 type SSEController = ReadableStreamDefaultController<Uint8Array>;
 
-const subscribers = new Map<string, Set<{ controller: SSEController }>>();
+declare global {
+  var __sseThreadStore: Map<string, string> | undefined;
+  var __sseSubscribers: Map<string, Set<{ controller: SSEController }>> | undefined;
+  var __sseNotify: ((threadId: string, content: string) => void) | undefined;
+}
+
+const threadStore: Map<string, string> =
+  globalThis.__sseThreadStore ?? new Map<string, string>();
+
+const subscribers: Map<string, Set<{ controller: SSEController }>> =
+  globalThis.__sseSubscribers ?? new Map<string, Set<{ controller: SSEController }>>();
+
+// Ensure the global references point to the same Maps so server.cjs can
+// access subscribers added by this route.
+if (!globalThis.__sseThreadStore) globalThis.__sseThreadStore = threadStore;
+if (!globalThis.__sseSubscribers) globalThis.__sseSubscribers = subscribers;
+
+// ── Subscriber helpers ───────────────────────────────────────────────────
 
 function addSubscriber(threadId: string, controller: SSEController): void {
   if (!subscribers.has(threadId)) {
@@ -44,6 +61,13 @@ function removeSubscriber(threadId: string, controller: SSEController): void {
 }
 
 function notifySubscribers(threadId: string, content: string): void {
+  // Use the global bridge when available (it is kept in sync by server.cjs),
+  // otherwise fall back to the local implementation.
+  if (typeof globalThis.__sseNotify === "function") {
+    globalThis.__sseNotify(threadId, content);
+    return;
+  }
+
   const subs = subscribers.get(threadId);
   if (!subs || subs.size === 0) return;
 
@@ -54,7 +78,6 @@ function notifySubscribers(threadId: string, content: string): void {
     try {
       sub.controller.enqueue(encoded);
     } catch {
-      // Controller is already closed (client disconnected). Remove it.
       removeSubscriber(threadId, sub.controller);
     }
   }
@@ -64,11 +87,26 @@ function notifySubscribers(threadId: string, content: string): void {
 
 /**
  * GET handler for intro page SSE sync.
- * Returns a persistent SSE stream that stays open and pushes content updates
- * as they arrive via POST from other clients.
+ *
+ * Two modes, selected by the presence of the `poll` query parameter:
+ *
+ * 1. Persistent SSE stream (no `poll` param):
+ *    Returns a long-lived SSE stream that stays open and pushes content
+ *    updates as they arrive via POST from other clients or the WebSocket
+ *    bridge.  Best-effort on serverless — works in real time when both
+ *    clients land on the same function instance.
+ *
+ * 2. Polling exchange (with `?poll=1&push=<urlencoded-content>`):
+ *    Short, stateless request/response.  The server stores the pushed
+ *    content in its in-memory Map and immediately returns whatever content
+ *    it currently has (possibly from another client on a *different*
+ *    instance that happened to hit this instance earlier).  This provides
+ *    eventual-consistency catch-up across serverless function instances.
  *
  * Expected query parameters:
  * - threadId: The ID of the thread
+ * - poll (optional): If "1", use polling mode
+ * - push (optional, only with poll): URL-encoded content to store
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -78,6 +116,34 @@ export async function GET(req: NextRequest) {
     return new Response("Missing threadId", { status: 400 });
   }
 
+  // ── Polling mode (cross-instance catch-up) ──────────────────────────
+  if (searchParams.get("poll") === "1") {
+    const pushContent = searchParams.get("push");
+
+    if (pushContent !== null) {
+      if (pushContent.trim() === "") {
+        threadStore.delete(threadId);
+      } else {
+        threadStore.set(threadId, pushContent);
+      }
+      // Also push to any SSE subscribers on this instance
+      notifySubscribers(threadId, pushContent);
+    }
+
+    const currentContent = threadStore.get(threadId) || "";
+
+    return new Response(
+      JSON.stringify({ type: "sync", content: currentContent }),
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache, no-transform",
+        },
+      }
+    );
+  }
+
+  // ── Persistent SSE stream mode ──────────────────────────────────────
   const encoder = new TextEncoder();
   let cleanedUp = false;
 
@@ -143,7 +209,8 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST handler for storing thread content updates.
- * Used by intro page to persist thread state and push updates to connected SSE clients.
+ * Used by intro page to persist thread state and push updates to all connected
+ * clients (both SSE subscribers and, via the bridge, WebSocket clients).
  *
  * Expected body:
  * - threadId: The ID of the thread
@@ -176,6 +243,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Push update to all connected SSE subscribers
+      // (When the global bridge is active, this also reaches WebSocket clients)
       notifySubscribers(threadId, content || "");
 
       return new Response(JSON.stringify({ success: true }), {

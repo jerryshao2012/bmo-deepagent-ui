@@ -271,12 +271,63 @@ app.prepare().then(() => {
     }
   }
 
+  // ── Shared state bridge for SSE fallback ──────────────────────────────
+  // These globals allow the ws-fallback API route to share state with the
+  // WebSocket server so that clients on different transports stay in sync.
+  if (!globalThis.__sseThreadStore) {
+    globalThis.__sseThreadStore = new Map();
+  }
+  if (!globalThis.__sseSubscribers) {
+    globalThis.__sseSubscribers = new Map();
+  }
+
   // Create WebSocket Server
   const wss = new WebSocketServer({ noServer: true });
 
   // Group clients by thread ID
   const rooms = new Map(); // Map<threadId, Set<WebSocket>>
   const roomContent = new LRUCache(200); // Thread Cache (max 200 active threads)
+
+  // Bidirectional bridge: notifies both SSE subscribers AND WebSocket
+  // clients in the same thread.  Called from the SSE POST handler as well
+  // as from the WebSocket message handler so both transports stay in sync.
+  globalThis.__sseNotify = (threadId, content) => {
+    const payload = JSON.stringify({ type: "sync", content });
+
+    // Push to SSE subscribers
+    const subs = globalThis.__sseSubscribers.get(threadId);
+    if (subs && subs.size > 0) {
+      const message = `event: sync\ndata: ${payload}\n\n`;
+      const encoded = Buffer.from(message);
+      for (const sub of subs) {
+        try {
+          sub.controller.enqueue(encoded);
+        } catch {
+          subs.delete(sub);
+        }
+      }
+      if (subs.size === 0) globalThis.__sseSubscribers.delete(threadId);
+    }
+
+    // Broadcast to WebSocket clients
+    const clients = rooms.get(threadId);
+    if (clients && clients.size > 0) {
+      for (const client of clients) {
+        if (client.readyState === 1) {
+          // 1 = WebSocket.OPEN
+          try {
+            client.send(payload);
+          } catch {
+            // Client is unreachable — will be cleaned up on close event
+          }
+        }
+      }
+    }
+
+    console.log(
+      `[WS↔SSE Bridge] Synced thread ${threadId} (content ${content.length} bytes)`
+    );
+  };
 
   const nextUpgradeHandler = app.getUpgradeHandler();
 
@@ -400,6 +451,11 @@ app.prepare().then(() => {
                 );
               }
             }
+          }
+
+          // Push to SSE fallback subscribers so both transports stay in sync
+          if (typeof globalThis.__sseNotify === "function") {
+            globalThis.__sseNotify(threadId, data.content || "");
           }
         }
       } catch (err) {

@@ -86,6 +86,14 @@ function IntroPageContent() {
   const wsRef = useRef<WebSocket | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const hasFallenBackRef = useRef<boolean>(false);
+  const pollingIntervalRef = useRef<number | null>(null);
+  const sharedTextRef = useRef<string>("");
+  const lastPollPushedRef = useRef<string | null>(null);
+
+  // Keep sharedTextRef in sync for the polling interval callback
+  useEffect(() => {
+    sharedTextRef.current = sharedText;
+  }, [sharedText]);
 
   // Prevent background body scroll when the telemetry dialog is open
   useEffect(() => {
@@ -157,6 +165,51 @@ function IntroPageContent() {
         setWsStatus("fallback");
       }
     };
+
+    // ── Cross-instance polling fallback ──────────────────────────────
+    // On serverless platforms (Vercel) different function instances don't
+    // share memory, so real-time SSE push may not reach all subscribers.
+    // This polling loop exchanges content via the ?poll=1&push=… endpoint
+    // every few seconds, providing eventual-consistency catch-up.
+    //
+    // To avoid ping-pong overwrites, we only push when the local content
+    // has changed since the last push, and we track the last received
+    // remote content so we don't push it back.
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+    lastPollPushedRef.current = null;
+    pollingIntervalRef.current = window.setInterval(async () => {
+      try {
+        const currentContent = sharedTextRef.current;
+        const hasChanged = currentContent !== lastPollPushedRef.current;
+        const encoded = encodeURIComponent(currentContent);
+        const pushParam = hasChanged ? `&push=${encoded}` : "";
+        const res = await fetch(
+          `/api/ws-fallback?threadId=${threadId}&poll=1${pushParam}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.type === "sync") {
+          if (hasChanged) {
+            lastPollPushedRef.current = currentContent;
+          }
+          const remoteContent: string = data.content ?? "";
+          if (remoteContent && remoteContent !== currentContent) {
+            console.log("[SSE Poll] Received remote content update");
+            sharedTextRef.current = remoteContent;
+            lastPollPushedRef.current = remoteContent;
+            setSharedText(remoteContent);
+            localStorage.setItem(
+              `markdown_thread_${threadId}`,
+              remoteContent
+            );
+          }
+        }
+      } catch {
+        // Silently ignore transient poll failures
+      }
+    }, 3000);
   }, [threadId]);
 
   const sendFallbackUpdate = useCallback(
@@ -304,6 +357,10 @@ function IntroPageContent() {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
+      }
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
       }
       setSocket(null);
       setWsStatus("disconnected");

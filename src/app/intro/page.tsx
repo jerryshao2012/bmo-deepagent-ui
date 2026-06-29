@@ -10,14 +10,14 @@ import { toast } from "sonner";
 
 export const dynamic = "force-dynamic";
 import { useSearchParams } from "next/navigation";
-import { 
-  Shield, 
-  Activity, 
-  Terminal, 
-  Search, 
-  ChevronRight, 
+import {
+  Shield,
+  Activity,
+  Terminal,
+  Search,
+  ChevronRight,
   Zap,
-  Play, 
+  Play,
   CheckCircle,
   FileText,
   FolderTree,
@@ -36,7 +36,9 @@ function IntroPageContent() {
   const [threadId, setThreadId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<number>(0);
   const [scrollY, setScrollY] = useState(0);
-  const [visibleSections, setVisibleSections] = useState<Record<string, boolean>>({
+  const [visibleSections, setVisibleSections] = useState<
+    Record<string, boolean>
+  >({
     hero: true,
     chip: true,
     tandem: true,
@@ -45,12 +47,15 @@ function IntroPageContent() {
     specs: true,
     cta: true,
   });
-  
+
   const [socket, setSocket] = useState<WebSocket | null>(null);
-  const [wsStatus, setWsStatus] = useState<"connected" | "disconnected" | "connecting" | "fallback">("disconnected");
+  const [wsStatus, setWsStatus] = useState<
+    "connected" | "disconnected" | "connecting" | "fallback"
+  >("disconnected");
   const [sharedText, setSharedText] = useState<string>("");
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
-  const [isTelemetryFullscreen, setIsTelemetryFullscreen] = useState<boolean>(false);
+  const [isTelemetryFullscreen, setIsTelemetryFullscreen] =
+    useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [copiedHtml, setCopiedHtml] = useState<boolean>(false);
   const [activeTelemetryTab, setActiveTelemetryTab] = useState<string>("edit");
@@ -60,19 +65,20 @@ function IntroPageContent() {
   // Function to clear session cookies
   const handleClearCookies = () => {
     // Clear session_token cookie
-    document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-    
+    document.cookie =
+      "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+
     // Also clear localStorage items
     localStorage.removeItem("last_thread_id");
     localStorage.removeItem("last_used_provider");
-    
+
     // Clear all markdown thread data
-    Object.keys(localStorage).forEach(key => {
+    Object.keys(localStorage).forEach((key) => {
       if (key.startsWith("markdown_thread_")) {
         localStorage.removeItem(key);
       }
     });
-    
+
     toast.success("Session cookies cleared. Please refresh the page.");
   };
 
@@ -111,9 +117,14 @@ function IntroPageContent() {
 
     hasFallenBackRef.current = true;
     setWsStatus("fallback");
-    console.log("Initiating HTTP streaming (SSE) fallback for thread:", threadId);
+    console.log(
+      "Initiating HTTP streaming (SSE) fallback for thread:",
+      threadId
+    );
 
-    const eventSource = new EventSource(`/api/ws-fallback?threadId=${threadId}`);
+    const eventSource = new EventSource(
+      `/api/ws-fallback?threadId=${threadId}`
+    );
     eventSourceRef.current = eventSource;
 
     eventSource.addEventListener("sync", (event) => {
@@ -137,35 +148,42 @@ function IntroPageContent() {
     };
   }, [threadId]);
 
-  const sendFallbackUpdate = useCallback(async (val: string, immediate = false) => {
-    try {
-      await fetch("/api/ws-fallback", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          threadId,
-          type: "update",
-          content: val,
-          immediate,
-        }),
-      });
-    } catch (err) {
-      console.error("Failed to send content update via HTTP fallback:", err);
-    }
-  }, [threadId]);
+  const sendFallbackUpdate = useCallback(
+    async (val: string, immediate = false) => {
+      try {
+        await fetch("/api/ws-fallback", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            threadId,
+            type: "update",
+            content: val,
+            immediate,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to send content update via HTTP fallback:", err);
+      }
+    },
+    [threadId]
+  );
 
   const connectWS = useCallback(() => {
     if (!threadId) return;
-    
+
     // If we have already fallen back to HTTP, do not attempt WS reconnection
     if (hasFallenBackRef.current) {
       return;
     }
 
     // If socket is already open or currently connecting, skip
-    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+    if (
+      wsRef.current &&
+      (wsRef.current.readyState === WebSocket.OPEN ||
+        wsRef.current.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
 
@@ -188,12 +206,15 @@ function IntroPageContent() {
 
     console.log("Attempting WebSocket connection for thread:", threadId);
     let ws: WebSocket | null = null;
-    
+
     try {
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;
     } catch (e) {
-      console.error("WebSocket constructor failed, falling back to HTTP stream:", e);
+      console.error(
+        "WebSocket constructor failed, falling back to HTTP stream:",
+        e
+      );
       startFallbackSSE();
       return;
     }
@@ -204,7 +225,8 @@ function IntroPageContent() {
       setWsStatus("connected");
 
       // Retrieve local offline content from localStorage and initialize sync on the server
-      const localContent = localStorage.getItem(`markdown_thread_${threadId}`) || "";
+      const localContent =
+        localStorage.getItem(`markdown_thread_${threadId}`) || "";
       ws?.send(JSON.stringify({ type: "init", content: localContent }));
     };
 
@@ -236,7 +258,9 @@ function IntroPageContent() {
 
       // Automatically fallback if closing while still in connecting state
       // Otherwise schedule standard reconnection
-      console.log("WebSocket connection failed or closed, falling back to HTTP stream...");
+      console.log(
+        "WebSocket connection failed or closed, falling back to HTTP stream..."
+      );
       startFallbackSSE();
     };
 
@@ -278,7 +302,9 @@ function IntroPageContent() {
   // Trigger immediate reconnect when the telemetry dialog is opened if it's currently disconnected
   useEffect(() => {
     if (isDialogOpen && wsStatus === "disconnected") {
-      console.log("Telemetry dialog opened while disconnected. Triggering instant reconnect...");
+      console.log(
+        "Telemetry dialog opened while disconnected. Triggering instant reconnect..."
+      );
       connectWS();
     }
   }, [isDialogOpen, wsStatus, connectWS]);
@@ -317,7 +343,9 @@ function IntroPageContent() {
         localStorage.setItem(`markdown_thread_${threadId}`, text);
         // Save to server immediately if content is not empty
         if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: "update", content: text, immediate: true }));
+          socket.send(
+            JSON.stringify({ type: "update", content: text, immediate: true })
+          );
         } else if (wsStatus === "fallback") {
           sendFallbackUpdate(text, true);
         }
@@ -354,13 +382,19 @@ function IntroPageContent() {
         tempDiv.innerHTML = rawHtml;
 
         // Convert SVG to PNG helper to ensure Microsoft Word handles it as a standard static image
-        const svgToPng = (svgElement: SVGSVGElement): Promise<{ pngDataUrl: string; width: number; height: number } | null> => {
+        const svgToPng = (
+          svgElement: SVGSVGElement
+        ): Promise<{
+          pngDataUrl: string;
+          width: number;
+          height: number;
+        } | null> => {
           return new Promise((resolve) => {
             try {
               const rect = svgElement.getBoundingClientRect();
               let width = rect.width || svgElement.clientWidth;
               let height = rect.height || svgElement.clientHeight;
-              
+
               if (!width || !height) {
                 const viewBox = svgElement.getAttribute("viewBox");
                 if (viewBox) {
@@ -371,12 +405,14 @@ function IntroPageContent() {
                   }
                 }
               }
-              
+
               if (!width) width = 800;
               if (!height) height = 600;
-              
-              const svgString = new XMLSerializer().serializeToString(svgElement);
-              
+
+              const svgString = new XMLSerializer().serializeToString(
+                svgElement
+              );
+
               // Safe base64 encoding for UTF-8 SVG string
               const utf8Bytes = new TextEncoder().encode(svgString);
               let binary = "";
@@ -385,7 +421,7 @@ function IntroPageContent() {
               }
               const base64Data = window.btoa(binary);
               const dataUrl = `data:image/svg+xml;base64,${base64Data}`;
-              
+
               const img = new Image();
               img.onload = () => {
                 try {
@@ -393,19 +429,19 @@ function IntroPageContent() {
                   const scale = 2; // Render at 2x scale for Retina/HD quality
                   canvas.width = width * scale;
                   canvas.height = height * scale;
-                  
+
                   const ctx = canvas.getContext("2d");
                   if (ctx) {
                     ctx.imageSmoothingEnabled = true;
                     ctx.imageSmoothingQuality = "high";
-                    
+
                     // Draw a dark background matching the container (#18181b)
                     ctx.fillStyle = "#18181b";
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    
+
                     // Draw the SVG image scaled
                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    
+
                     const pngDataUrl = canvas.toDataURL("image/png");
                     resolve({ pngDataUrl, width, height });
                   } else {
@@ -416,12 +452,12 @@ function IntroPageContent() {
                   resolve(null);
                 }
               };
-              
+
               img.onerror = (e: Event | string) => {
                 console.error("Image load error:", e);
                 resolve(null);
               };
-              
+
               img.src = dataUrl;
             } catch (err) {
               console.error("SVG to PNG conversion error:", err);
@@ -431,14 +467,18 @@ function IntroPageContent() {
         };
 
         // Convert all rendered SVGs inside tempDiv to static PNGs for Word clipboard compatibility
-        const liveContainers = previewRef.current.querySelectorAll(".mermaid-svg-container");
-        const tempContainers = tempDiv.querySelectorAll(".mermaid-svg-container");
-        
+        const liveContainers = previewRef.current.querySelectorAll(
+          ".mermaid-svg-container"
+        );
+        const tempContainers = tempDiv.querySelectorAll(
+          ".mermaid-svg-container"
+        );
+
         for (let i = 0; i < liveContainers.length; i++) {
           const liveContainer = liveContainers[i];
           const tempContainer = tempContainers[i];
           if (!liveContainer || !tempContainer) continue;
-          
+
           const svgEl = liveContainer.querySelector("svg");
           if (svgEl) {
             const result = await svgToPng(svgEl as SVGSVGElement);
@@ -448,7 +488,7 @@ function IntroPageContent() {
                 const response = await fetch("/api/store-mermaid-image", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ image: result.pngDataUrl })
+                  body: JSON.stringify({ image: result.pngDataUrl }),
                 });
                 const storeResult = await response.json();
                 if (storeResult && storeResult.success && storeResult.id) {
@@ -471,63 +511,142 @@ function IntroPageContent() {
 
         // Inline CSS styling rules for Markdown components to preserve formatting when pasted (light theme: white background, black text)
         const h1s = tempDiv.querySelectorAll("h1");
-        h1s.forEach(el => el.setAttribute("style", "color: #09090b; font-size: 1.8em; font-weight: 700; margin-top: 24px; margin-bottom: 16px; border-bottom: 1px solid #e4e4e7; padding-bottom: 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+        h1s.forEach((el) =>
+          el.setAttribute(
+            "style",
+            "color: #09090b; font-size: 1.8em; font-weight: 700; margin-top: 24px; margin-bottom: 16px; border-bottom: 1px solid #e4e4e7; padding-bottom: 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"
+          )
+        );
 
         const h2s = tempDiv.querySelectorAll("h2");
-        h2s.forEach(el => el.setAttribute("style", "color: #18181b; font-size: 1.5em; font-weight: 600; margin-top: 20px; margin-bottom: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+        h2s.forEach((el) =>
+          el.setAttribute(
+            "style",
+            "color: #18181b; font-size: 1.5em; font-weight: 600; margin-top: 20px; margin-bottom: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"
+          )
+        );
 
         const h3s = tempDiv.querySelectorAll("h3");
-        h3s.forEach(el => el.setAttribute("style", "color: #27272a; font-size: 1.25em; font-weight: 600; margin-top: 16px; margin-bottom: 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+        h3s.forEach((el) =>
+          el.setAttribute(
+            "style",
+            "color: #27272a; font-size: 1.25em; font-weight: 600; margin-top: 16px; margin-bottom: 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"
+          )
+        );
 
         const paragraphs = tempDiv.querySelectorAll("p");
-        paragraphs.forEach(el => el.setAttribute("style", "color: #3f3f46; font-size: 14px; line-height: 1.6; margin-top: 0; margin-bottom: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+        paragraphs.forEach((el) =>
+          el.setAttribute(
+            "style",
+            "color: #3f3f46; font-size: 14px; line-height: 1.6; margin-top: 0; margin-bottom: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"
+          )
+        );
 
         const links = tempDiv.querySelectorAll("a");
-        links.forEach(el => el.setAttribute("style", "color: #2563eb; text-decoration: underline; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+        links.forEach((el) =>
+          el.setAttribute(
+            "style",
+            "color: #2563eb; text-decoration: underline; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"
+          )
+        );
 
         const blockquotes = tempDiv.querySelectorAll("blockquote");
-        blockquotes.forEach(el => el.setAttribute("style", "color: #71717a; border-left: 4px solid #d4d4d8; background-color: #fafafa; padding: 8px 16px; margin: 16px 0; font-style: italic; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+        blockquotes.forEach((el) =>
+          el.setAttribute(
+            "style",
+            "color: #71717a; border-left: 4px solid #d4d4d8; background-color: #fafafa; padding: 8px 16px; margin: 16px 0; font-style: italic; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"
+          )
+        );
 
         const inlineCodes = tempDiv.querySelectorAll("code");
-        inlineCodes.forEach(el => {
-          const isCodeBlock = el.parentElement && el.parentElement.tagName.toLowerCase() === "div";
+        inlineCodes.forEach((el) => {
+          const isCodeBlock =
+            el.parentElement &&
+            el.parentElement.tagName.toLowerCase() === "div";
           if (isCodeBlock) {
             // Style the parent div of the code block to have a dark background (so syntax highlighting remains readable)
-            el.parentElement.setAttribute("style", "background-color: #282c34; border: 1px solid rgba(0, 0, 0, 0.15); border-radius: 8px; padding: 16px; margin: 16px 0; overflow-x: auto; font-family: monospace; font-size: 14px; color: #abb2bf; line-height: 1.5; text-align: left;");
-            el.setAttribute("style", "background: transparent; color: inherit; border: none; padding: 0; font-family: monospace; font-size: inherit;");
+            el.parentElement.setAttribute(
+              "style",
+              "background-color: #282c34; border: 1px solid rgba(0, 0, 0, 0.15); border-radius: 8px; padding: 16px; margin: 16px 0; overflow-x: auto; font-family: monospace; font-size: 14px; color: #abb2bf; line-height: 1.5; text-align: left;"
+            );
+            el.setAttribute(
+              "style",
+              "background: transparent; color: inherit; border: none; padding: 0; font-family: monospace; font-size: inherit;"
+            );
           } else {
             // Style inline code with light theme
-            el.setAttribute("style", "background-color: #f4f4f5; color: #b700b7; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; border: 1px solid #e4e4e7;");
+            el.setAttribute(
+              "style",
+              "background-color: #f4f4f5; color: #b700b7; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; border: 1px solid #e4e4e7;"
+            );
           }
         });
 
         // Inline CSS styling for Mermaid diagrams when pasted
-        const mermaidContainers = tempDiv.querySelectorAll(".mermaid-svg-container");
-        mermaidContainers.forEach(el => {
-          el.setAttribute("style", "display: block; padding: 24px; background-color: #18181b; border-radius: 12px; border: 1px solid #27272a; margin: 16px 0; overflow-x: auto;");
+        const mermaidContainers = tempDiv.querySelectorAll(
+          ".mermaid-svg-container"
+        );
+        mermaidContainers.forEach((el) => {
+          el.setAttribute(
+            "style",
+            "display: block; padding: 24px; background-color: #18181b; border-radius: 12px; border: 1px solid #27272a; margin: 16px 0; overflow-x: auto;"
+          );
           const svgEl = el.querySelector("svg");
           if (svgEl) {
-            svgEl.setAttribute("style", "max-width: none; height: auto; display: block; margin: 0 auto;");
+            svgEl.setAttribute(
+              "style",
+              "max-width: none; height: auto; display: block; margin: 0 auto;"
+            );
           }
         });
 
         const uls = tempDiv.querySelectorAll("ul");
-        uls.forEach(el => el.setAttribute("style", "margin: 16px 0; padding-left: 24px; list-style-type: disc; color: #3f3f46; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+        uls.forEach((el) =>
+          el.setAttribute(
+            "style",
+            "margin: 16px 0; padding-left: 24px; list-style-type: disc; color: #3f3f46; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"
+          )
+        );
 
         const ols = tempDiv.querySelectorAll("ol");
-        ols.forEach(el => el.setAttribute("style", "margin: 16px 0; padding-left: 24px; list-style-type: decimal; color: #3f3f46; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+        ols.forEach((el) =>
+          el.setAttribute(
+            "style",
+            "margin: 16px 0; padding-left: 24px; list-style-type: decimal; color: #3f3f46; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"
+          )
+        );
 
         const lis = tempDiv.querySelectorAll("li");
-        lis.forEach(el => el.setAttribute("style", "margin-bottom: 6px; font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+        lis.forEach((el) =>
+          el.setAttribute(
+            "style",
+            "margin-bottom: 6px; font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"
+          )
+        );
 
         const tables = tempDiv.querySelectorAll("table");
-        tables.forEach(el => el.setAttribute("style", "width: 100%; border-collapse: collapse; margin: 16px 0; border: 1px solid #e4e4e7; color: #3f3f46; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"));
+        tables.forEach((el) =>
+          el.setAttribute(
+            "style",
+            "width: 100%; border-collapse: collapse; margin: 16px 0; border: 1px solid #e4e4e7; color: #3f3f46; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"
+          )
+        );
 
         const ths = tempDiv.querySelectorAll("th");
-        ths.forEach(el => el.setAttribute("style", "border: 1px solid #e4e4e7; padding: 8px 12px; font-weight: 600; text-align: left; background-color: #f4f4f5; color: #09090b;"));
+        ths.forEach((el) =>
+          el.setAttribute(
+            "style",
+            "border: 1px solid #e4e4e7; padding: 8px 12px; font-weight: 600; text-align: left; background-color: #f4f4f5; color: #09090b;"
+          )
+        );
 
         const tds = tempDiv.querySelectorAll("td");
-        tds.forEach(el => el.setAttribute("style", "border: 1px solid #e4e4e7; padding: 8px 12px;"));
+        tds.forEach((el) =>
+          el.setAttribute(
+            "style",
+            "border: 1px solid #e4e4e7; padding: 8px 12px;"
+          )
+        );
 
         const contentHtml = tempDiv.innerHTML;
 
@@ -539,15 +658,19 @@ function IntroPageContent() {
         `.trim();
 
         // Write to clipboard as formatted text/html and fallback text/plain
-        if (typeof window !== "undefined" && window.ClipboardItem && navigator.clipboard) {
+        if (
+          typeof window !== "undefined" &&
+          window.ClipboardItem &&
+          navigator.clipboard
+        ) {
           const htmlBlob = new Blob([blockHtml], { type: "text/html" });
           const textBlob = new Blob([blockHtml], { type: "text/plain" });
-          
+
           await navigator.clipboard.write([
             new window.ClipboardItem({
               "text/html": htmlBlob,
               "text/plain": textBlob,
-            })
+            }),
           ]);
         } else {
           await navigator.clipboard.writeText(blockHtml);
@@ -562,8 +685,6 @@ function IntroPageContent() {
       toast.error("Failed to copy HTML to clipboard.");
     }
   };
-  
-  
 
   // Ref elements for interactive 3D mouse parallax
   const stackRef = useRef<HTMLDivElement>(null);
@@ -577,15 +698,16 @@ function IntroPageContent() {
     } else {
       // Check localStorage for existing thread ID first
       const savedThreadId = localStorage.getItem("last_thread_id");
-      const generatedId = savedThreadId && /^\d{6}$/.test(savedThreadId) 
-        ? savedThreadId 
-        : String(Math.floor(100000 + Math.random() * 900000));
-      
+      const generatedId =
+        savedThreadId && /^\d{6}$/.test(savedThreadId)
+          ? savedThreadId
+          : String(Math.floor(100000 + Math.random() * 900000));
+
       setThreadId(generatedId);
-      
+
       // Save to localStorage for persistence across refreshes
       localStorage.setItem("last_thread_id", generatedId);
-      
+
       // Update URL search parameters without reloading
       const url = new URL(window.location.href);
       url.searchParams.set("thread_id", generatedId);
@@ -610,19 +732,30 @@ function IntroPageContent() {
         (entries) => {
           entries.forEach((entry) => {
             if (entry.isIntersecting) {
-              setVisibleSections((prev) => ({ ...prev, [entry.target.id]: true }));
+              setVisibleSections((prev) => ({
+                ...prev,
+                [entry.target.id]: true,
+              }));
             }
           });
         },
         { threshold: 0.15 }
       );
 
-      const sectionIds = ["hero", "chip", "tandem", "sandbox", "accessories", "specs", "cta"];
+      const sectionIds = [
+        "hero",
+        "chip",
+        "tandem",
+        "sandbox",
+        "accessories",
+        "specs",
+        "cta",
+      ];
       sectionIds.forEach((id) => {
         const el = document.getElementById(id);
         if (el) {
           observer.observe(el);
-          
+
           // Viewport boundary check: if it is already in view on load, show immediately
           const rect = el.getBoundingClientRect();
           if (rect.top < window.innerHeight && rect.bottom > 0) {
@@ -643,7 +776,7 @@ function IntroPageContent() {
     const rect = stackRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left - rect.width / 2;
     const y = e.clientY - rect.top - rect.height / 2;
-    
+
     // Normalize and scale tilt factors
     const tiltX = (y / (rect.height / 2)) * -12; // tilt angle degrees
     const tiltY = (x / (rect.width / 2)) * 12;
@@ -1619,7 +1752,10 @@ function IntroPageContent() {
                   </h3>
                   <button
                     onClick={() => {
-                      if (wsStatus === "disconnected" || wsStatus === "fallback") {
+                      if (
+                        wsStatus === "disconnected" ||
+                        wsStatus === "fallback"
+                      ) {
                         toast.promise(
                           new Promise<void>((resolve) => {
                             hasFallenBackRef.current = false;
@@ -1821,11 +1957,13 @@ function IntroPageContent() {
 
 export default function IntroPage() {
   return (
-    <React.Suspense fallback={
-      <div className="min-h-screen bg-black flex items-center justify-center text-white/50 font-mono">
-        Loading Harness Engine...
-      </div>
-    }>
+    <React.Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-black font-mono text-white/50">
+          Loading Harness Engine...
+        </div>
+      }
+    >
       <IntroPageContent />
     </React.Suspense>
   );

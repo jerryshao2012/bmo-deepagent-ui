@@ -113,11 +113,12 @@ function HomePageInner({
           graphId: config.assistantId,
           limit: 100,
         });
-        const defaultAssistant = assistants.find(
-          (assistant) => assistant.metadata?.["created_by"] === "system"
-        );
+        const defaultAssistant =
+          assistants.find(
+            (assistant) => assistant.metadata?.["created_by"] === "system"
+          ) || assistants[0];
         if (defaultAssistant === undefined) {
-          console.error("No default assistant found");
+          console.warn("No assistant found for graph, using fallback assistant");
           setAssistant({
             assistant_id: config.assistantId,
             graph_id: config.assistantId,

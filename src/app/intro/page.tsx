@@ -7,6 +7,8 @@ import { MarkdownContent } from "@/app/components/MarkdownContent";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { getConfig } from "@/lib/config";
+import { getBrowserSessionToken } from "@/lib/langgraph-client";
 
 export const dynamic = "force-dynamic";
 import { useSearchParams } from "next/navigation";
@@ -89,6 +91,8 @@ function IntroPageContent() {
   const pollingIntervalRef = useRef<number | null>(null);
   const sharedTextRef = useRef<string>("");
   const lastPollPushedRef = useRef<string | null>(null);
+  const crossDeployPollRef = useRef<number | null>(null);
+  const lastBackendSyncRef = useRef<string | null>(null);
 
   // Keep sharedTextRef in sync for the polling interval callback
   useEffect(() => {
@@ -117,6 +121,88 @@ function IntroPageContent() {
         setSharedText(cached);
       }
     }
+  }, [threadId]);
+
+  // ── Cross-deployment sync via LangGraph backend ─────────────────────
+  // When the same thread is opened on two different deployments (e.g.
+  // Azure Container Apps + Vercel), the in-process WebSocket/SSE bridge
+  // cannot reach across deployments.  We use the LangGraph backend's
+  // thread state as a shared key-value store for markdown content.
+
+  const syncContentToBackend = useCallback(
+    async (content: string) => {
+      if (!threadId) return;
+      if (content === lastBackendSyncRef.current) return;
+      const config = getConfig();
+      if (!config) return;
+      try {
+        const token = getBrowserSessionToken();
+        const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
+        const res = await fetch(`${cleanUrl}/threads/${threadId}/state`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": token || "",
+          },
+          body: JSON.stringify({
+            values: { markdown_content: content },
+          }),
+        });
+        if (res.ok) {
+          lastBackendSyncRef.current = content;
+        }
+      } catch {
+        // Silently ignore — cross-deploy sync is best-effort
+      }
+    },
+    [threadId]
+  );
+
+  const startCrossDeployPolling = useCallback(() => {
+    if (!threadId) return;
+    if (crossDeployPollRef.current) {
+      clearInterval(crossDeployPollRef.current);
+    }
+    lastBackendSyncRef.current = null;
+
+    crossDeployPollRef.current = window.setInterval(async () => {
+      const config = getConfig();
+      if (!config) return;
+      try {
+        const token = getBrowserSessionToken();
+        const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
+        const res = await fetch(`${cleanUrl}/threads/${threadId}/state`, {
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": token || "",
+          },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const remoteContent: string =
+          data?.values?.markdown_content ?? "";
+        const localContent = sharedTextRef.current;
+        if (
+          remoteContent &&
+          remoteContent !== localContent &&
+          remoteContent !== lastBackendSyncRef.current
+        ) {
+          console.log(
+            "[Cross-Deploy] Received remote content from backend"
+          );
+          sharedTextRef.current = remoteContent;
+          lastBackendSyncRef.current = remoteContent;
+          lastPollPushedRef.current = remoteContent;
+          setSharedText(remoteContent);
+          localStorage.setItem(
+            `markdown_thread_${threadId}`,
+            remoteContent
+          );
+        }
+      } catch {
+        // Silently ignore transient failures
+      }
+    }, 4000);
   }, [threadId]);
 
   const startFallbackSSE = useCallback(() => {
@@ -343,6 +429,7 @@ function IntroPageContent() {
   // Main connection management effect
   useEffect(() => {
     connectWS();
+    startCrossDeployPolling();
 
     return () => {
       if (reconnectTimeoutRef.current) {
@@ -362,10 +449,14 @@ function IntroPageContent() {
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
       }
+      if (crossDeployPollRef.current) {
+        clearInterval(crossDeployPollRef.current);
+        crossDeployPollRef.current = null;
+      }
       setSocket(null);
       setWsStatus("disconnected");
     };
-  }, [threadId, connectWS]);
+  }, [threadId, connectWS, startCrossDeployPolling]);
 
   // Trigger immediate reconnect when the telemetry dialog is opened if it's currently disconnected
   useEffect(() => {
@@ -390,6 +481,7 @@ function IntroPageContent() {
     } else if (wsStatus === "fallback") {
       sendFallbackUpdate(val);
     }
+    syncContentToBackend(val);
   };
 
   const handleRemove = () => {
@@ -400,6 +492,7 @@ function IntroPageContent() {
     } else if (wsStatus === "fallback") {
       sendFallbackUpdate("");
     }
+    syncContentToBackend("");
     toast.success("Content removed from local and server storage.");
   };
 
@@ -417,6 +510,7 @@ function IntroPageContent() {
         } else if (wsStatus === "fallback") {
           sendFallbackUpdate(text, true);
         }
+        syncContentToBackend(text);
       } else {
         localStorage.removeItem(`markdown_thread_${threadId}`);
         if (socket && socket.readyState === WebSocket.OPEN) {
@@ -424,6 +518,7 @@ function IntroPageContent() {
         } else if (wsStatus === "fallback") {
           sendFallbackUpdate("");
         }
+        syncContentToBackend("");
       }
     } catch (err) {
       console.error("Failed to read from clipboard:", err);

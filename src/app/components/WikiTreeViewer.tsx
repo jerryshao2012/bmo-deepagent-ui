@@ -245,8 +245,8 @@ export const WikiTreeViewer: React.FC<WikiTreeViewerProps> = ({
   if (!treeData) return null;
 
   return (
-    <div className="flex flex-col h-full w-full">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/20">
+    <div className="flex flex-col h-full w-full min-h-0">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/20 shrink-0">
         <div className="flex items-center gap-1.5 text-xs font-medium text-foreground/80">
           <Database className="h-3.5 w-3.5 text-primary" />
           <span>threads-wiki / {threadId.slice(0, 8)}</span>
@@ -261,8 +261,10 @@ export const WikiTreeViewer: React.FC<WikiTreeViewerProps> = ({
           <RefreshCw className="h-3 w-3" />
         </Button>
       </div>
-      <ScrollArea className="flex-1 p-2">
-        {renderNode(treeData)}
+      <ScrollArea className="flex-1 min-h-0 w-full">
+        <div className="p-2">
+          {renderNode(treeData)}
+        </div>
       </ScrollArea>
     </div>
   );

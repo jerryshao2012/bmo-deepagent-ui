@@ -1053,7 +1053,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           )}
         >
           {(hasTasks || hasFiles || documents.length > 0) && (
-            <div className="flex max-h-72 flex-col overflow-y-auto border-b border-border bg-sidebar empty:hidden">
+            <div className="flex max-h-96 flex-col overflow-y-auto border-b border-border bg-sidebar empty:hidden">
               {!metaOpen && (
                 <>
                   {(() => {

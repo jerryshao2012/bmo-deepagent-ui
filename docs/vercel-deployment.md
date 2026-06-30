@@ -8,7 +8,7 @@ This guide provides step-by-step instructions for deploying the Next.js frontend
 
 1.  **GitHub Account**: The codebase must be pushed to a repository on GitHub.
 2.  **Vercel Account**: Sign up at [vercel.com](https://vercel.com/) (recommend signing up with your GitHub account for easy integration).
-3.  **Azure Backend Agent URL**: You need the public URL of your `deep-research-agent-0312` container app (e.g., `https://deep-research-agent-0312.canadacentral.azurecontainerapps.io`).
+3.  **Azure Backend Agent URL**: You need the public URL of your `deep-research-agent-0312` container app (e.g., `https://deep-research-agent-0312.salmonrock-b46ff20d.canadacentral.azurecontainerapps.io`).
 
 ---
 
@@ -42,7 +42,7 @@ In the **Configure Project** screen, configure the following:
 
 | Environment Variable | Value / Source | Description |
 | :--- | :--- | :--- |
-| `NEXT_PUBLIC_LANGGRAPH_URL` | `https://deep-research-agent-0312.canadacentral.azurecontainerapps.io` | The URL of your Azure backend agent container app. |
+| `NEXT_PUBLIC_LANGGRAPH_URL` | `https://deep-research-agent-0312.salmonrock-b46ff20d.canadacentral.azurecontainerapps.io` | The URL of your Azure backend agent container app. |
 | `NEXT_PUBLIC_ASSISTANT_ID` | `research` | The ID of your assistant. |
 | `AUTH_SECRET` | *[Your Secret]* | A random secure string used for authentication encryption (you can copy this from your local `.env` or Key Vault). |
 | `AUTH_TRUST_HOST` | `true` | Tells Auth.js to trust the Vercel hosting domain. |

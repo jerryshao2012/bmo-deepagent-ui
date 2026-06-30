@@ -23,21 +23,25 @@ if [ -z "$DOCKER_HUB_USERNAME" ]; then
   exit 1
 fi
 
-echo "🔨 Building Docker image locally for linux/amd64..."
-FULL_IMAGE_NAME="$DOCKER_HUB_USERNAME/deepagent-ui:latest"
+echo "🔨 Building container image locally for linux/amd64..."
+# The container tool requires the full registry host in the image name for pushing.
+FULL_IMAGE_NAME="docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest"
 
-docker build --platform linux/amd64 -t $FULL_IMAGE_NAME .
+container build --platform linux/amd64 -t $FULL_IMAGE_NAME .
 if [ $? -ne 0 ]; then
-  echo "❌ Local docker build failed."
+  echo "❌ Local container build failed."
   exit 1
 fi
 echo "✅ Local build completed successfully."
 
-echo "⬆️ Pushing image to ACR..."
-docker push $FULL_IMAGE_NAME
+# Use Container for build and push image
+# brew install container
+# container registry login docker.io
+echo "⬆️ Pushing image to Docker Hub..."
+container image push "$FULL_IMAGE_NAME"
 if [ $? -ne 0 ]; then
-  echo "❌ Docker push failed."
+  echo "❌ Container push failed for '$FULL_IMAGE_NAME'."
   exit 1
 fi
 
-echo "🎉 Build and deployment to ACR completed successfully!"
+echo "✅ Image built and pushed successfully"

@@ -113,7 +113,7 @@ const getStatusIcon = (status: TodoItem["status"], className?: string) => {
 
 export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [currentThreadId, setCurrentThreadId] = useQueryState("threadId");
-  const [metaOpen, setMetaOpen] = useState<"tasks" | "files" | "documents" | "wiki" | "graph" | null>(null);
+  const [metaOpen, setMetaOpen] = useState<"tasks" | "files" | "documents" | "wiki" | null>(null);
   const tasksContainerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -1303,31 +1303,6 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                           {filesTrigger}
                           {docsTrigger}
                           {wikiTrigger}
-                          {(() => {
-                            if (documents.length === 0) return null;
-                            return (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setMetaOpen((prev) =>
-                                    prev === "graph" ? null : "graph"
-                                  )
-                                }
-                                className="flex flex-shrink-0 cursor-pointer items-center gap-2 px-3 py-3 text-left text-sm"
-                                {...getAriaExpandedProps(metaOpen === "graph")}
-                              >
-                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-primary">
-                                  <circle cx="4" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.2" />
-                                  <circle cx="12" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.2" />
-                                  <circle cx="8" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.2" />
-                                  <line x1="6" y1="5.5" x2="10" y2="6" stroke="currentColor" strokeWidth="0.8" opacity="0.5" />
-                                  <line x1="5.5" y1="6.5" x2="7" y2="10" stroke="currentColor" strokeWidth="0.8" opacity="0.5" />
-                                  <line x1="11" y1="7" x2="9.5" y2="10.5" stroke="currentColor" strokeWidth="0.8" opacity="0.5" />
-                                </svg>
-                                Graph
-                              </button>
-                            );
-                          })()}
                         </div>
                       </div>
                     );
@@ -1508,18 +1483,12 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                     )}
 
                     {metaOpen === "wiki" && documents.length > 0 && currentThreadId && (
-                      <div className="my-3 h-72 overflow-hidden rounded-md border border-border bg-card/40">
+                      <div className="my-3 h-80 overflow-hidden rounded-md border border-border bg-card/40">
                         <WikiTreeViewer
                           threadId={currentThreadId}
                           onSelectFile={handleFileClick}
                           onFileCountChange={setWikiFileCount}
                         />
-                      </div>
-                    )}
-
-                    {metaOpen === "graph" && documents.length > 0 && currentThreadId && (
-                      <div className="my-3 h-80 overflow-hidden rounded-md border border-border bg-card/40">
-                        <WikiGraphViewer threadId={currentThreadId} />
                       </div>
                     )}
                   </div>

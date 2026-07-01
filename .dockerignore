@@ -2,11 +2,16 @@ node_modules/
 .next/
 .git/
 .env
+.env.docker
 .env-aws.docker
 .env.docker.example
 .idea/
 .docs/
+env*.sh
+build*.sh
 secrets*.sh
+deploy*.sh
+all.sh
 README.md
 CLAUDE.md
 LICENSE

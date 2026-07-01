@@ -26,3 +26,4 @@ data/
 secrets-aws.sh
 secrets.sh
 
+.agents/skills/

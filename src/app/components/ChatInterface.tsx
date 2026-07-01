@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { FilesPopover } from "@/app/components/TasksFilesSidebar";
 import { WikiTreeViewer } from "@/app/components/WikiTreeViewer";
+import WikiGraphViewer from "@/app/components/WikiGraphViewer";
 import { useThreadStatus } from "@/app/hooks/useThreads";
 import { useQueryState } from "nuqs";
 import { DocumentViewerPanel, type DocumentViewerState } from "@/app/components/viewers/DocumentViewerPanel";
@@ -112,7 +113,7 @@ const getStatusIcon = (status: TodoItem["status"], className?: string) => {
 
 export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [currentThreadId, setCurrentThreadId] = useQueryState("threadId");
-  const [metaOpen, setMetaOpen] = useState<"tasks" | "files" | "documents" | "wiki" | null>(null);
+  const [metaOpen, setMetaOpen] = useState<"tasks" | "files" | "documents" | "wiki" | "graph" | null>(null);
   const tasksContainerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -172,8 +173,15 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [wikiFileCount, setWikiFileCount] = useState<number | null>(null);
   const [ingestProgress, setIngestProgress] = useState<number | null>(null);
   const [ingestPhase, setIngestPhase] = useState<string | null>(null);
+  const [ingestDetail, setIngestDetail] = useState<string | null>(null);
+  const [ingestCurrentSource, setIngestCurrentSource] = useState<string | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
+  const [ingestError, setIngestError] = useState<string | null>(null);
   const sseAbortRef = useRef<AbortController | null>(null);
+  // Local elapsed timer — ticks every second while ingesting.
+  const ingestStartRef = useRef<number | null>(null);
+  const elapsedAnchorRef = useRef<number>(0);
+  const [ingestElapsed, setIngestElapsed] = useState<number | null>(null);
   const currentThreadIdRef = useRef(currentThreadId);
   currentThreadIdRef.current = currentThreadId;
 
@@ -213,8 +221,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
 
     // Show ingesting state immediately before the first SSE event arrives.
     setIsIngesting(true);
+    setIngestError(null);
     setIngestProgress(0);
     setIngestPhase("initializing");
+    setIngestDetail(null);
+    setIngestCurrentSource(null);
 
     (async () => {
       try {
@@ -239,16 +250,39 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
             const evtMatch = frame.match(/^event:\s*(.+)$/m);
             const dataMatch = frame.match(/^data:\s*(.+)$/m);
             if (!dataMatch) continue;
+            const eventType = evtMatch?.[1] ?? "progress";
             try {
               const payload = JSON.parse(dataMatch[1]);
-              if ((evtMatch?.[1] ?? "progress") === "end") {
-                setIngestProgress(payload.wiki_ready ? 100 : null);
-                setIngestPhase(payload.wiki_ready ? "ready" : null);
-                setIsIngesting(false);
+              if (eventType === "end") {
+                if (payload.phase === "error" || payload.error) {
+                  setIngestError(
+                    payload.error || payload.detail || "Ingest failed with an unknown error."
+                  );
+                  setIngestProgress(-1);
+                  setIngestPhase("error");
+                  setIsIngesting(false);
+                } else {
+                  setIngestProgress(payload.wiki_ready ? 100 : null);
+                  setIngestPhase(payload.wiki_ready ? "ready" : null);
+                  setIngestDetail(null);
+                  setIngestCurrentSource(null);
+                  setIsIngesting(false);
+                }
                 return;
+              }
+              if (eventType === "heartbeat") {
+                // Keep-alive ping — silently ignored.
+                continue;
               }
               setIngestProgress(typeof payload.progress === "number" ? payload.progress : null);
               setIngestPhase(payload.phase ?? "processing");
+              setIngestDetail(payload.detail ?? null);
+              setIngestCurrentSource(payload.current_source ?? null);
+              // Calibrate elapsed timer against server clock on every event.
+              if (typeof payload.elapsed_seconds === "number") {
+                elapsedAnchorRef.current = payload.elapsed_seconds;
+                ingestStartRef.current = Date.now();
+              }
               setIsIngesting(true);
             } catch { /* ignore malformed frames */ }
           }
@@ -266,8 +300,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   useEffect(() => {
     if (!currentThreadId) {
       setIsIngesting(false);
+      setIngestError(null);
       setIngestProgress(null);
       setIngestPhase(null);
+      setIngestDetail(null);
+      setIngestCurrentSource(null);
       if (sseAbortRef.current) sseAbortRef.current.abort();
       return;
     }
@@ -287,13 +324,20 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         if (data.is_active) {
           startIngestProgressStream(currentThreadId);
         } else {
+          setIngestError(null);
           setIngestProgress(data.wiki_ready ? 100 : null);
           setIngestPhase(data.wiki_ready ? "ready" : null);
+          setIngestDetail(null);
+          setIngestCurrentSource(null);
           setIsIngesting(false);
         }
       })
       .catch(() => {
-        if (active) setIsIngesting(false);
+        if (active) {
+          setIsIngesting(false);
+          setIngestDetail(null);
+          setIngestCurrentSource(null);
+        }
       });
 
     return () => {
@@ -301,6 +345,29 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       if (sseAbortRef.current) sseAbortRef.current.abort();
     };
   }, [currentThreadId, startIngestProgressStream]);
+
+  // Local elapsed timer — ticks every second while ingesting.
+  // Anchored to the server's elapsed_seconds from the first SSE event so the
+  // counter starts from the true ingest start time, not when SSE connected.
+  useEffect(() => {
+    if (!isIngesting) {
+      ingestStartRef.current = null;
+      elapsedAnchorRef.current = 0;
+      setIngestElapsed(null);
+      return;
+    }
+    if (ingestStartRef.current == null) {
+      ingestStartRef.current = Date.now();
+    }
+    const timer = setInterval(() => {
+      if (ingestStartRef.current != null) {
+        setIngestElapsed(
+          (Date.now() - ingestStartRef.current) / 1000 + elapsedAnchorRef.current
+        );
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isIngesting]);
 
   const fetchDocuments = useCallback(
     async (overrideThreadId?: string | null) => {
@@ -454,6 +521,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           // Response body is not JSON; keep status-only message.
         }
         throw new Error(detail);
+      }
+
+      // Parse upload response to detect auto-triggered wiki ingest.
+      let uploadResult: { wiki_ingest_started?: boolean; wiki_ingest_thread_id?: string } = {};
+      try {
+        uploadResult = await response.json();
+      } catch {
+        // Non-JSON response; proceed without ingest status.
       }
 
       // Set the doc_folder state in the thread values so the agent uses this folder for research
@@ -1228,6 +1303,31 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                           {filesTrigger}
                           {docsTrigger}
                           {wikiTrigger}
+                          {(() => {
+                            if (documents.length === 0) return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setMetaOpen((prev) =>
+                                    prev === "graph" ? null : "graph"
+                                  )
+                                }
+                                className="flex flex-shrink-0 cursor-pointer items-center gap-2 px-3 py-3 text-left text-sm"
+                                {...getAriaExpandedProps(metaOpen === "graph")}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-primary">
+                                  <circle cx="4" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.2" />
+                                  <circle cx="12" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.2" />
+                                  <circle cx="8" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.2" />
+                                  <line x1="6" y1="5.5" x2="10" y2="6" stroke="currentColor" strokeWidth="0.8" opacity="0.5" />
+                                  <line x1="5.5" y1="6.5" x2="7" y2="10" stroke="currentColor" strokeWidth="0.8" opacity="0.5" />
+                                  <line x1="11" y1="7" x2="9.5" y2="10.5" stroke="currentColor" strokeWidth="0.8" opacity="0.5" />
+                                </svg>
+                                Graph
+                              </button>
+                            );
+                          })()}
                         </div>
                       </div>
                     );
@@ -1416,16 +1516,29 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                         />
                       </div>
                     )}
+
+                    {metaOpen === "graph" && documents.length > 0 && currentThreadId && (
+                      <div className="my-3 h-80 overflow-hidden rounded-md border border-border bg-card/40">
+                        <WikiGraphViewer threadId={currentThreadId} />
+                      </div>
+                    )}
                   </div>
                 </>
               )}
             </div>
           )}
-          {(isUploading || isIngesting) && (
+          {(isUploading || isIngesting || ingestError) && (
             <div className="mx-[18px] mt-4 mb-3">
               <div className="flex justify-between items-center text-xs mb-2">
                 <div className="flex items-center gap-1.5">
-                  {isUploading ? (
+                  {ingestError ? (
+                    <>
+                      <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                      <span className="font-semibold text-red-600 dark:text-red-400 tracking-wide">
+                        Ingestion failed
+                      </span>
+                    </>
+                  ) : isUploading ? (
                     <>
                       <div className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
                       <span className="font-semibold text-foreground/90 tracking-wide">Uploading document...</span>
@@ -1435,8 +1548,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                       <span className="font-semibold text-foreground/90 tracking-wide">
                         Ingesting documents
-                        {ingestPhase && ingestPhase !== "initializing" ? (
-                          <span className="text-muted-foreground font-normal"> · {ingestPhase}</span>
+                        {ingestCurrentSource ? (
+                          <span className="text-muted-foreground font-normal"> · {ingestCurrentSource}</span>
+                        ) : ingestPhase && ingestPhase !== "initializing" ? (
+                          <span className="text-muted-foreground font-normal"> · {ingestPhase.replace(/_/g, " ")}</span>
                         ) : (
                           <span className="text-muted-foreground font-normal"> · initializing…</span>
                         )}
@@ -1444,13 +1559,22 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                     </>
                   )}
                 </div>
-                {!isUploading && ingestProgress !== null && (
-                  <span className="font-semibold text-foreground/90 tabular-nums bg-secondary/15 px-2 py-0.5 rounded text-[10px]">
-                    {ingestProgress}%
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {!isUploading && !ingestError && ingestElapsed != null && (
+                    <span className="text-[10px] text-muted-foreground tabular-nums">
+                      {ingestElapsed < 60
+                        ? `${Math.round(ingestElapsed)}s`
+                        : `${Math.floor(ingestElapsed / 60)}m ${Math.round(ingestElapsed % 60)}s`}
+                    </span>
+                  )}
+                  {!isUploading && !ingestError && ingestProgress !== null && (
+                    <span className="font-semibold text-foreground/90 tabular-nums bg-secondary/15 px-2 py-0.5 rounded text-[10px]">
+                      {ingestProgress}%
+                    </span>
+                  )}
+                </div>
               </div>
-              
+
               <div className="relative w-full bg-secondary/10 dark:bg-white/5 border border-border/20 rounded-full h-3 p-[2px] overflow-hidden backdrop-blur-sm shadow-inner">
                 {isUploading ? (
                   <div className="h-full rounded-full bg-gradient-to-r from-[#51a3d5] to-[#1155cc] dark:from-[#2dd4bf] dark:to-[#1155cc] w-full relative">
@@ -1468,6 +1592,23 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                   </div>
                 )}
               </div>
+              {/* Detail line: shows current operation or per-source progress */}
+              {!isUploading && ingestDetail && (
+                <p className="text-[10px] text-muted-foreground mt-1.5 truncate leading-tight">
+                  {ingestDetail}
+                </p>
+              )}
+              {/* Error message box */}
+              {ingestError && (
+                <div className="mt-2 rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 px-3 py-2">
+                  <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed break-words">
+                    {ingestError}
+                  </p>
+                  <p className="text-[10px] text-red-500 dark:text-red-400 mt-1">
+                    Try uploading a smaller document or increasing WIKI_AGENT_RECURSION_LIMIT.
+                  </p>
+                </div>
+              )}
             </div>
           )}
           <form

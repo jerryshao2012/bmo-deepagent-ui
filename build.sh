@@ -24,6 +24,11 @@ if [ -z "$DOCKER_HUB_USERNAME" ]; then
 fi
 
 echo "🔨 Building container image locally for linux/amd64..."
+# Ensure container service is started
+if ! container system status &>/dev/null; then
+  echo "🚀 Container system is not running. Auto-starting..."
+  container system start --disable-kernel-install
+fi
 # The container tool requires the full registry host in the image name for pushing.
 FULL_IMAGE_NAME="docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest"
 

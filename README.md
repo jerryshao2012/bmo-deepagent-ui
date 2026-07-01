@@ -46,6 +46,9 @@ lsof -ti:3000 | xargs kill -9
 
 # Or use fuser to kill the process
 fuser -k 3000/tcp
+
+# Or kill all node processes
+killall -9 node
 ```
 
 **Setup OAuth**

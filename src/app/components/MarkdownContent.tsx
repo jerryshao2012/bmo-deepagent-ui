@@ -269,16 +269,15 @@ function preprocessMarkdown(content: string): string {
     },
   );
 
-  // Pattern 5: Bare document citations (e.g. /bmo_ar2025.pdf, p. 22 or /bmo_ar2025.pdf, pp. 22, 30 or just /bmo_ar2025.pdf)
+  // Pattern 5: Bare document citations (e.g. /bmo_ar2025.pdf, p. 22 or /bmo_ar2025.pdf: p. 29, p. 69 or just /bmo_ar2025.pdf)
   // Negative lookbehind ensures it's not already inside/part of a markdown link target/destination
   result = result.replace(
-    new RegExp(`(?<![a-zA-Z0-9([\\]/:-])(${DOC})((?:,\\s*(?:p\\.?|pp\\.?|page|pages)\\s*\\d+(?:\\s*,\\s*\\d+)*)+)?`, "gi"),
+    new RegExp(`(?<![a-zA-Z0-9([\\]/:-])(${DOC})((?:[,:]\\s*(?:p\\.?|pp\\.?|page|pages)?\\s*\\d+(?:\\s*,\\s*(?:p\\.?|pp\\.?|page|pages)?\\s*\\d+)*)+)?`, "gi"),
     (match, path: string, pageSuffix: string) => {
       if (!pageSuffix) {
         return `[${path}](${path})`;
       }
-      const pageListStr = pageSuffix.replace(/^\s*,\s*(?:p\.?|pp\.?|page|pages)\s*/i, "");
-      const pages = pageListStr.split(",").map(p => p.trim());
+      const pages = pageSuffix.match(/\d+/g) || [];
       const links = pages.map((p, idx) => {
         if (idx === 0) {
           return `[${path}, p. ${p}](${path}?page=${p})`;

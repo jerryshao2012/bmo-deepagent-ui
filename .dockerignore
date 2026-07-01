@@ -8,3 +8,7 @@ node_modules/
 .docs/
 secrets*.sh
 README.md
+CLAUDE.md
+LICENSE
+Dockerfile*
+data/

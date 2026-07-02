@@ -2,8 +2,6 @@ node_modules/
 .next/
 .git/
 .env
-.env.docker
-.env-aws.docker
 .env.docker.example
 .idea/
 .docs/

@@ -12,6 +12,7 @@ deploy*.sh
 all.sh
 README.md
 CLAUDE.md
+AGENTS.md
 LICENSE
 Dockerfile*
 data/

@@ -27,3 +27,7 @@ secrets-aws.sh
 secrets.sh
 
 .agents/skills/
+
+# threadroot:begin local-state
+.codex/threadroot/
+# threadroot:end local-state

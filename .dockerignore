@@ -4,6 +4,8 @@ node_modules/
 .env
 .env.docker.example
 .idea/
+.claude/
+.agents/
 .docs/
 env*.sh
 build*.sh

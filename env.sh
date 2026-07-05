@@ -7,7 +7,7 @@ export LOCATION="canadacentral"
 export ENV_NAME="env-name-deep-agents-$SEED"
 
 # Source the deep research agent URL
-source ../deepagents-demo/deep_research/env.sh
+source ../deep-research/env.sh
 export NEXT_PUBLIC_LANGGRAPH_URL=$DEEP_RESEARCH_AGENT_URL
 
 # Key Vault name (fallback if deep_research env.sh is not available)

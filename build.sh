@@ -1,3 +1,6 @@
+#!/bin/bash
+set -e
+
 source ./env.sh
 
 echo "🚀 Starting build process for deepagent-ui..."

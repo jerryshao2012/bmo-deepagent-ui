@@ -1,3 +1,6 @@
+#!/bin/bash
+set -e
+
 source ./env.sh
 # Overwrite with docker/production environment variables
 if [ -f .env.docker ]; then
@@ -17,13 +20,13 @@ echo "🚀 Starting deployment process for deepagent-ui..."
 # Fetch secrets from Azure Key Vault if available (overrides env vars)
 if [ -n "$KV_NAME" ]; then
   echo "🔐 Attempting to fetch secrets from Azure Key Vault: $KV_NAME"
-  KV_UPLOAD_API_KEY=$(az keyvault secret show --vault-name $KV_NAME --name UPLOAD-API-KEY --query value -o tsv 2>/dev/null)
-  KV_LANGCHAIN_API_KEY=$(az keyvault secret show --vault-name $KV_NAME --name LANGCHAIN-API-KEY --query value -o tsv 2>/dev/null)
-  KV_AUTH_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-SECRET --query value -o tsv 2>/dev/null)
-  KV_AUTH_GITHUB_ID=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GITHUB-ID --query value -o tsv 2>/dev/null)
-  KV_AUTH_GITHUB_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GITHUB-SECRET --query value -o tsv 2>/dev/null)
-  KV_AUTH_GOOGLE_ID=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GOOGLE-ID --query value -o tsv 2>/dev/null)
-  KV_AUTH_GOOGLE_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GOOGLE-SECRET --query value -o tsv 2>/dev/null)
+  KV_UPLOAD_API_KEY=$(az keyvault secret show --vault-name $KV_NAME --name UPLOAD-API-KEY --query value -o tsv 2>/dev/null || true)
+  KV_LANGCHAIN_API_KEY=$(az keyvault secret show --vault-name $KV_NAME --name LANGCHAIN-API-KEY --query value -o tsv 2>/dev/null || true)
+  KV_AUTH_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-SECRET --query value -o tsv 2>/dev/null || true)
+  KV_AUTH_GITHUB_ID=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GITHUB-ID --query value -o tsv 2>/dev/null || true)
+  KV_AUTH_GITHUB_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GITHUB-SECRET --query value -o tsv 2>/dev/null || true)
+  KV_AUTH_GOOGLE_ID=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GOOGLE-ID --query value -o tsv 2>/dev/null || true)
+  KV_AUTH_GOOGLE_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GOOGLE-SECRET --query value -o tsv 2>/dev/null || true)
 
   # Override env vars with Key Vault values if available
   [ -n "$KV_UPLOAD_API_KEY" ] && export UPLOAD_API_KEY="$KV_UPLOAD_API_KEY" && echo "  ✓ UPLOAD_API_KEY from Key Vault"

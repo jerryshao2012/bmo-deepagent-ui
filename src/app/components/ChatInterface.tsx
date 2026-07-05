@@ -23,7 +23,11 @@ import {
   FileText,
   X,
   Database,
+  Sparkles,
+  Trash2,
 } from "lucide-react";
+import { SkillsDrawer } from "@/app/components/SkillsDrawer";
+import { buildSkillDraftPrompt } from "@/app/utils/buildSkillDraftPrompt";
 import { useClient } from "@/providers/ClientProvider";
 import { getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
@@ -114,6 +118,7 @@ const getStatusIcon = (status: TodoItem["status"], className?: string) => {
 export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [currentThreadId, setCurrentThreadId] = useQueryState("threadId");
   const [metaOpen, setMetaOpen] = useState<"tasks" | "files" | "documents" | "wiki" | null>(null);
+  const [skillsDrawerOpen, setSkillsDrawerOpen] = useState(false);
   const tasksContainerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -156,6 +161,48 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const dragCounterRef = useRef(0);
   const [documentViewerState, setDocumentViewerState] = useState<DocumentViewerState | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
+
+  // Toggle skills drawer with Cmd+K / Ctrl+K
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSkillsDrawerOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
+
+  const handleSkillSelect = useCallback(
+    (skill: any) => {
+      const draft = buildSkillDraftPrompt(skill, {
+        messages,
+        todos,
+        files,
+        documents,
+      });
+      setInput((prev) => {
+        const trimmed = prev.trim();
+        return trimmed ? `${trimmed}\n\n${draft}` : draft;
+      });
+      setSkillsDrawerOpen(false);
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 50);
+    },
+    [messages, todos, files, documents]
+  );
+
+  // Auto-resize textarea height dynamically as content changes
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "0px";
+    const scrollHeight = textarea.scrollHeight;
+    textarea.style.height = `${Math.min(scrollHeight, 240)}px`;
+  }, [input]);
+
 
   const handleDocumentClick = useCallback(
     (filePath: string, page?: number, slide?: number, quote?: string) => {
@@ -1591,7 +1638,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
               onKeyDown={handleKeyDown}
               placeholder={isUploading ? "Uploading document, please wait..." : isIngesting ? "Ingesting documents, please wait..." : (showRunningMode ? "Running..." : "Write your message...")}
               disabled={composerLocked}
-              className="font-inherit field-sizing-content flex-1 resize-none border-0 bg-transparent px-[18px] pb-[13px] pt-[14px] text-sm leading-7 text-primary outline-none placeholder:text-tertiary"
+              className="font-inherit w-full resize-none border-0 bg-transparent px-[18px] pb-[13px] pt-[14px] text-sm leading-7 text-primary outline-none placeholder:text-tertiary max-h-[240px] overflow-y-auto"
               rows={1}
             />
             <div className="flex justify-between gap-2 p-3">
@@ -1622,6 +1669,25 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                   multiple
                   className="hidden"
                 />
+                {input.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInput("");
+                      setTimeout(() => textareaRef.current?.focus(), 50);
+                    }}
+                    disabled={composerLocked}
+                    title="Clear input text"
+                    className={cn(
+                      "flex items-center justify-center rounded-full p-2 transition-all duration-200 border border-transparent",
+                      composerLocked
+                        ? "text-tertiary/40 cursor-not-allowed"
+                        : "text-tertiary hover:text-destructive hover:bg-destructive/10"
+                    )}
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleAttachClick}
@@ -1694,6 +1760,29 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         </>
       )}
       </ResizablePanelGroup>
+      
+      {/* Skills Tab Trigger Button (Fixed/Absolute to right edge of chat) */}
+      {!skillsDrawerOpen && (
+        <button
+          onClick={() => setSkillsDrawerOpen(true)}
+          className={cn(
+            "absolute right-0 top-[20%] z-30 flex items-center gap-1.5 rounded-l-md border-y border-l border-border bg-sidebar px-2 py-3 text-xs font-semibold text-foreground shadow-md transition-all duration-200",
+            "hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] hover:text-[var(--color-primary)] hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)]",
+            "skills-drawer-tab"
+          )}
+          title="Open Skills (Cmd+K)"
+        >
+          <Sparkles size={13} className="text-[var(--color-primary)] rotate-180" />
+          <span>Skills</span>
+        </button>
+      )}
+
+      {/* Skills right drawer */}
+      <SkillsDrawer
+        open={skillsDrawerOpen}
+        onClose={() => setSkillsDrawerOpen(false)}
+        onSelectSkill={handleSkillSelect}
+      />
     </div>
   );
 });

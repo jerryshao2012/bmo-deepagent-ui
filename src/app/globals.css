@@ -631,3 +631,11 @@ button {
   animation: progressShimmer 1.2s linear infinite;
 }
 
+/* Skills drawer slide-in and hover transitions */
+.skills-drawer-tab {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+}
+
+

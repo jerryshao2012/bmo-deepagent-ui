@@ -6,6 +6,8 @@ node_modules/
 .idea/
 .claude/
 .agents/
+.codex/
+.vscode/
 .docs/
 env*.sh
 build*.sh

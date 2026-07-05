@@ -918,31 +918,26 @@ function IntroPageContent() {
   }, []);
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#FFFDF5] font-sans text-stone-850 antialiased selection:bg-[#FF8A42]/10 selection:text-[#FF8A42]">
+    <div className="relative min-h-screen overflow-x-hidden font-sans antialiased selection:bg-primary/10 selection:text-primary" style={{ backgroundColor: "var(--color-background)", color: "var(--color-text-primary)" }}>
       {/* Premium styles for custom shadows, gradients, and typography */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap');
-        
-        body {
-          font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          background-color: #FFFDF5;
-        }
-
         .font-serif-header {
-          font-family: 'Playfair Display', Georgia, serif;
-        }
-        
-        .font-mono {
-          font-family: 'JetBrains Mono', 'SF Mono', Monaco, monospace;
+          font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          font-weight: 600;
+          letter-spacing: -0.02em;
         }
 
-        /* Apple-style smooth scroll transitions */
+        .font-mono {
+          font-family: "Geist Mono", "SF Mono", Monaco, monospace;
+        }
+
+        /* Scroll reveal transitions */
         .apple-fade {
           opacity: 0;
           transform: translateY(30px);
-          transition: opacity 1s cubic-bezier(0.16, 1, 0.3, 1), 
+          transition: opacity 1s cubic-bezier(0.16, 1, 0.3, 1),
                       transform 1s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
@@ -951,20 +946,20 @@ function IntroPageContent() {
           transform: translateY(0);
         }
 
-        /* Subtle glowing buttons & cards */
-        .glow-accent {
-          box-shadow: 0 4px 20px -2px rgba(255, 138, 66, 0.2);
+        /* Subtle card elevation */
+        .card-elevated {
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
         }
-        
-        .glow-accent:hover {
-          box-shadow: 0 8px 25px -2px rgba(255, 138, 66, 0.35);
+
+        .card-elevated:hover {
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
         }
 
         /* Glassmorphism overlays */
         .glass-card {
           background: rgba(255, 255, 255, 0.65);
           backdrop-filter: blur(16px);
-          border: 1px border-stone-200/50;
+          border: 1px solid rgba(0, 0, 0, 0.06);
         }
 
         /* Custom Telemetry Tooltips */
@@ -1046,7 +1041,7 @@ function IntroPageContent() {
       <header
         className={`fixed left-0 right-0 top-0 z-50 flex h-16 items-center justify-between border-b px-6 transition-all duration-300 ${
           scrollY > 40
-            ? "border-stone-200/50 bg-[#FFFDF5]/90 backdrop-blur-xl shadow-[0_2px_12px_-5px_rgba(0,0,0,0.03)]"
+            ? "border-border bg-[var(--color-background)]/90 backdrop-blur-xl shadow-sm"
             : "border-transparent bg-transparent"
         }`}
       >
@@ -1062,15 +1057,15 @@ function IntroPageContent() {
                 <path d="M38.73,95.39H0v16.81h38.73v-16.81Z"></path>
               </svg>
             </div>
-            <span className="font-outfit text-md font-bold uppercase tracking-tight text-stone-900">
+            <span className="font-outfit text-md font-bold uppercase tracking-tight text-foreground">
               Deep Agent
             </span>
           </a>
           <span className="hidden h-4 w-px bg-stone-200 sm:block" />
-          <div className="hidden items-center gap-6 text-xs font-semibold text-stone-600 sm:flex">
-            <a href="#phase1" className={cn("transition hover:text-stone-900", activePhase === 1 && "text-[#FF8A42]")}>Phase 1: Discover</a>
-            <a href="#phase2" className={cn("transition hover:text-stone-900", activePhase === 2 && "text-[#FF8A42]")}>Phase 2: Structure</a>
-            <a href="#phase3" className={cn("transition hover:text-stone-900", activePhase === 3 && "text-[#FF8A42]")}>Phase 3: Verify</a>
+          <div className="hidden items-center gap-6 text-xs font-semibold text-muted-foreground sm:flex">
+            <a href="#phase1" className={cn("transition hover:text-foreground", activePhase === 1 && "text-[#FF8A42]")}>Phase 1: Discover</a>
+            <a href="#phase2" className={cn("transition hover:text-foreground", activePhase === 2 && "text-[#FF8A42]")}>Phase 2: Structure</a>
+            <a href="#phase3" className={cn("transition hover:text-foreground", activePhase === 3 && "text-[#FF8A42]")}>Phase 3: Verify</a>
           </div>
         </div>
 
@@ -1079,7 +1074,7 @@ function IntroPageContent() {
           <div className="tooltip-wrapper">
             <button
               onClick={handleClearCookies}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-stone-100 text-stone-600 border border-stone-200 shadow-sm transition hover:bg-stone-200 hover:text-stone-900"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-stone-100 text-muted-foreground border border-stone-200 shadow-sm transition hover:bg-stone-200 hover:text-foreground"
               title="Clear Session Data"
             >
               <LogOut className="h-3.5 w-3.5" />
@@ -1096,7 +1091,7 @@ function IntroPageContent() {
             <div className="tooltip-wrapper">
               <span
                 onClick={() => setIsDialogOpen(true)}
-                className="cursor-pointer underline decoration-stone-300 decoration-dotted underline-offset-2 transition hover:text-stone-900"
+                className="cursor-pointer underline decoration-stone-300 decoration-dotted underline-offset-2 transition hover:text-foreground"
               >
                 Collab Thread
               </span>
@@ -1106,7 +1101,7 @@ function IntroPageContent() {
 
           <a
             href={`/chat?threadId=${threadId}`}
-            className="flex h-9 items-center gap-2 rounded-full bg-[#FF8A42] px-4 py-2 font-semibold text-white glow-accent transition hover:scale-[1.02] active:scale-95"
+            className="flex h-9 items-center gap-2 rounded-full bg-[#FF8A42] px-4 py-2 font-semibold text-white card-elevated transition hover:scale-[1.02] active:scale-95"
           >
             <span className="text-xs">Launch Workspace</span>
             <MessageSquare className="h-3.5 w-3.5" />
@@ -1123,11 +1118,11 @@ function IntroPageContent() {
           <p className="text-xs font-bold uppercase tracking-widest text-[#FF8A42] mb-4">
             The AI Agentic Control Loop
           </p>
-          <h1 className="font-serif-header text-5xl font-extrabold leading-[1.1] text-stone-900 sm:text-7xl lg:text-8xl">
+          <h1 className="font-serif-header text-5xl font-extrabold leading-[1.1] text-foreground sm:text-7xl lg:text-8xl">
             Discover. Structure.<br />Verify. Continuously.
           </h1>
 
-          <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-stone-600 sm:text-xl">
+          <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
             Raw language models operate on suggestion. Deep Agent implements a deterministic harness 
             providing boundaries, continuous planning, and double-loop verification.
           </p>
@@ -1135,7 +1130,7 @@ function IntroPageContent() {
           <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <a
               href={`/chat?threadId=${threadId}`}
-              className="flex h-11 items-center gap-2 rounded-full bg-[#FF8A42] px-6 py-3 font-semibold text-white glow-accent transition hover:scale-[1.03]"
+              className="flex h-11 items-center gap-2 rounded-full bg-[#FF8A42] px-6 py-3 font-semibold text-white card-elevated transition hover:scale-[1.03]"
             >
               See the Workspace in Action
               <ChevronRight className="h-4 w-4" />
@@ -1230,10 +1225,10 @@ function IntroPageContent() {
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">1</span>
                 Phase 1: Discover
               </div>
-              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-stone-900 sm:text-5xl">
+              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
                 Observe operations and ingest runbooks passively.
               </h2>
-              <p className="mt-6 text-stone-600 leading-relaxed text-md">
+              <p className="mt-6 text-muted-foreground leading-relaxed text-md">
                 Deep Agent doesn't require complex integration maps. It connects directly to your repository workspace, 
                 reads local code rules, and watches tools execute on behalf of tasks to capture complete contexts in days.
               </p>
@@ -1244,7 +1239,7 @@ function IntroPageContent() {
                     <Activity className="h-4.5 w-4.5" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-stone-900">Observation Companion</h4>
+                    <h4 className="font-bold text-foreground">Observation Companion</h4>
                     <p className="text-xs text-stone-500 mt-1">Watches tools execute passively, profiling execution costs and caching schemas.</p>
                   </div>
                 </div>
@@ -1253,7 +1248,7 @@ function IntroPageContent() {
                     <MessageSquare className="h-4.5 w-4.5" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-stone-900">Collaborative Ingestion</h4>
+                    <h4 className="font-bold text-foreground">Collaborative Ingestion</h4>
                     <p className="text-xs text-stone-500 mt-1">Real-time collaborative workspace synchronizes rules directly between developer and model.</p>
                   </div>
                 </div>
@@ -1267,7 +1262,7 @@ function IntroPageContent() {
                   <span className="text-xs font-bold text-stone-800 uppercase tracking-wider">Repository Rules Ingest</span>
                   <span className="h-2 w-2 rounded-full bg-emerald-500 node-pulse" />
                 </div>
-                <div className="space-y-3 font-mono text-xs text-stone-600">
+                <div className="space-y-3 font-mono text-xs text-muted-foreground">
                   <div className="bg-stone-50 p-3 rounded-lg border border-stone-200/50">
                     <p className="text-[#FF8A42] font-semibold"># CLAUDE.md rule matched:</p>
                     <p className="mt-1">"Always run verification build test before committing any new component."</p>
@@ -1378,10 +1373,10 @@ function IntroPageContent() {
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">2</span>
                 Phase 2: Structure
               </div>
-              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-stone-900 sm:text-5xl">
+              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
                 Structure inputs into an auditable process index.
               </h2>
-              <p className="mt-6 text-stone-600 leading-relaxed text-md">
+              <p className="mt-6 text-muted-foreground leading-relaxed text-md">
                 Every task checkpoint, tool output, and code file edits are compiled into structured 
                 markdown indexes. Keep track of what changed without digging through logs.
               </p>
@@ -1412,10 +1407,10 @@ function IntroPageContent() {
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">3</span>
                 Phase 3: Verify
               </div>
-              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-stone-900 sm:text-5xl">
+              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
                 Ensure safety before handoff.
               </h2>
-              <p className="mt-6 text-stone-600 leading-relaxed text-md">
+              <p className="mt-6 text-muted-foreground leading-relaxed text-md">
                 Continuous double-loop verification handles testing, linting, and safety checks inside 
                 isolated environments. If anything breaks, the execution error triggers correction.
               </p>
@@ -1426,7 +1421,7 @@ function IntroPageContent() {
                     <Shield className="h-4.5 w-4.5" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-stone-900">Isolated Confinement</h4>
+                    <h4 className="font-bold text-foreground">Isolated Confinement</h4>
                     <p className="text-xs text-stone-500 mt-1">Tool command lines are confined inside isolated sandboxes to guard host files.</p>
                   </div>
                 </div>
@@ -1435,7 +1430,7 @@ function IntroPageContent() {
                     <Lock className="h-4.5 w-4.5" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-stone-900">Human-in-the-Loop Gates</h4>
+                    <h4 className="font-bold text-foreground">Human-in-the-Loop Gates</h4>
                     <p className="text-xs text-stone-500 mt-1">Tool approvals and critical checks request validation before final execution.</p>
                   </div>
                 </div>
@@ -1452,7 +1447,7 @@ function IntroPageContent() {
                 </div>
                 <div className="grid grid-cols-2 p-4 text-xs">
                   <div>
-                    <h5 className="font-bold text-stone-900">Durable Checkpointing</h5>
+                    <h5 className="font-bold text-foreground">Durable Checkpointing</h5>
                     <p className="text-stone-500 mt-1">State machine manages structured checklists (`task.md` / `AGENTS.md`) preserved locally.</p>
                   </div>
                   <div className="pl-4 border-l border-stone-200 text-stone-500">
@@ -1462,7 +1457,7 @@ function IntroPageContent() {
                 </div>
                 <div className="grid grid-cols-2 p-4 text-xs">
                   <div>
-                    <h5 className="font-bold text-stone-900">Container Confinement</h5>
+                    <h5 className="font-bold text-foreground">Container Confinement</h5>
                     <p className="text-stone-500 mt-1">All commands execute inside isolated WASM or Docker containers.</p>
                   </div>
                   <div className="pl-4 border-l border-stone-200 text-stone-500">
@@ -1472,7 +1467,7 @@ function IntroPageContent() {
                 </div>
                 <div className="grid grid-cols-2 p-4 text-xs">
                   <div>
-                    <h5 className="font-bold text-stone-900">Syntax Loop Validators</h5>
+                    <h5 className="font-bold text-foreground">Syntax Loop Validators</h5>
                     <p className="text-stone-500 mt-1">Automatic syntax checkers catch compile errors and re-route corrections.</p>
                   </div>
                   <div className="pl-4 border-l border-stone-200 text-stone-500">
@@ -1502,7 +1497,7 @@ function IntroPageContent() {
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <a
               href={`/chat?threadId=${threadId}`}
-              className="flex h-11 items-center justify-center gap-2 rounded-full bg-[#FF8A42] px-8 py-3 font-semibold text-white glow-accent transition hover:scale-[1.03]"
+              className="flex h-11 items-center justify-center gap-2 rounded-full bg-[#FF8A42] px-8 py-3 font-semibold text-white card-elevated transition hover:scale-[1.03]"
             >
               Launch Workspace
               <ChevronRight className="h-4 w-4" />

@@ -437,10 +437,10 @@ export function ThreadList({
                             type="button"
                             onClick={() => onThreadSelect(thread.id)}
                             className={cn(
-                              "grid w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-3 pr-20 text-left transition-colors duration-200",
-                              "hover:bg-accent",
+                              "grid w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-3 pr-20 text-left transition-all duration-200",
+                              "hover:bg-accent hover:shadow-sm",
                               currentThreadId === thread.id
-                                ? "border border-primary bg-accent hover:bg-accent"
+                                ? "border border-primary bg-accent shadow-sm"
                                 : "border border-transparent bg-transparent"
                             )}
                             aria-current={currentThreadId === thread.id}

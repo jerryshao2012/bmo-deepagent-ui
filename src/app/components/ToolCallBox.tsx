@@ -105,7 +105,7 @@ export const ToolCallBox = React.memo<ToolCallBoxProps>(
     return (
       <div
         className={cn(
-          "w-full overflow-hidden rounded-lg border-none shadow-none outline-none transition-colors duration-200 hover:bg-accent",
+          "w-full overflow-hidden rounded-lg border border-transparent shadow-none outline-none transition-all duration-200 hover:border-border hover:bg-accent hover:shadow-sm",
           isExpanded && hasContent && "bg-accent"
         )}
       >

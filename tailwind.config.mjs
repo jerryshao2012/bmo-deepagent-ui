@@ -54,6 +54,7 @@ export default {
       },
       fontFamily: {
         mono: [
+          `"Geist Mono"`,
           `"Fira Code"`,
           `ui-monospace`,
           `SFMono-Regular`,

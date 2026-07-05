@@ -114,7 +114,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(
     return (
       <div
         className={cn(
-          "flex w-full max-w-full overflow-x-hidden",
+          "flex w-full max-w-full overflow-x-hidden chat-message-enter",
           isUser && "flex-row-reverse"
         )}
       >

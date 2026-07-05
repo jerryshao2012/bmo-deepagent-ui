@@ -1106,8 +1106,30 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           ref={contentRef}
         >
           {isThreadLoading ? (
-            <div className="flex items-center justify-center p-8">
-              <p className="text-muted-foreground">Loading...</p>
+            <div className="flex flex-col gap-4 p-4">
+              {/* Assistant message skeleton */}
+              <div className="flex w-full gap-3">
+                <div className="h-8 w-8 flex-shrink-0 rounded-full skeleton-shimmer" />
+                <div className="flex flex-1 flex-col gap-2">
+                  <div className="h-4 w-3/4 rounded-md skeleton-shimmer" />
+                  <div className="h-4 w-1/2 rounded-md skeleton-shimmer" />
+                  <div className="h-4 w-2/3 rounded-md skeleton-shimmer" />
+                </div>
+              </div>
+              {/* User message skeleton */}
+              <div className="flex w-full flex-row-reverse">
+                <div className="w-[70%] max-w-[400px]">
+                  <div className="h-20 rounded-xl rounded-br-none skeleton-shimmer" />
+                </div>
+              </div>
+              {/* Assistant message skeleton */}
+              <div className="flex w-full gap-3">
+                <div className="h-8 w-8 flex-shrink-0 rounded-full skeleton-shimmer" />
+                <div className="flex flex-1 flex-col gap-2">
+                  <div className="h-4 w-full rounded-md skeleton-shimmer" />
+                  <div className="h-4 w-5/6 rounded-md skeleton-shimmer" />
+                </div>
+              </div>
             </div>
           ) : streamError ? (
             <div className="mx-auto mb-4 max-w-[1024px] rounded-lg border border-red-200 bg-red-50 p-4">

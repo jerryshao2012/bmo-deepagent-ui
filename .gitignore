@@ -12,6 +12,8 @@ data/
 .idea/
 .vscode/
 .claude/
+.agents/
+.codex/
 *.swp
 *.swo
 *~

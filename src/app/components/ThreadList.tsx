@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { format } from "date-fns";
-import { Loader2, MessageSquare, Pencil, Trash2, X, Heart } from "lucide-react";
+import { Loader2, MessageSquare, Pencil, Trash2, X, Heart, Search } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -138,6 +139,7 @@ export function ThreadList({
   const [editingTitle, setEditingTitle] = useState("");
   const [savingTitleId, setSavingTitleId] = useState<string | null>(null);
   const [favoritingId, setFavoritingId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const isSavingTitleRef = useRef(false);
 
   const threads = useThreads({
@@ -167,6 +169,16 @@ export function ThreadList({
     return threads.data?.flat() ?? [];
   }, [threads.data]);
 
+  const filteredThreads = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return flattened;
+    return flattened.filter((thread) => {
+      const title = (thread.title || "").toLowerCase();
+      const description = (thread.description || "").toLowerCase();
+      return title.includes(query) || description.includes(query);
+    });
+  }, [flattened, searchQuery]);
+
   const isLoadingMore =
     threads.size > 0 && threads.data?.[threads.size - 1] == null;
   const isEmpty = threads.data?.at(0)?.length === 0;
@@ -183,13 +195,14 @@ export function ThreadList({
       older: [],
     };
 
-    flattened.forEach((thread) => {
+    filteredThreads.forEach((thread) => {
       if (thread.status === "interrupted") {
         groups.interrupted.push(thread);
         return;
       }
 
-      const diff = now.getTime() - thread.updatedAt.getTime();
+      const threadDate = thread.createdAt ? new Date(thread.createdAt) : (thread.updatedAt ? new Date(thread.updatedAt) : new Date());
+      const diff = now.getTime() - threadDate.getTime();
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
 
       if (days === 0) {
@@ -204,7 +217,7 @@ export function ThreadList({
     });
 
     return groups;
-  }, [flattened]);
+  }, [filteredThreads]);
 
   const interruptedCount = useMemo(() => {
     return flattened.filter((t) => t.status === "interrupted").length;
@@ -350,6 +363,17 @@ export function ThreadList({
         </div>
       </div>
 
+      {/* Search Bar matching Skills Drawer */}
+      <div className="relative flex-shrink-0 border-b border-border bg-background/20 p-4">
+        <Search size={16} className="absolute left-7 top-[26px] text-muted-foreground" />
+        <Input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search threads..."
+          className="h-9 pl-9 bg-background/50 border-border/80 focus-visible:ring-1 focus-visible:ring-primary"
+        />
+      </div>
+
       <ScrollArea className="h-0 flex-1">
         {threads.error && <ErrorState message={threads.error.message} />}
 
@@ -381,10 +405,11 @@ export function ThreadList({
                         {editingThreadId === thread.id ? (
                           <div
                             className={cn(
-                              "grid w-full items-center gap-3 rounded-lg border px-3 py-3 pr-20 text-left transition-colors duration-200",
+                              "grid w-full items-center gap-3 rounded-lg border p-4 pr-20 text-left transition-colors duration-200",
+                              "border-border bg-background/30",
                               currentThreadId === thread.id
-                                ? "border-primary bg-accent"
-                                : "border-transparent bg-transparent"
+                                ? "border-primary bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]"
+                                : ""
                             )}
                             aria-current={currentThreadId === thread.id}
                           >
@@ -413,7 +438,7 @@ export function ThreadList({
                                   // Keep title edit input text from wrapping or clashing with icons
                                 />
                                 <span className="ml-2 flex-shrink-0 text-xs text-muted-foreground">
-                                  {formatTime(thread.updatedAt)}
+                                  {formatTime(thread.createdAt ? new Date(thread.createdAt) : (thread.updatedAt ? new Date(thread.updatedAt) : new Date()))}
                                 </span>
                               </div>
                               {/* Description + Status Row */}
@@ -437,22 +462,23 @@ export function ThreadList({
                             type="button"
                             onClick={() => onThreadSelect(thread.id)}
                             className={cn(
-                              "grid w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-3 pr-20 text-left transition-all duration-200",
-                              "hover:bg-accent hover:shadow-sm",
+                              "grid w-full cursor-pointer items-center gap-3 rounded-lg p-4 pr-20 text-left transition-all duration-200",
+                              "border border-border bg-background/30",
+                              "hover:bg-[color-mix(in_srgb,var(--color-primary)_4%,transparent)] hover:border-[color-mix(in_srgb,var(--color-primary)_30%,transparent)]",
                               currentThreadId === thread.id
-                                ? "border border-primary bg-accent shadow-sm"
-                                : "border border-transparent bg-transparent"
+                                ? "border-primary bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] shadow-sm"
+                                : ""
                             )}
                             aria-current={currentThreadId === thread.id}
                           >
                           <div className="min-w-0 flex-1">
                             {/* Title + Timestamp Row */}
                             <div className="mb-1 flex items-center justify-between">
-                              <h3 className="truncate text-sm font-semibold">
+                              <h3 className="truncate text-sm font-semibold transition-colors duration-200 group-hover:text-[var(--color-primary)]">
                                 {thread.title}
                               </h3>
                               <span className="ml-2 flex-shrink-0 text-xs text-muted-foreground">
-                                {formatTime(thread.updatedAt)}
+                                {formatTime(thread.createdAt ? new Date(thread.createdAt) : (thread.updatedAt ? new Date(thread.updatedAt) : new Date()))}
                               </span>
                             </div>
                             {/* Description + Status Row */}

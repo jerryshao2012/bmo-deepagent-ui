@@ -16,7 +16,6 @@ interface SkillsDrawerProps {
 
 export function SkillsDrawer({ open, onClose, onSelectSkill }: SkillsDrawerProps) {
   const [skills, setSkills] = useState<SkillItem[]>([]);
-  const [isLive, setIsLive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -27,7 +26,6 @@ export function SkillsDrawer({ open, onClose, onSelectSkill }: SkillsDrawerProps
     try {
       const res = await fetchAvailableSkills();
       setSkills(res.skills);
-      setIsLive(res.isLive);
     } catch (err: any) {
       setError(err?.message || "Failed to load skills");
     } finally {
@@ -104,14 +102,6 @@ export function SkillsDrawer({ open, onClose, onSelectSkill }: SkillsDrawerProps
               <X size={18} />
             </Button>
           </div>
-        </div>
-
-        {/* Live status banner */}
-        <div className="flex items-center gap-2 border-b border-border bg-background/40 px-4 py-2 text-xs">
-          <span className={cn("h-2 w-2 rounded-full", isLive ? "bg-success" : "bg-neutral-500")} />
-          <span className="text-muted-foreground">
-            {isLive ? "Connected to active backend agent environment" : "Showing pre-configured offline skills"}
-          </span>
         </div>
 
         {/* Search */}

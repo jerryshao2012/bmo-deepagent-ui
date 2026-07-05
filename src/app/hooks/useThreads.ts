@@ -7,6 +7,7 @@ import { createLangGraphClientConfig, getBrowserSessionToken } from "@/lib/langg
 
 export interface ThreadItem {
   id: string;
+  createdAt?: Date;
   updatedAt: Date;
   status: Thread["status"];
   title: string;
@@ -151,7 +152,7 @@ export function useThreads(props: {
       const threads = await client.threads.search({
         limit: pageSize,
         offset: pageIndex * pageSize,
-        sortBy: "updated_at" as const,
+        sortBy: "created_at" as const,
         sortOrder: "desc" as const,
         status: status === "favorite" ? undefined : status,
         metadata: {
@@ -166,6 +167,7 @@ export function useThreads(props: {
 
         return {
           id: thread.thread_id,
+          createdAt: new Date(thread.created_at),
           updatedAt: new Date(thread.updated_at),
           status: thread.status,
           title,
@@ -201,6 +203,9 @@ export function useThreads(props: {
               title,
               description,
               status: (fullThread?.status as Thread["status"]) ?? thread.status,
+              createdAt: fullThread?.created_at
+                ? new Date(fullThread.created_at)
+                : thread.createdAt,
               updatedAt: fullThread?.updated_at
                 ? new Date(fullThread.updated_at)
                 : thread.updatedAt,

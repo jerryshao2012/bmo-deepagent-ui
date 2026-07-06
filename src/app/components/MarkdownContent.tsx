@@ -272,10 +272,17 @@ function preprocessMarkdown(content: string): string {
   // Pattern 5: Bare document citations (e.g. /bmo_ar2025.pdf, p. 22 or /bmo_ar2025.pdf: p. 29, p. 69 or just /bmo_ar2025.pdf)
   // Negative lookbehind ensures it's not already inside/part of a markdown link target/destination
   result = result.replace(
-    new RegExp(`(?<![a-zA-Z0-9([\\]/:-])(${DOC})((?:[,:]\\s*(?:p\\.?|pp\\.?|page|pages)?\\s*\\d+(?:\\s*,\\s*(?:p\\.?|pp\\.?|page|pages)?\\s*\\d+)*)+)?`, "gi"),
+    new RegExp(`(?<![a-zA-Z0-9([\\]/:-])(${DOC})((?:[,:]\\s*(?:p\\.?|pp\\.?|page|pages)?\\s*\\d+(?:\\s*(?:[-–,:]|\\bto\\b)\\s*(?:p\\.?|pp\\.?|page|pages)?\\s*\\d+)*)+)?`, "gi"),
     (match, path: string, pageSuffix: string) => {
       if (!pageSuffix) {
         return `[${path}](${path})`;
+      }
+      const hasRange = /[-–]|\bto\b/i.test(pageSuffix);
+      if (hasRange) {
+        const matchPage = pageSuffix.match(/\d+/);
+        const firstPage = matchPage ? matchPage[0] : "";
+        const label = `${path}${pageSuffix}`.replace(/\|/g, "\\|");
+        return `[${label}](${path}?page=${firstPage})`;
       }
       const pages = pageSuffix.match(/\d+/g) || [];
       const links = pages.map((p, idx) => {
@@ -444,7 +451,7 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
         // 1. First try to parse page from visible text, as LLMs often hallucinate wrong URL params
         const text = anchor.textContent ?? "";
         const slideM = text.match(/slide\s*(\d+)/i);
-        const pageM = text.match(/(?:p\.?|page)\s*(\d+)/i);
+        const pageM = text.match(/(?:p\.?|pp\.?|page|pages)\s*(\d+)/i);
         
         if (slideM) {
           slide = parseInt(slideM[1], 10);

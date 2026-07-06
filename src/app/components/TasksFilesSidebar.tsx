@@ -13,6 +13,7 @@ import {
   Circle,
   Clock,
   ChevronDown,
+  FileEdit,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { TodoItem, FileItem } from "@/app/types/types";
@@ -84,10 +85,27 @@ export function FilesPopover({
                     "var(--color-file-button)";
                 }}
               >
-                <FileText
-                  size={24}
-                  className="mx-auto text-muted-foreground"
-                />
+                <div className="relative mx-auto w-fit">
+                  <FileText
+                    size={24}
+                    className="mx-auto text-muted-foreground"
+                  />
+                  {(filePath.includes("final_report") ||
+                    filePath.includes("_verified")) && (
+                    <CheckCircle
+                      size={12}
+                      className="absolute -right-1 -top-1 text-green-500 bg-background rounded-full"
+                      aria-label="Verified report"
+                    />
+                  )}
+                  {filePath.includes("draft") && (
+                    <FileEdit
+                      size={12}
+                      className="absolute -right-1 -top-1 text-amber-500 bg-background rounded-full"
+                      aria-label="Draft"
+                    />
+                  )}
+                </div>
                 <span className="mx-auto block w-full truncate break-words text-center text-sm leading-relaxed text-foreground">
                   {filePath}
                 </span>
@@ -208,17 +226,62 @@ export const TasksFilesSidebar = React.memo<{
                         <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-tertiary">
                           {groupedLabels[status as keyof typeof groupedLabels]}
                         </h3>
-                        {todos.map((todo, index) => (
-                          <div
-                            key={`${status}_${todo.id}_${index}`}
-                            className="mb-1.5 flex items-start gap-2 rounded-sm p-1 text-sm"
-                          >
-                            {getStatusIcon(todo.status)}
-                            <span className="flex-1 break-words leading-relaxed text-inherit">
-                              {todo.content}
-                            </span>
-                          </div>
-                        ))}
+                        {todos.map((todo, index) => {
+                          const content = todo.content;
+                          const isSuccessCriteria =
+                            /^\[(?:Success\s*Criteria|SC)\]/.test(content);
+                          const isGap =
+                            /^\[?Gap[:)]/i.test(content) || content.startsWith("Gap:");
+                          const isResearchPass =
+                            /research\s*pass\s*\d/i.test(content);
+                          const isVerification =
+                            /verif/i.test(content);
+
+                          return (
+                            <div
+                              key={`${status}_${todo.id}_${index}`}
+                              className={cn(
+                                "mb-1.5 flex items-start gap-2 rounded-sm p-1 text-sm",
+                                isGap && "bg-amber-500/5 border border-amber-500/15 rounded-md px-2",
+                                isVerification && "bg-primary/5 border border-primary/15 rounded-md px-2"
+                              )}
+                            >
+                              {isSuccessCriteria ? (
+                                <CheckCircle
+                                  size={12}
+                                  className={cn(
+                                    "mt-0.5 flex-shrink-0",
+                                    todo.status === "completed"
+                                      ? "text-green-500"
+                                      : "text-muted-foreground/40"
+                                  )}
+                                />
+                              ) : (
+                                getStatusIcon(todo.status)
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <span className="break-words leading-relaxed text-inherit">
+                                  {isSuccessCriteria
+                                    ? content.replace(
+                                        /^\[(?:Success\s*Criteria|SC)\]\s*/i,
+                                        ""
+                                      )
+                                    : content}
+                                </span>
+                                {isResearchPass && (
+                                  <span className="ml-1.5 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                                    Research pass
+                                  </span>
+                                )}
+                                {isGap && (
+                                  <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">
+                                    Gap
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     ))}
                   </div>

@@ -9,6 +9,7 @@ import {
   Loader2,
   CircleCheckBigIcon,
   StopCircle,
+  Brain,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToolCall, ActionRequest, ReviewConfig } from "@/app/types/types";
@@ -100,7 +101,41 @@ export const ToolCallBox = React.memo<ToolCallBoxProps>(
       }));
     }, []);
 
+    const isThinkTool =
+      name === "think" || name === "think_tool" || name === "reasoning";
+
     const hasContent = result || Object.keys(args).length > 0;
+
+    // Think tool — render as a collapsible reasoning block, not a generic tool call
+    if (isThinkTool) {
+      const thoughtContent =
+        typeof result === "string"
+          ? result
+          : args.thought || args.reasoning || args.content;
+      const displayText =
+        typeof thoughtContent === "string"
+          ? thoughtContent
+          : thoughtContent
+            ? JSON.stringify(thoughtContent, null, 2)
+            : null;
+
+      if (!displayText) return null;
+
+      return (
+        <details className="group my-1">
+          <summary className="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground marker:content-none select-none">
+            <Brain className="h-3 w-3 flex-shrink-0" />
+            <span>Reasoning</span>
+            <ChevronDown className="ml-auto h-3 w-3 flex-shrink-0 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="mt-1 rounded-md border-l-2 border-border bg-muted/20 px-3 py-2">
+            <pre className="m-0 whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-muted-foreground/90">
+              {displayText}
+            </pre>
+          </div>
+        </details>
+      );
+    }
 
     return (
       <div

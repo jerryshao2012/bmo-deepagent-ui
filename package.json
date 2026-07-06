@@ -11,7 +11,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "analyze:har": "node scripts/analyze-har.mjs"
+    "analyze:har": "node scripts/analyze-har.mjs",
+    "postinstall": "mkdir -p public/pdfjs && cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdfjs/"
   },
   "dependencies": {
     "@langchain/core": "^1.1.19",

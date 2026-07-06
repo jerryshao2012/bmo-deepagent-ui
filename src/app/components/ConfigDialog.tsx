@@ -100,6 +100,15 @@ export function ConfigDialog({
   const [assistantId, setAssistantId] = useState(
     initialConfig?.assistantId || ""
   );
+  const [experimentId, setExperimentId] = useState(
+    initialConfig?.experimentId || ""
+  );
+  const [experimentVariant, setExperimentVariant] = useState(
+    initialConfig?.experimentVariant || ""
+  );
+  const [evalTrackingEnabled, setEvalTrackingEnabled] = useState(
+    initialConfig?.evalTrackingEnabled ?? true
+  );
   const [activeTab, setActiveTab] = useState("basic");
   const [storageInfo, setStorageInfo] = useState<StorageInfoState>({
     status: "idle",
@@ -260,6 +269,9 @@ export function ConfigDialog({
     if (open && initialConfig) {
       setDeploymentUrl(initialConfig.deploymentUrl);
       setAssistantId(initialConfig.assistantId);
+      setExperimentId(initialConfig.experimentId || "");
+      setExperimentVariant(initialConfig.experimentVariant || "");
+      setEvalTrackingEnabled(initialConfig.evalTrackingEnabled ?? true);
     }
   }, [open, initialConfig]);
 
@@ -303,6 +315,9 @@ export function ConfigDialog({
     onSave({
       deploymentUrl,
       assistantId,
+      experimentId: experimentId || undefined,
+      experimentVariant: experimentVariant || undefined,
+      evalTrackingEnabled,
     });
     onOpenChange(false);
   };
@@ -639,6 +654,39 @@ export function ConfigDialog({
                 />
                 <p className="text-[11px] text-muted-foreground">
                   The graph identifier or agent ID for sending runs and creating threads.
+                </p>
+              </div>
+
+              <hr className="border-border" />
+
+              <div className="grid gap-2">
+                <Label htmlFor="experimentId" className="text-xs font-semibold">
+                  Experiment ID <span className="font-normal text-muted-foreground">(optional)</span>
+                </Label>
+                <Input
+                  id="experimentId"
+                  placeholder="my-experiment-001"
+                  value={experimentId}
+                  onChange={(e) => setExperimentId(e.target.value)}
+                  className="h-9 text-xs"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Tag runs for A/B testing. Reads from EXPERIMENT_ID env var on the backend.
+                </p>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="experimentVariant" className="text-xs font-semibold">
+                  Experiment Variant <span className="font-normal text-muted-foreground">(optional)</span>
+                </Label>
+                <Input
+                  id="experimentVariant"
+                  placeholder="control / treatment-a"
+                  value={experimentVariant}
+                  onChange={(e) => setExperimentVariant(e.target.value)}
+                  className="h-9 text-xs"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Variant label for this deployment. Reads from EXPERIMENT_VARIANT env var on the backend.
                 </p>
               </div>
             </TabsContent>

@@ -1,6 +1,9 @@
 export interface StandaloneConfig {
   deploymentUrl: string;
   assistantId: string;
+  experimentId?: string;
+  experimentVariant?: string;
+  evalTrackingEnabled?: boolean;
 }
 
 const CONFIG_KEY = "deep-agent-config";
@@ -35,6 +38,9 @@ export function getConfig(): StandaloneConfig | null {
     return {
       deploymentUrl: config.deploymentUrl || DEFAULT_DEPLOYMENT_URL || "",
       assistantId: config.assistantId || DEFAULT_ASSISTANT_ID || "",
+      experimentId: config.experimentId || undefined,
+      experimentVariant: config.experimentVariant || undefined,
+      evalTrackingEnabled: config.evalTrackingEnabled ?? true,
     };
   } catch {
     if (DEFAULT_DEPLOYMENT_URL && DEFAULT_ASSISTANT_ID) {

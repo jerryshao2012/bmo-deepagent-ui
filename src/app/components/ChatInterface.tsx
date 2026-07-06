@@ -25,6 +25,7 @@ import {
   Database,
   Sparkles,
   Trash2,
+  Search,
 } from "lucide-react";
 import { SkillsDrawer } from "@/app/components/SkillsDrawer";
 import { buildSkillDraftPrompt } from "@/app/utils/buildSkillDraftPrompt";
@@ -962,6 +963,22 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     [displayTodos]
   );
 
+  const verificationTodo = useMemo(() => {
+    return displayTodos.find(
+      (t) =>
+        t.status === "in_progress" &&
+        (t.content?.toLowerCase().includes("verif") ||
+          t.id?.toLowerCase().includes("verif"))
+    );
+  }, [displayTodos]);
+
+  const verificationRound = useMemo(() => {
+    if (!verificationTodo) return null;
+    const match = verificationTodo.content.match(/round\s*(\d+)\s*(?:of|of)\s*(\d+)/i);
+    if (match) return { current: parseInt(match[1]), total: parseInt(match[2]) };
+    return { current: 1, total: 2 };
+  }, [verificationTodo]);
+
   const latestTurnDurationSeconds = useMemo(() => {
     // If tasks are still running, show live elapsed time.
     if (hasRunningTasks && liveElapsedMs > 0) {
@@ -1200,6 +1217,33 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
             <div className="flex max-h-96 flex-col overflow-y-auto border-b border-border bg-sidebar empty:hidden">
               {!metaOpen && (
                 <>
+                  {verificationTodo && (
+                    <div className="flex items-center gap-3 border-b border-border/50 bg-accent/30 px-[18px] py-2.5">
+                      <Search className="h-4 w-4 flex-shrink-0 text-primary animate-pulse" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {verificationTodo.content}
+                          </span>
+                          {verificationRound && (
+                            <span className="flex-shrink-0 text-xs text-muted-foreground tabular-nums">
+                              Round {verificationRound.current} of {verificationRound.total}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-primary transition-all duration-700 ease-in-out"
+                            style={{
+                              width: verificationRound
+                                ? `${(verificationRound.current / verificationRound.total) * 100}%`
+                                : "50%",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {(() => {
                     const activeTask = displayTodos.find(
                       (t) => t.status === "in_progress"

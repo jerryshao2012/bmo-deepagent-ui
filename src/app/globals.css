@@ -37,6 +37,14 @@
     --color-file-button-hover: #212c3b;
     --color-header-bg: #102e40;
 
+    /* Base text variables mapping to colors */
+    --text-primary: var(--color-text-primary);
+    --text-secondary: var(--color-text-secondary);
+    --text-tertiary: var(--color-text-tertiary);
+    --text-success: var(--color-success);
+    --text-warning: var(--color-warning);
+    --text-error: var(--color-error);
+
     /* Dark theme colors */
     --color-primary-dark: #2dd4bf;
     --color-user-message-dark: #076699;

@@ -24,6 +24,7 @@ export type StateType = {
   };
   ui?: any;
   no_web?: boolean | null;
+  verification_round?: number;
 };
 
 function extractFileText(value: unknown): string {
@@ -456,9 +457,17 @@ export function useChat({
     ? serverSnapshot?.no_web
     : stream.values.no_web) ?? false;
 
+  const effectiveVerificationRound: number | undefined =
+    shouldPreferServerSnapshot
+      ? (serverSnapshot as Record<string, unknown>)
+          ?.verification_round as number | undefined
+      : (stream.values as Record<string, unknown>)
+          ?.verification_round as number | undefined;
+
   return {
     stream,
     todos: effectiveTodos,
+    verificationRound: effectiveVerificationRound,
     files: effectiveFiles,
     chatStartTime: localChatStartMs,
     chatElapsedSeconds: localChatElapsedSeconds,

@@ -171,7 +171,7 @@ export const TasksFilesSidebar = React.memo<{
         return (
           <Circle
             size={10}
-            className="text-tertiary/70"
+            className="text-tertiary"
           />
         );
     }

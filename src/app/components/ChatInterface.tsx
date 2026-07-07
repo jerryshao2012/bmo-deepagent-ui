@@ -110,7 +110,7 @@ const getStatusIcon = (status: TodoItem["status"], className?: string) => {
       return (
         <Circle
           size={16}
-          className={cn("text-tertiary/70", className)}
+          className={cn("text-tertiary", className)}
         />
       );
   }
@@ -230,6 +230,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const ingestStartRef = useRef<number | null>(null);
   const elapsedAnchorRef = useRef<number>(0);
   const [ingestElapsed, setIngestElapsed] = useState<number | null>(null);
+  const uploadStartRef = useRef<number | null>(null);
+  const [uploadElapsedMs, setUploadElapsedMs] = useState<number>(0);
   const currentThreadIdRef = useRef(currentThreadId);
   currentThreadIdRef.current = currentThreadId;
 
@@ -413,9 +415,27 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           (Date.now() - ingestStartRef.current) / 1000 + elapsedAnchorRef.current
         );
       }
-    }, 1000);
+    }, 50);
     return () => clearInterval(timer);
   }, [isIngesting]);
+
+  // Local elapsed timer for file uploading, ticking every 50ms in milliseconds.
+  useEffect(() => {
+    if (!isUploading) {
+      uploadStartRef.current = null;
+      setUploadElapsedMs(0);
+      return;
+    }
+    uploadStartRef.current = Date.now();
+    const updateTimer = () => {
+      if (uploadStartRef.current != null) {
+        setUploadElapsedMs(Date.now() - uploadStartRef.current);
+      }
+    };
+    updateTimer();
+    const timer = setInterval(updateTimer, 50);
+    return () => clearInterval(timer);
+  }, [isUploading]);
 
   const fetchDocuments = useCallback(
     async (overrideThreadId?: string | null) => {
@@ -933,8 +953,17 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
 
   const displayTodos = useMemo(() => {
     const hasPending = todos.some((t) => t.status === "pending");
+    const hasVerificationTask = todos.some(
+      (t) =>
+        t.content?.toLowerCase().includes("verif") ||
+        t.id?.toLowerCase().includes("verif")
+    );
     const shouldMarkStaleInProgressAsCompleted =
-      !isLoading && !interrupt && todos.length > 0 && !hasPending;
+      !isLoading &&
+      !interrupt &&
+      todos.length > 0 &&
+      !hasPending &&
+      !hasVerificationTask;
 
     if (!shouldMarkStaleInProgressAsCompleted) {
       return todos;
@@ -1642,11 +1671,16 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  {isUploading && uploadElapsedMs > 0 && (
+                    <span className="text-[10px] text-muted-foreground tabular-nums">
+                      {(uploadElapsedMs / 1000).toFixed(3)}s
+                    </span>
+                  )}
                   {!isUploading && !ingestError && ingestElapsed != null && (
                     <span className="text-[10px] text-muted-foreground tabular-nums">
                       {ingestElapsed < 60
-                        ? `${Math.round(ingestElapsed)}s`
-                        : `${Math.floor(ingestElapsed / 60)}m ${Math.round(ingestElapsed % 60)}s`}
+                        ? `${ingestElapsed.toFixed(3)}s`
+                        : `${Math.floor(ingestElapsed / 60)}m ${(ingestElapsed % 60).toFixed(3)}s`}
                     </span>
                   )}
                   {!isUploading && !ingestError && ingestProgress !== null && (

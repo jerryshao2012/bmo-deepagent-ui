@@ -327,6 +327,8 @@ export function useChat({
         {
           optimisticValues: (prev) => ({
             messages: [...(prev.messages ?? []), newMessage],
+            // Clear todos optimistically when user sends a new message
+            todos: [],
           }),
           config: { ...(activeAssistant?.config ?? {}), recursion_limit: 100 },
         }
@@ -392,6 +394,12 @@ export function useChat({
   const continueStream = useCallback(
     (hasTaskToolCall?: boolean) => {
       stream.submit(undefined, {
+        // Optimistically clear todos when continuing the stream so stale
+        // task list from a previous turn doesn't remain visible.
+        optimisticValues: (prev) => ({
+          ...prev,
+          todos: [],
+        }),
         config: {
           ...(activeAssistant?.config || {}),
           recursion_limit: 100,

@@ -110,7 +110,7 @@ const getStatusIcon = (status: TodoItem["status"], className?: string) => {
       return (
         <Circle
           size={16}
-          className={cn("text-tertiary", className)}
+          className={cn("text-muted-foreground", className)}
         />
       );
   }
@@ -1353,7 +1353,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                               <Circle
                                 key="icon"
                                 size={16}
-                                className="text-tertiary/70"
+                                className="text-muted-foreground/70"
                               />,
                               <span
                                 key="label"

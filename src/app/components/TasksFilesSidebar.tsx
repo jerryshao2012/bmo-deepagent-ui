@@ -168,12 +168,12 @@ export const TasksFilesSidebar = React.memo<{
           />
         );
       default:
-        return (
-          <Circle
-            size={10}
-            className="text-tertiary"
-          />
-        );
+            return (
+              <Circle
+                size={10}
+                className="text-muted-foreground"
+              />
+            );
     }
   }, []);
 

@@ -1,5 +1,5 @@
 # Source the deep research agent URL first to get DEEP_RESEARCH_AGENT_URL
-source ../deepagents-demo/deep_research/env-aws.sh
+source ../deep-research/env-aws.sh
 export NEXT_PUBLIC_LANGGRAPH_URL=$DEEP_RESEARCH_AGENT_URL
 
 export SEED="0312"

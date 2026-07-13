@@ -1033,6 +1033,12 @@ function IntroPageContent() {
             box-shadow: 0 0 0 8px rgba(255, 138, 66, 0);
           }
         }
+
+        /* High contrast text selection rule for telemetry preview dialog */
+        .markdown-preview-dialog-selection *::selection {
+          background-color: #2563eb !important;
+          color: #ffffff !important;
+        }
       `,
         }}
       />
@@ -1528,14 +1534,14 @@ function IntroPageContent() {
         >
           <div
             className={cn(
-              "relative flex flex-col border border-white/10 bg-zinc-950/90 shadow-2xl transition-all duration-300 ease-in-out animate-in zoom-in-95",
+              "relative flex flex-col border border-[#d5dee9] bg-[#f5f7fb] shadow-2xl transition-all duration-300 ease-in-out animate-in zoom-in-95 markdown-preview-dialog-selection",
               isTelemetryFullscreen
                 ? "h-screen max-h-none w-screen max-w-none rounded-none border-none p-6 sm:p-8"
                 : "h-[85vh] w-full max-w-6xl rounded-3xl p-6 sm:p-8"
             )}
           >
             {/* Modal Header */}
-            <div className="mb-6 flex select-none items-center justify-between border-b border-white/5 pb-4">
+            <div className="mb-6 flex select-none items-center justify-between border-b border-[#d5dee9] pb-4">
               <div className="flex min-w-0 items-center gap-3">
                 {/* macOS-style Window Control Dots */}
                 <div className="group/dots mr-2 flex shrink-0 items-center gap-[6px] px-1 py-1">
@@ -1592,10 +1598,10 @@ function IntroPageContent() {
                 </div>
 
                 {/* Divider */}
-                <div className="mr-2 h-4 w-[1px] shrink-0 bg-white/10" />
+                <div className="mr-2 h-4 w-[1px] shrink-0 bg-zinc-300" />
 
                 <div className="flex items-center gap-3">
-                  <h3 className="font-outfit text-xl font-bold leading-none text-white">
+                  <h3 className="font-outfit text-xl font-bold leading-none text-zinc-900">
                     Markdown Online Preview
                   </h3>
                   <button
@@ -1621,13 +1627,13 @@ function IntroPageContent() {
                     className={cn(
                       "flex select-none items-center gap-2 rounded-full px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider transition-all duration-300",
                       wsStatus === "connected" &&
-                        "cursor-default border border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
+                        "cursor-default border border-emerald-200 bg-emerald-50 text-emerald-700",
                       wsStatus === "fallback" &&
-                        "cursor-default border border-sky-500/20 bg-sky-500/10 text-sky-400",
+                        "cursor-default border border-sky-200 bg-sky-50 text-sky-700",
                       wsStatus === "connecting" &&
-                        "animate-pulse cursor-default border border-amber-500/20 bg-amber-500/10 text-amber-400",
+                        "animate-pulse cursor-default border border-amber-200 bg-amber-50 text-amber-700",
                       wsStatus === "disconnected" &&
-                        "cursor-pointer border border-rose-500/20 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 active:scale-95"
+                        "cursor-pointer border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 active:scale-95"
                     )}
                     title={
                       wsStatus === "connected"
@@ -1643,13 +1649,13 @@ function IntroPageContent() {
                       className={cn(
                         "h-2 w-2 rounded-full",
                         wsStatus === "connected" &&
-                          "animate-pulse bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]",
+                          "animate-pulse bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]",
                         wsStatus === "fallback" &&
-                          "animate-pulse bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.6)]",
+                          "animate-pulse bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.6)]",
                         wsStatus === "connecting" &&
-                          "animate-pulse bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]",
+                          "animate-pulse bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]",
                         wsStatus === "disconnected" &&
-                          "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]"
+                          "bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"
                       )}
                     />
                     {wsStatus.toUpperCase()}
@@ -1659,13 +1665,13 @@ function IntroPageContent() {
             </div>
 
             {/* Custom Text Area Container - Stretches to fill remaining space */}
-            <div className="relative flex flex-1 flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/40 transition duration-300 focus-within:border-indigo-500/60">
+            <div className="relative flex flex-1 flex-col overflow-hidden rounded-2xl border-0 bg-transparent transition duration-300 focus-within:border-indigo-500/60 selection:bg-primary selection:text-primary-foreground">
               <Tabs
                 value={activeTelemetryTab}
                 onValueChange={setActiveTelemetryTab}
                 className="flex h-full w-full flex-col gap-0"
               >
-                <div className="flex shrink-0 items-center justify-between border-b border-white/10 bg-zinc-950/60 px-4 py-2">
+                <div className="flex shrink-0 items-center justify-between border-b border-[#d5dee9] bg-transparent px-4 py-2">
                   <TabsList className="grid w-full max-w-[320px] grid-cols-2">
                     <TabsTrigger value="edit">Markdown</TabsTrigger>
                     <TabsTrigger value="preview">Review Markdown</TabsTrigger>
@@ -1679,17 +1685,17 @@ function IntroPageContent() {
                         <div className="tooltip-wrapper">
                           <button
                             onClick={handleCopy}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 transition duration-200 hover:bg-white/10 hover:text-white"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-200/40 text-zinc-600 transition duration-200 hover:bg-zinc-200 hover:text-zinc-900"
                           >
                             {copied ? (
-                              <Check className="h-3.5 w-3.5 text-emerald-400" />
+                              <Check className="h-3.5 w-3.5 text-emerald-600" />
                             ) : (
                               <Copy className="h-3.5 w-3.5" />
                             )}
                           </button>
                           <div className="tooltip-box-bottom">
-                            <div className="tooltip-arrow z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-white/10 bg-zinc-900" />
-                            <div className="whitespace-nowrap rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-white shadow-xl">
+                            <div className="tooltip-arrow z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-[#d5dee9] bg-white" />
+                            <div className="whitespace-nowrap rounded-md border border-[#d5dee9] bg-white px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-zinc-700 shadow-xl">
                               {copied
                                 ? "COPIED TO CLIPBOARD"
                                 : "COPY TO CLIPBOARD"}
@@ -1701,13 +1707,13 @@ function IntroPageContent() {
                         <div className="tooltip-wrapper">
                           <button
                             onClick={handlePaste}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 transition duration-200 hover:bg-white/10 hover:text-white"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-200/40 text-zinc-600 transition duration-200 hover:bg-zinc-200 hover:text-zinc-900"
                           >
                             <ClipboardPaste className="h-3.5 w-3.5" />
                           </button>
                           <div className="tooltip-box-bottom">
-                            <div className="tooltip-arrow z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-white/10 bg-zinc-900" />
-                            <div className="whitespace-nowrap rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-white shadow-xl">
+                            <div className="tooltip-arrow z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-[#d5dee9] bg-white" />
+                            <div className="whitespace-nowrap rounded-md border border-[#d5dee9] bg-white px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-zinc-700 shadow-xl">
                               PASTE FROM CLIPBOARD
                             </div>
                           </div>
@@ -1717,13 +1723,13 @@ function IntroPageContent() {
                         <div className="tooltip-wrapper">
                           <button
                             onClick={handleRemove}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 transition duration-200 hover:bg-rose-500/20 hover:text-rose-400"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-200/40 text-zinc-600 transition duration-200 hover:bg-rose-500/10 hover:text-rose-600"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                           <div className="tooltip-box-bottom tooltip-align-right">
-                            <div className="tooltip-arrow z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-rose-500/20 bg-zinc-900" />
-                            <div className="whitespace-nowrap rounded-md border border-rose-500/20 bg-zinc-900 px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-rose-400 shadow-xl">
+                            <div className="tooltip-arrow z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-rose-200 bg-white" />
+                            <div className="whitespace-nowrap rounded-md border border-rose-200 bg-white px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-rose-600 shadow-xl">
                               REMOVE THREAD CONTENT
                             </div>
                           </div>
@@ -1734,17 +1740,17 @@ function IntroPageContent() {
                       <div className="tooltip-wrapper">
                         <button
                           onClick={handleCopyHtml}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-white/60 transition duration-200 hover:bg-white/10 hover:text-white"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-200/40 text-zinc-600 transition duration-200 hover:bg-zinc-200 hover:text-zinc-900"
                         >
                           {copiedHtml ? (
-                            <Check className="h-3.5 w-3.5 text-emerald-400" />
+                            <Check className="h-3.5 w-3.5 text-emerald-600" />
                           ) : (
                             <Copy className="h-3.5 w-3.5" />
                           )}
                         </button>
                         <div className="tooltip-box-bottom tooltip-align-right">
-                          <div className="tooltip-arrow z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-white/10 bg-zinc-900" />
-                          <div className="whitespace-nowrap rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-white shadow-xl">
+                          <div className="tooltip-arrow z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-[#d5dee9] bg-white" />
+                          <div className="whitespace-nowrap rounded-md border border-[#d5dee9] bg-white px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-zinc-700 shadow-xl">
                             {copiedHtml
                               ? "COPIED PREVIEW HTML"
                               : "COPY PREVIEW HTML"}
@@ -1758,25 +1764,27 @@ function IntroPageContent() {
                 {/* Tab content area */}
                 <TabsContent
                   value="edit"
-                  className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+                  className="flex min-h-0 flex-1 flex-col bg-[#f5f7fb] data-[state=inactive]:hidden p-4"
                 >
-                  <textarea
-                    value={sharedText}
-                    onChange={handleTextChange}
-                    placeholder="Type, paste, or telemetry sync here..."
-                    className="w-full flex-1 resize-none border-0 bg-transparent p-6 font-mono text-sm leading-relaxed text-white/95 placeholder-white/20 outline-none focus:ring-0"
-                  />
+                  <div className="flex-1 flex flex-col rounded-2xl border border-[#d5dee9] bg-white p-6 text-left text-zinc-900 shadow-sm overflow-hidden">
+                    <textarea
+                      value={sharedText}
+                      onChange={handleTextChange}
+                      placeholder="Type, paste, or telemetry sync here..."
+                      className="w-full flex-1 resize-none border-0 bg-white font-mono text-sm leading-relaxed text-zinc-900 placeholder-zinc-400 outline-none focus:ring-0"
+                    />
+                  </div>
                 </TabsContent>
 
                 <TabsContent
                   value="preview"
-                  className="relative flex min-h-0 flex-1 flex-col bg-transparent data-[state=inactive]:hidden"
+                  className="relative flex min-h-0 flex-1 flex-col bg-[#f5f7fb] data-[state=inactive]:hidden"
                 >
                   {sharedText ? (
-                    <ScrollArea className="min-h-0 w-full flex-1 bg-transparent">
+                    <ScrollArea className="min-h-0 w-full flex-1">
                       <div
                         ref={previewRef}
-                        className="m-4 min-h-[calc(100%-2rem)] rounded-2xl border border-zinc-200 bg-white p-8 text-left text-zinc-900 shadow-lg"
+                        className="m-4 min-h-[calc(100%-2rem)] rounded-2xl border border-[#d5dee9] bg-white p-8 text-left text-zinc-900 shadow-sm"
                       >
                         <MarkdownContent
                           content={sharedText}
@@ -1786,9 +1794,9 @@ function IntroPageContent() {
                       <ScrollBar orientation="horizontal" />
                     </ScrollArea>
                   ) : (
-                    <div className="absolute left-0 right-0 top-0 p-6 text-left font-mono text-sm leading-relaxed text-white/30">
+                    <div className="absolute left-0 right-0 top-0 p-6 text-left font-mono text-sm leading-relaxed text-zinc-400">
                       <p>No content to preview.</p>
-                      <p className="mt-1 text-xs text-white/20">
+                      <p className="mt-1 text-xs text-zinc-300">
                         Write or paste text in the Markdown tab first.
                       </p>
                     </div>

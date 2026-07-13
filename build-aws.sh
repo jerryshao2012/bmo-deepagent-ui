@@ -68,14 +68,20 @@ cd "$SCRIPT_DIR"
 ECR_URL="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 IMAGE_TAG="$ECR_URL/$ECR_REPO_NAME:latest"
 
+# Ensure container service is started
+if ! container system status &>/dev/null; then
+  echo "🚀 Container system is not running. Auto-starting..."
+  container system start --disable-kernel-install
+fi
+
 echo "🔨 Building Docker image ($IMAGE_TAG)..."
-docker build --platform linux/amd64 -f Dockerfile-aws -t "$IMAGE_TAG" .
+container build --progress plain --platform linux/amd64 -f Dockerfile-aws -t "$IMAGE_TAG" .
 
 echo "🔑 Logging in to AWS ECR..."
-aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_URL"
+aws ecr get-login-password --region "$AWS_REGION" | container registry login --username AWS --password-stdin "$ECR_URL"
 
 echo "⬆️  Pushing image to ECR..."
-docker push "$IMAGE_TAG"
+container image push "$IMAGE_TAG"
 echo "✅ Image built and pushed successfully"
 end_step
 

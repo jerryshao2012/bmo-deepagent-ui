@@ -274,7 +274,15 @@ EOF
     "TargetOriginId": "ALB-Origin",
     "ViewerProtocolPolicy": "redirect-to-https",
     "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
-    "OriginRequestPolicyId": "216adef6-5c7f-47e4-b989-5492eafa07d3"
+    "OriginRequestPolicyId": "216adef6-5c7f-47e4-b989-5492eafa07d3",
+    "AllowedMethods": {
+      "Quantity": 7,
+      "Items": ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"],
+      "CachedMethods": {
+        "Quantity": 2,
+        "Items": ["GET", "HEAD"]
+      }
+    }
   },
   "Comment": "CloudFront for ${APP_NAME}",
   "Enabled": true
@@ -283,6 +291,46 @@ EOF
     CF_DOMAIN=$(aws cloudfront create-distribution --distribution-config "file://$CF_CONFIG_FILE" --query "Distribution.DomainName" --output text)
     rm -f "$CF_CONFIG_FILE"
   else
+    echo "ℹ️  Found existing CloudFront Distribution ID: $CF_ID. Checking and updating AllowedMethods configuration..."
+    # Get the configuration and ETag
+    CF_CONFIG_JSON=$(aws cloudfront get-distribution-config --id "$CF_ID" --output json)
+    ETAG=$(echo "$CF_CONFIG_JSON" | grep -o '"ETag": "[^"]*' | cut -d'"' -f4 || echo "")
+    if [ -z "$ETAG" ]; then
+      ETAG=$(aws cloudfront get-distribution-config --id "$CF_ID" --query "ETag" --output text)
+    fi
+    
+    # Extract DistributionConfig
+    DIST_CONFIG=$(aws cloudfront get-distribution-config --id "$CF_ID" --query "DistributionConfig" --output json)
+    
+    # Check if AllowedMethods supports POST
+    HAS_POST=$(echo "$DIST_CONFIG" | grep -i '"POST"' || echo "")
+    
+    if [ -z "$HAS_POST" ]; then
+      echo "🔧 Updating AllowedMethods to allow POST, PUT, DELETE, PATCH, OPTIONS..."
+      UPDATED_CONFIG_FILE=$(mktemp)
+      echo "$DIST_CONFIG" | node -e '
+        const fs = require("fs");
+        const input = fs.readFileSync(0, "utf-8");
+        const config = JSON.parse(input);
+        config.DefaultCacheBehavior.AllowedMethods = {
+          Quantity: 7,
+          Items: ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"],
+          CachedMethods: {
+            Quantity: 2,
+            Items: ["GET", "HEAD"]
+          }
+        };
+        console.log(JSON.stringify(config, null, 2));
+      ' > "$UPDATED_CONFIG_FILE"
+      
+      echo "📤 Applying distribution configuration update..."
+      aws cloudfront update-distribution --id "$CF_ID" --distribution-config "file://$UPDATED_CONFIG_FILE" --if-match "$ETAG" >/dev/null
+      rm -f "$UPDATED_CONFIG_FILE"
+      echo "✅ CloudFront AllowedMethods updated successfully."
+    else
+      echo "✅ CloudFront already supports POST requests."
+    fi
+    
     CF_DOMAIN=$(aws cloudfront get-distribution --id "$CF_ID" --query "Distribution.DomainName" --output text)
   fi
   echo "✅ CloudFront configured. Domain: https://$CF_DOMAIN"

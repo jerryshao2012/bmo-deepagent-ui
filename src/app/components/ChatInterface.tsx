@@ -49,7 +49,10 @@ import { WikiTreeViewer } from "@/app/components/WikiTreeViewer";
 import WikiGraphViewer from "@/app/components/WikiGraphViewer";
 import { useThreadStatus } from "@/app/hooks/useThreads";
 import { useQueryState } from "nuqs";
-import { DocumentViewerPanel, type DocumentViewerState } from "@/app/components/viewers/DocumentViewerPanel";
+import {
+  DocumentViewerPanel,
+  type DocumentViewerState,
+} from "@/app/components/viewers/DocumentViewerPanel";
 import { FileViewPanel } from "@/app/components/FileViewPanel";
 import type { FileItem } from "@/app/types/types";
 import {
@@ -118,7 +121,9 @@ const getStatusIcon = (status: TodoItem["status"], className?: string) => {
 
 export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [currentThreadId, setCurrentThreadId] = useQueryState("threadId");
-  const [metaOpen, setMetaOpen] = useState<"tasks" | "files" | "documents" | "wiki" | null>(null);
+  const [metaOpen, setMetaOpen] = useState<
+    "tasks" | "files" | "documents" | "wiki" | null
+  >(null);
   const [skillsDrawerOpen, setSkillsDrawerOpen] = useState(false);
   const tasksContainerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -139,6 +144,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     messageTimings,
     processingHumanMessageId,
     streamError,
+    clearStreamError,
     setFiles,
     isLoading,
     isThreadLoading,
@@ -155,12 +161,15 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   } = useThreadStatus(currentThreadId);
 
   const client = useClient();
-  const [documents, setDocuments] = useState<Array<{ name: string; size: number }>>([]);
+  const [documents, setDocuments] = useState<
+    Array<{ name: string; size: number }>
+  >([]);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounterRef = useRef(0);
-  const [documentViewerState, setDocumentViewerState] = useState<DocumentViewerState | null>(null);
+  const [documentViewerState, setDocumentViewerState] =
+    useState<DocumentViewerState | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
 
   // Toggle skills drawer with Cmd+K / Ctrl+K
@@ -204,7 +213,6 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     textarea.style.height = `${Math.min(scrollHeight, 240)}px`;
   }, [input]);
 
-
   const handleDocumentClick = useCallback(
     (filePath: string, page?: number, slide?: number, quote?: string) => {
       setSelectedFile(null); // Clear selected file when opening a document
@@ -222,7 +230,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [ingestProgress, setIngestProgress] = useState<number | null>(null);
   const [ingestPhase, setIngestPhase] = useState<string | null>(null);
   const [ingestDetail, setIngestDetail] = useState<string | null>(null);
-  const [ingestCurrentSource, setIngestCurrentSource] = useState<string | null>(null);
+  const [ingestCurrentSource, setIngestCurrentSource] = useState<string | null>(
+    null
+  );
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestError, setIngestError] = useState<string | null>(null);
   const sseAbortRef = useRef<AbortController | null>(null);
@@ -257,7 +267,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   // Tracks a pending doc_folder that couldn't be set via updateState
   // because the thread had no graph_id yet (no runs). It will be included
   // in the first sendMessage call instead.
-  const pendingDocFolderRef = useRef<{ threadId: string; docFolder: string } | null>(null);
+  const pendingDocFolderRef = useRef<{
+    threadId: string;
+    docFolder: string;
+  } | null>(null);
 
   // Open an SSE stream for real-time ingest progress.
   const startIngestProgressStream = useCallback((threadId: string) => {
@@ -283,7 +296,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           `${deploymentUrl}/threads/${threadId}/wiki/progress`,
           { headers: { "X-API-Key": token }, signal: controller.signal }
         );
-        if (!response.ok || !response.body) { setIsIngesting(false); return; }
+        if (!response.ok || !response.body) {
+          setIsIngesting(false);
+          return;
+        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -306,7 +322,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
               if (eventType === "end") {
                 if (payload.phase === "error" || payload.error) {
                   setIngestError(
-                    payload.error || payload.detail || "Ingest failed with an unknown error."
+                    payload.error ||
+                      payload.detail ||
+                      "Ingest failed with an unknown error."
                   );
                   setIngestProgress(-1);
                   setIngestPhase("error");
@@ -324,7 +342,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                 // Keep-alive ping — silently ignored.
                 continue;
               }
-              setIngestProgress(typeof payload.progress === "number" ? payload.progress : null);
+              setIngestProgress(
+                typeof payload.progress === "number" ? payload.progress : null
+              );
               setIngestPhase(payload.phase ?? "processing");
               setIngestDetail(payload.detail ?? null);
               setIngestCurrentSource(payload.current_source ?? null);
@@ -334,7 +354,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                 ingestStartRef.current = Date.now();
               }
               setIsIngesting(true);
-            } catch { /* ignore malformed frames */ }
+            } catch {
+              /* ignore malformed frames */
+            }
           }
         }
       } catch (err: unknown) {
@@ -412,7 +434,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     const timer = setInterval(() => {
       if (ingestStartRef.current != null) {
         setIngestElapsed(
-          (Date.now() - ingestStartRef.current) / 1000 + elapsedAnchorRef.current
+          (Date.now() - ingestStartRef.current) / 1000 +
+            elapsedAnchorRef.current
         );
       }
     }, 50);
@@ -452,7 +475,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         const token = getBrowserSessionToken();
 
         const response = await fetch(
-          `${deploymentUrl.replace(/\/+$/, "")}/documents/list?folder=threads/${threadIdAtStart}`,
+          `${deploymentUrl.replace(
+            /\/+$/,
+            ""
+          )}/documents/list?folder=threads/${threadIdAtStart}`,
           {
             headers: {
               "X-API-Key": token,
@@ -556,7 +582,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           );
           throw new Error(
             "Cannot upload files yet — this thread has no assigned graph ID. " +
-            "Please send a message to start a conversation first, then try uploading again.",
+              "Please send a message to start a conversation first, then try uploading again.",
             { cause: e }
           );
         }
@@ -572,13 +598,16 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       const deploymentUrl = appConfig?.deploymentUrl || "";
       const token = getBrowserSessionToken();
 
-      const response = await fetch(`${deploymentUrl.replace(/\/+$/, "")}/documents/upload`, {
-        method: "POST",
-        headers: {
-          "X-API-Key": token,
-        },
-        body: formData,
-      });
+      const response = await fetch(
+        `${deploymentUrl.replace(/\/+$/, "")}/documents/upload`,
+        {
+          method: "POST",
+          headers: {
+            "X-API-Key": token,
+          },
+          body: formData,
+        }
+      );
 
       if (!response.ok) {
         let detail = `HTTP ${response.status}`;
@@ -592,7 +621,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       }
 
       // Parse upload response to detect auto-triggered wiki ingest.
-      let uploadResult: { wiki_ingest_started?: boolean; wiki_ingest_thread_id?: string } = {};
+      let uploadResult: {
+        wiki_ingest_started?: boolean;
+        wiki_ingest_thread_id?: string;
+      } = {};
       try {
         uploadResult = await response.json();
       } catch {
@@ -609,7 +641,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       } catch (e) {
         // updateState fails when the thread has no graph_id yet (no runs).
         // Store it as pending so it gets included in the first sendMessage call.
-        console.warn("Failed to set doc_folder in thread state (will retry on first message):", e);
+        console.warn(
+          "Failed to set doc_folder in thread state (will retry on first message):",
+          e
+        );
         pendingDocFolderRef.current = {
           threadId: activeThreadId,
           docFolder: `docs/threads/${activeThreadId}`,
@@ -635,7 +670,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       startIngestProgressStream(activeThreadId);
     } catch (error) {
       console.error("Failed to upload files:", error);
-      alert(`Upload failed: ${error instanceof Error ? error.message : String(error)}`);
+      alert(
+        `Upload failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     } finally {
       setIsUploading(false);
     }
@@ -658,7 +697,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       const token = getBrowserSessionToken();
 
       const response = await fetch(
-        `${deploymentUrl.replace(/\/+$/, "")}/documents/${encodeURIComponent(filename)}?folder=threads/${currentThreadId}`,
+        `${deploymentUrl.replace(/\/+$/, "")}/documents/${encodeURIComponent(
+          filename
+        )}?folder=threads/${currentThreadId}`,
         {
           method: "DELETE",
           headers: {
@@ -674,7 +715,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       fetchDocuments(currentThreadId);
     } catch (error) {
       console.error("Failed to delete document:", error);
-      alert(`Delete failed: ${error instanceof Error ? error.message : String(error)}`);
+      alert(
+        `Delete failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   };
 
@@ -753,7 +798,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     isUploading ||
     isIngesting;
   const showRunningMode =
-    isLoading || isSelectedThreadBusy || isResolvingSelectedThreadStatus || isIngesting;
+    isLoading ||
+    isSelectedThreadBusy ||
+    isResolvingSelectedThreadStatus ||
+    isIngesting;
 
   // ── Drag-and-drop handlers ──────────────────────────────────────────────
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -825,7 +873,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       sendMessage(messageText, stateUpdates);
       setInput("");
     },
-    [input, composerLocked, sendMessage, setInput, webSearchEnabled, currentThreadId]
+    [
+      input,
+      composerLocked,
+      sendMessage,
+      setInput,
+      webSearchEnabled,
+      currentThreadId,
+    ]
   );
 
   const handleKeyDown = useCallback(
@@ -1003,8 +1058,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
 
   const verificationRound = useMemo(() => {
     if (!verificationTodo) return null;
-    const match = verificationTodo.content.match(/round\s*(\d+)\s*(?:of|of)\s*(\d+)/i);
-    if (match) return { current: parseInt(match[1]), total: parseInt(match[2]) };
+    const match = verificationTodo.content.match(
+      /round\s*(\d+)\s*(?:of|of)\s*(\d+)/i
+    );
+    if (match)
+      return { current: parseInt(match[1]), total: parseInt(match[2]) };
     return { current: 1, total: 2 };
   }, [verificationTodo]);
 
@@ -1029,12 +1087,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     );
     const secs = (latest.durationMs || 0) / 1000;
     return isNaN(secs) ? null : secs;
-  }, [
-    messageTimings,
-    liveElapsedMs,
-    hasRunningTasks,
-    chatElapsedSeconds,
-  ]);
+  }, [messageTimings, liveElapsedMs, hasRunningTasks, chatElapsedSeconds]);
 
   const durationByMessageId = useMemo(() => {
     const durations: Record<string, number> = {};
@@ -1131,7 +1184,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-xl border-2 border-dashed border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] backdrop-blur-[1px]">
           <div className="flex flex-col items-center gap-2 rounded-xl bg-background/90 px-8 py-6 shadow-lg">
-            <Paperclip size={32} className="text-[var(--color-primary)]" />
+            <Paperclip
+              size={32}
+              className="text-[var(--color-primary)]"
+            />
             <span className="text-sm font-semibold text-foreground">
               Drop files to upload
             </span>
@@ -1142,737 +1198,824 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         </div>
       )}
       <ResizablePanelGroup direction="horizontal">
-        <ResizablePanel id="chat-content" order={1} defaultSize={documentViewerState || selectedFile ? 60 : 100} className="relative flex flex-col min-w-0">
-      <div
-        className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
-        ref={scrollRef}
-      >
-        <div
-          className="mx-auto w-full max-w-[1024px] px-6 pb-6 pt-4"
-          ref={contentRef}
+        <ResizablePanel
+          id="chat-content"
+          order={1}
+          defaultSize={documentViewerState || selectedFile ? 60 : 100}
+          className="relative flex min-w-0 flex-col"
         >
-          {isThreadLoading ? (
-            <div className="flex flex-col gap-4 p-4">
-              {/* Assistant message skeleton */}
-              <div className="flex w-full gap-3">
-                <div className="h-8 w-8 flex-shrink-0 rounded-full skeleton-shimmer" />
-                <div className="flex flex-1 flex-col gap-2">
-                  <div className="h-4 w-3/4 rounded-md skeleton-shimmer" />
-                  <div className="h-4 w-1/2 rounded-md skeleton-shimmer" />
-                  <div className="h-4 w-2/3 rounded-md skeleton-shimmer" />
-                </div>
-              </div>
-              {/* User message skeleton */}
-              <div className="flex w-full flex-row-reverse">
-                <div className="w-[70%] max-w-[400px]">
-                  <div className="h-20 rounded-xl rounded-br-none skeleton-shimmer" />
-                </div>
-              </div>
-              {/* Assistant message skeleton */}
-              <div className="flex w-full gap-3">
-                <div className="h-8 w-8 flex-shrink-0 rounded-full skeleton-shimmer" />
-                <div className="flex flex-1 flex-col gap-2">
-                  <div className="h-4 w-full rounded-md skeleton-shimmer" />
-                  <div className="h-4 w-5/6 rounded-md skeleton-shimmer" />
-                </div>
-              </div>
-            </div>
-          ) : streamError ? (
-            <div className="mx-auto mb-4 max-w-[1024px] rounded-lg border border-red-200 bg-red-50 p-4">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
-                <div className="flex-1 overflow-hidden">
-                  <h3 className="mb-1 text-sm font-semibold text-red-800">
-                    Backend Error
-                  </h3>
-                  <div className="max-h-96 overflow-y-auto rounded-md bg-red-100 p-3">
-                    <pre className="whitespace-pre-wrap break-all text-xs text-red-900">
-                      {streamError.message || String(streamError)}
-                    </pre>
+          <div
+            className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+            ref={scrollRef}
+          >
+            <div
+              className="mx-auto w-full max-w-[1024px] px-6 pb-6 pt-4"
+              ref={contentRef}
+            >
+              {isThreadLoading ? (
+                <div className="flex flex-col gap-4 p-4">
+                  {/* Assistant message skeleton */}
+                  <div className="flex w-full gap-3">
+                    <div className="skeleton-shimmer h-8 w-8 flex-shrink-0 rounded-full" />
+                    <div className="flex flex-1 flex-col gap-2">
+                      <div className="skeleton-shimmer h-4 w-3/4 rounded-md" />
+                      <div className="skeleton-shimmer h-4 w-1/2 rounded-md" />
+                      <div className="skeleton-shimmer h-4 w-2/3 rounded-md" />
+                    </div>
+                  </div>
+                  {/* User message skeleton */}
+                  <div className="flex w-full flex-row-reverse">
+                    <div className="w-[70%] max-w-[400px]">
+                      <div className="skeleton-shimmer h-20 rounded-xl rounded-br-none" />
+                    </div>
+                  </div>
+                  {/* Assistant message skeleton */}
+                  <div className="flex w-full gap-3">
+                    <div className="skeleton-shimmer h-8 w-8 flex-shrink-0 rounded-full" />
+                    <div className="flex flex-1 flex-col gap-2">
+                      <div className="skeleton-shimmer h-4 w-full rounded-md" />
+                      <div className="skeleton-shimmer h-4 w-5/6 rounded-md" />
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          ) : (
-            <>
-              {processedMessages.map((data, index) => {
-                const messageUi = ui?.filter(
-                  (u: any) => u.metadata?.message_id === data.message.id
-                );
-                const isLastMessage = index === processedMessages.length - 1;
-                return (
-                  <ChatMessage
-                    key={data.message.id}
-                    message={data.message}
-                    durationSeconds={
-                      data.message.type === "ai" && data.message.id
-                        ? durationByMessageId[data.message.id]
-                        : undefined
-                    }
-                    isProcessing={
-                      data.message.type === "human" &&
-                      typeof data.message.id === "string" &&
-                      data.message.id === processingHumanMessageId
-                    }
-                    toolCalls={data.toolCalls}
-                    isLoading={isLoading}
-                    actionRequestsMap={
-                      isLastMessage ? actionRequestsMap : undefined
-                    }
-                    reviewConfigsMap={
-                      isLastMessage ? reviewConfigsMap : undefined
-                    }
-                    ui={messageUi}
-                    stream={stream}
-                    onResumeInterrupt={resumeInterrupt}
-                    graphId={assistant?.graph_id}
-                    onDocumentClick={handleDocumentClick}
-                  />
-                );
-              })}
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="flex-shrink-0 bg-background">
-        <div
-          className={cn(
-            "mx-4 mb-6 flex flex-shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-background",
-            "mx-auto w-[calc(100%-32px)] max-w-[1024px] transition-colors duration-200 ease-in-out"
-          )}
-        >
-          {(hasTasks || hasFiles || documents.length > 0) && (
-            <div className="flex max-h-96 flex-col overflow-y-auto border-b border-border bg-sidebar empty:hidden">
-              {!metaOpen && (
+              ) : (
                 <>
-                  {verificationTodo && (
-                    <div className="flex items-center gap-3 border-b border-border/50 bg-accent/30 px-[18px] py-2.5">
-                      <Search className="h-4 w-4 flex-shrink-0 text-primary animate-pulse" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate text-sm font-medium text-foreground">
-                            {verificationTodo.content}
-                          </span>
-                          {verificationRound && (
-                            <span className="flex-shrink-0 text-xs text-muted-foreground tabular-nums">
-                              Round {verificationRound.current} of {verificationRound.total}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted">
-                          <div
-                            className="h-full rounded-full bg-primary transition-all duration-700 ease-in-out"
-                            style={{
-                              width: verificationRound
-                                ? `${(verificationRound.current / verificationRound.total) * 100}%`
-                                : "50%",
-                            }}
-                          />
+                  {streamError && (
+                    <div className="mx-auto mb-4 max-w-[1024px] rounded-lg border border-red-200 bg-red-50 p-4">
+                      <div className="flex items-start gap-3">
+                        <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
+                        <div className="flex-1 overflow-hidden">
+                          <h3 className="mb-1 text-sm font-semibold text-red-800">
+                            {streamError.name === "RateLimitError"
+                              ? "Rate Limit Reached"
+                              : "Backend Error"}
+                          </h3>
+                          <div className="max-h-96 overflow-y-auto rounded-md bg-red-100 p-3">
+                            <pre className="whitespace-pre-wrap break-all text-xs text-red-900">
+                              {streamError.message || String(streamError)}
+                            </pre>
+                          </div>
+                          <div className="mt-3 flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={clearStreamError}
+                              className="border-red-200 bg-white text-red-700 hover:bg-red-50"
+                            >
+                              Dismiss
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>
                   )}
-                  {(() => {
-                    const activeTask = displayTodos.find(
-                      (t) => t.status === "in_progress"
+                  {processedMessages.map((data, index) => {
+                    const messageUi = ui?.filter(
+                      (u: any) => u.metadata?.message_id === data.message.id
                     );
-
-                    const totalTasks = displayTodos.length;
-                    const isCompleted =
-                      totalTasks > 0 &&
-                      groupedTodos.completed.length === totalTasks &&
-                      !isLoading;
-
-                    const tasksTrigger = (() => {
-                      if (!hasTasks) return null;
-                      return (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setMetaOpen((prev) =>
-                              prev === "tasks" ? null : "tasks"
-                            )
-                          }
-                          className="grid flex-1 min-w-0 cursor-pointer grid-cols-[auto_auto_1fr] items-center gap-3 px-[18px] py-3 text-left"
-                          {...getAriaExpandedProps(metaOpen === "tasks")}
-                        >
-                          {(() => {
-                            if (isCompleted) {
-                              return [
-                                <CheckCircle
-                                  key="icon"
-                                  size={16}
-                                  className="text-success/80"
-                                />,
-                                <span
-                                  key="label"
-                                  className="ml-[1px] min-w-0 truncate text-sm"
-                                >
-                                  All tasks completed.
-                                </span>,
-                                <span
-                                  key="duration"
-                                  className="min-w-0 truncate text-sm text-muted-foreground"
-                                >
-                                  {latestTurnDurationSeconds != null ? "(Total for " + latestTurnDurationSeconds.toFixed(1) + " seconds)" : ""}
-                                </span>,
-                              ];
-                            }
-
-                            if (activeTask != null) {
-                              return [
-                                <div key="icon">
-                                  {getStatusIcon(activeTask.status)}
-                                </div>,
-                                <span
-                                  key="label"
-                                  className="ml-[1px] min-w-0 truncate text-sm"
-                                >
-                                  Task{" "}
-                                  {totalTasks - groupedTodos.pending.length} of{" "}
-                                  {totalTasks}
-                                </span>,
-                                <div
-                                  key="content"
-                                  className="flex min-w-0 items-center justify-between gap-2"
-                                >
-                                  <span className="min-w-0 truncate text-sm text-muted-foreground">
-                                    {activeTask.content}
-                                  </span>
-                                  {hasRunningTasks && latestTurnDurationSeconds != null && (
-                                    <span className="whitespace-nowrap text-xs text-muted-foreground">
-                                      {latestTurnDurationSeconds.toFixed(1)}s
-                                    </span>
-                                  )}
-                                </div>,
-                              ];
-                            }
-
-                            return [
-                              <Circle
-                                key="icon"
-                                size={16}
-                                className="text-muted-foreground/70"
-                              />,
-                              <span
-                                key="label"
-                                className="ml-[1px] min-w-0 truncate text-sm"
-                              >
-                                Task {totalTasks - groupedTodos.pending.length}{" "}
-                                of {totalTasks}
-                              </span>,
-                            ];
-                          })()}
-                        </button>
-                      );
-                    })();
-
-                    const filesTrigger = (() => {
-                      if (!hasFiles) return null;
-                      return (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setMetaOpen((prev) =>
-                              prev === "files" ? null : "files"
-                            )
-                          }
-                          className="flex flex-shrink-0 cursor-pointer items-center gap-2 px-[18px] py-3 text-left text-sm"
-                          {...getAriaExpandedProps(metaOpen === "files")}
-                        >
-                          <FileIcon size={16} />
-                          Files (State)
-                          <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
-                            {Object.keys(files).length}
-                          </span>
-                        </button>
-                      );
-                    })();
-
-                    const docsTrigger = (() => {
-                      if (documents.length === 0) return null;
-                      return (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setMetaOpen((prev) =>
-                              prev === "documents" ? null : "documents"
-                            )
-                          }
-                          className="flex flex-shrink-0 cursor-pointer items-center gap-2 px-[18px] py-3 text-left text-sm"
-                          {...getAriaExpandedProps(metaOpen === "documents")}
-                        >
-                          <FileText size={16} />
-                          Docs
-                          <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
-                            {documents.length}
-                          </span>
-                        </button>
-                      );
-                    })();
-
-                    const wikiTrigger = (() => {
-                      if (documents.length === 0 || !currentThreadId) return null;
-                      return (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setMetaOpen((prev) =>
-                              prev === "wiki" ? null : "wiki"
-                            )
-                          }
-                          className="flex flex-shrink-0 cursor-pointer items-center gap-2 px-[18px] py-3 text-left text-sm"
-                          {...getAriaExpandedProps(metaOpen === "wiki")}
-                        >
-                          <Database size={16} className="text-primary" />
-                          Wiki
-                          {wikiFileCount !== null && (
-                            <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
-                              {wikiFileCount}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })();
-
+                    const isLastMessage =
+                      index === processedMessages.length - 1;
                     return (
-                      <div className="flex justify-between items-center w-full min-w-0 overflow-hidden">
-                        <div className="flex-1 min-w-0">
-                          {tasksTrigger}
-                        </div>
-                        <div className="flex flex-shrink-0 items-center">
-                          {filesTrigger}
-                          {docsTrigger}
-                          {wikiTrigger}
-                        </div>
-                      </div>
+                      <ChatMessage
+                        key={data.message.id}
+                        message={data.message}
+                        durationSeconds={
+                          data.message.type === "ai" && data.message.id
+                            ? durationByMessageId[data.message.id]
+                            : undefined
+                        }
+                        isProcessing={
+                          data.message.type === "human" &&
+                          typeof data.message.id === "string" &&
+                          data.message.id === processingHumanMessageId
+                        }
+                        toolCalls={data.toolCalls}
+                        isLoading={isLoading}
+                        actionRequestsMap={
+                          isLastMessage ? actionRequestsMap : undefined
+                        }
+                        reviewConfigsMap={
+                          isLastMessage ? reviewConfigsMap : undefined
+                        }
+                        ui={messageUi}
+                        stream={stream}
+                        onResumeInterrupt={resumeInterrupt}
+                        graphId={assistant?.graph_id}
+                        onDocumentClick={handleDocumentClick}
+                      />
                     );
-                  })()}
+                  })}
                 </>
               )}
+            </div>
+          </div>
 
-              {metaOpen && (
-                <>
-                  <div className="sticky top-0 z-20 flex items-stretch bg-sidebar border-b border-border shadow-xs text-sm">
-                    {hasTasks && (
-                      <button
-                        type="button"
-                        className="py-3 pr-4 first:pl-[18px] aria-expanded:font-semibold"
-                        onClick={() =>
-                          setMetaOpen((prev) =>
-                            prev === "tasks" ? null : "tasks"
-                          )
-                        }
-                        {...getAriaExpandedProps(metaOpen === "tasks")}
-                      >
-                        Tasks
-                      </button>
-                    )}
-                    {hasFiles && (
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-2 py-3 pr-4 first:pl-[18px] aria-expanded:font-semibold"
-                        onClick={() =>
-                          setMetaOpen((prev) =>
-                            prev === "files" ? null : "files"
-                          )
-                        }
-                        {...getAriaExpandedProps(metaOpen === "files")}
-                      >
-                        Files (State)
-                        <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
-                          {Object.keys(files).length}
-                        </span>
-                      </button>
-                    )}
-                    {documents.length > 0 && (
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-2 py-3 pr-4 first:pl-[18px] aria-expanded:font-semibold"
-                        onClick={() =>
-                          setMetaOpen((prev) =>
-                            prev === "documents" ? null : "documents"
-                          )
-                        }
-                        {...getAriaExpandedProps(metaOpen === "documents")}
-                      >
-                        Documents
-                        <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
-                          {documents.length}
-                        </span>
-                      </button>
-                    )}
-                    {documents.length > 0 && currentThreadId && (
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-2 py-3 pr-4 first:pl-[18px] aria-expanded:font-semibold"
-                        onClick={() =>
-                          setMetaOpen((prev) =>
-                            prev === "wiki" ? null : "wiki"
-                          )
-                        }
-                        {...getAriaExpandedProps(metaOpen === "wiki")}
-                      >
-                        Wiki
-                        {wikiFileCount !== null && (
-                          <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
-                            {wikiFileCount}
-                          </span>
-                        )}
-                      </button>
-                    )}
-                    <button
-                      aria-label="Close"
-                      className="flex-1"
-                      onClick={() => setMetaOpen(null)}
-                    />
-                  </div>
-                  <div
-                    ref={tasksContainerRef}
-                    className="px-[18px]"
-                  >
-                    {metaOpen === "tasks" &&
-                      Object.entries(groupedTodos)
-                        .filter(([_, todos]) => todos.length > 0)
-                        .map(([status, todos]) => (
-                          <div
-                            key={status}
-                            className="mb-4"
-                          >
-                            <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-tertiary">
-                              {
-                                {
-                                  pending: "Pending",
-                                  in_progress: "In Progress",
-                                  completed: "Completed",
-                                }[status]
+          <div className="flex-shrink-0 bg-background">
+            <div
+              className={cn(
+                "mx-4 mb-6 flex flex-shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-background",
+                "mx-auto w-[calc(100%-32px)] max-w-[1024px] transition-colors duration-200 ease-in-out"
+              )}
+            >
+              {(hasTasks || hasFiles || documents.length > 0) && (
+                <div className="flex max-h-96 flex-col overflow-y-auto border-b border-border bg-sidebar empty:hidden">
+                  {!metaOpen && (
+                    <>
+                      {verificationTodo && (
+                        <div className="flex items-center gap-3 border-b border-border/50 bg-accent/30 px-[18px] py-2.5">
+                          <Search className="h-4 w-4 flex-shrink-0 animate-pulse text-primary" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="truncate text-sm font-medium text-foreground">
+                                {verificationTodo.content}
+                              </span>
+                              {verificationRound && (
+                                <span className="flex-shrink-0 text-xs tabular-nums text-muted-foreground">
+                                  Round {verificationRound.current} of{" "}
+                                  {verificationRound.total}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted">
+                              <div
+                                className="h-full rounded-full bg-primary transition-all duration-700 ease-in-out"
+                                style={{
+                                  width: verificationRound
+                                    ? `${
+                                        (verificationRound.current /
+                                          verificationRound.total) *
+                                        100
+                                      }%`
+                                    : "50%",
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {(() => {
+                        const activeTask = displayTodos.find(
+                          (t) => t.status === "in_progress"
+                        );
+
+                        const totalTasks = displayTodos.length;
+                        const isCompleted =
+                          totalTasks > 0 &&
+                          groupedTodos.completed.length === totalTasks &&
+                          !isLoading;
+
+                        const tasksTrigger = (() => {
+                          if (!hasTasks) return null;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMetaOpen((prev) =>
+                                  prev === "tasks" ? null : "tasks"
+                                )
                               }
-                            </h3>
-                            <div className="grid grid-cols-[auto_1fr] gap-3 rounded-sm p-1 pl-0 text-sm">
-                              {todos.map((todo, index) => (
-                                <Fragment key={`${status}_${todo.id}_${index}`}>
-                                  {getStatusIcon(todo.status, "mt-0.5")}
-                                  <span className="break-words text-inherit">
-                                    {todo.content}
-                                  </span>
-                                </Fragment>
+                              className="grid min-w-0 flex-1 cursor-pointer grid-cols-[auto_auto_1fr] items-center gap-3 px-[18px] py-3 text-left"
+                              {...getAriaExpandedProps(metaOpen === "tasks")}
+                            >
+                              {(() => {
+                                if (isCompleted) {
+                                  return [
+                                    <CheckCircle
+                                      key="icon"
+                                      size={16}
+                                      className="text-success/80"
+                                    />,
+                                    <span
+                                      key="label"
+                                      className="ml-[1px] min-w-0 truncate text-sm"
+                                    >
+                                      All tasks completed.
+                                    </span>,
+                                    <span
+                                      key="duration"
+                                      className="min-w-0 truncate text-sm text-muted-foreground"
+                                    >
+                                      {latestTurnDurationSeconds != null
+                                        ? "(Total for " +
+                                          latestTurnDurationSeconds.toFixed(1) +
+                                          " seconds)"
+                                        : ""}
+                                    </span>,
+                                  ];
+                                }
+
+                                if (activeTask != null) {
+                                  return [
+                                    <div key="icon">
+                                      {getStatusIcon(activeTask.status)}
+                                    </div>,
+                                    <span
+                                      key="label"
+                                      className="ml-[1px] min-w-0 truncate text-sm"
+                                    >
+                                      Task{" "}
+                                      {totalTasks - groupedTodos.pending.length}{" "}
+                                      of {totalTasks}
+                                    </span>,
+                                    <div
+                                      key="content"
+                                      className="flex min-w-0 items-center justify-between gap-2"
+                                    >
+                                      <span className="min-w-0 truncate text-sm text-muted-foreground">
+                                        {activeTask.content}
+                                      </span>
+                                      {hasRunningTasks &&
+                                        latestTurnDurationSeconds != null && (
+                                          <span className="whitespace-nowrap text-xs text-muted-foreground">
+                                            {latestTurnDurationSeconds.toFixed(
+                                              1
+                                            )}
+                                            s
+                                          </span>
+                                        )}
+                                    </div>,
+                                  ];
+                                }
+
+                                return [
+                                  <Circle
+                                    key="icon"
+                                    size={16}
+                                    className="text-muted-foreground/70"
+                                  />,
+                                  <span
+                                    key="label"
+                                    className="ml-[1px] min-w-0 truncate text-sm"
+                                  >
+                                    Task{" "}
+                                    {totalTasks - groupedTodos.pending.length}{" "}
+                                    of {totalTasks}
+                                  </span>,
+                                ];
+                              })()}
+                            </button>
+                          );
+                        })();
+
+                        const filesTrigger = (() => {
+                          if (!hasFiles) return null;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMetaOpen((prev) =>
+                                  prev === "files" ? null : "files"
+                                )
+                              }
+                              className="flex flex-shrink-0 cursor-pointer items-center gap-2 px-[18px] py-3 text-left text-sm"
+                              {...getAriaExpandedProps(metaOpen === "files")}
+                            >
+                              <FileIcon size={16} />
+                              Files (State)
+                              <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
+                                {Object.keys(files).length}
+                              </span>
+                            </button>
+                          );
+                        })();
+
+                        const docsTrigger = (() => {
+                          if (documents.length === 0) return null;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMetaOpen((prev) =>
+                                  prev === "documents" ? null : "documents"
+                                )
+                              }
+                              className="flex flex-shrink-0 cursor-pointer items-center gap-2 px-[18px] py-3 text-left text-sm"
+                              {...getAriaExpandedProps(
+                                metaOpen === "documents"
+                              )}
+                            >
+                              <FileText size={16} />
+                              Docs
+                              <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
+                                {documents.length}
+                              </span>
+                            </button>
+                          );
+                        })();
+
+                        const wikiTrigger = (() => {
+                          if (documents.length === 0 || !currentThreadId)
+                            return null;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMetaOpen((prev) =>
+                                  prev === "wiki" ? null : "wiki"
+                                )
+                              }
+                              className="flex flex-shrink-0 cursor-pointer items-center gap-2 px-[18px] py-3 text-left text-sm"
+                              {...getAriaExpandedProps(metaOpen === "wiki")}
+                            >
+                              <Database
+                                size={16}
+                                className="text-primary"
+                              />
+                              Wiki
+                              {wikiFileCount !== null && (
+                                <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
+                                  {wikiFileCount}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })();
+
+                        return (
+                          <div className="flex w-full min-w-0 items-center justify-between overflow-hidden">
+                            <div className="min-w-0 flex-1">{tasksTrigger}</div>
+                            <div className="flex flex-shrink-0 items-center">
+                              {filesTrigger}
+                              {docsTrigger}
+                              {wikiTrigger}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </>
+                  )}
+
+                  {metaOpen && (
+                    <>
+                      <div className="sticky top-0 z-20 flex items-stretch border-b border-border bg-sidebar text-sm shadow-xs">
+                        {hasTasks && (
+                          <button
+                            type="button"
+                            className="py-3 pr-4 first:pl-[18px] aria-expanded:font-semibold"
+                            onClick={() =>
+                              setMetaOpen((prev) =>
+                                prev === "tasks" ? null : "tasks"
+                              )
+                            }
+                            {...getAriaExpandedProps(metaOpen === "tasks")}
+                          >
+                            Tasks
+                          </button>
+                        )}
+                        {hasFiles && (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-2 py-3 pr-4 first:pl-[18px] aria-expanded:font-semibold"
+                            onClick={() =>
+                              setMetaOpen((prev) =>
+                                prev === "files" ? null : "files"
+                              )
+                            }
+                            {...getAriaExpandedProps(metaOpen === "files")}
+                          >
+                            Files (State)
+                            <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
+                              {Object.keys(files).length}
+                            </span>
+                          </button>
+                        )}
+                        {documents.length > 0 && (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-2 py-3 pr-4 first:pl-[18px] aria-expanded:font-semibold"
+                            onClick={() =>
+                              setMetaOpen((prev) =>
+                                prev === "documents" ? null : "documents"
+                              )
+                            }
+                            {...getAriaExpandedProps(metaOpen === "documents")}
+                          >
+                            Documents
+                            <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
+                              {documents.length}
+                            </span>
+                          </button>
+                        )}
+                        {documents.length > 0 && currentThreadId && (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-2 py-3 pr-4 first:pl-[18px] aria-expanded:font-semibold"
+                            onClick={() =>
+                              setMetaOpen((prev) =>
+                                prev === "wiki" ? null : "wiki"
+                              )
+                            }
+                            {...getAriaExpandedProps(metaOpen === "wiki")}
+                          >
+                            Wiki
+                            {wikiFileCount !== null && (
+                              <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
+                                {wikiFileCount}
+                              </span>
+                            )}
+                          </button>
+                        )}
+                        <button
+                          aria-label="Close"
+                          className="flex-1"
+                          onClick={() => setMetaOpen(null)}
+                        />
+                      </div>
+                      <div
+                        ref={tasksContainerRef}
+                        className="px-[18px]"
+                      >
+                        {metaOpen === "tasks" &&
+                          Object.entries(groupedTodos)
+                            .filter(([_, todos]) => todos.length > 0)
+                            .map(([status, todos]) => (
+                              <div
+                                key={status}
+                                className="mb-4"
+                              >
+                                <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-tertiary">
+                                  {
+                                    {
+                                      pending: "Pending",
+                                      in_progress: "In Progress",
+                                      completed: "Completed",
+                                    }[status]
+                                  }
+                                </h3>
+                                <div className="grid grid-cols-[auto_1fr] gap-3 rounded-sm p-1 pl-0 text-sm">
+                                  {todos.map((todo, index) => (
+                                    <Fragment
+                                      key={`${status}_${todo.id}_${index}`}
+                                    >
+                                      {getStatusIcon(todo.status, "mt-0.5")}
+                                      <span className="break-words text-inherit">
+                                        {todo.content}
+                                      </span>
+                                    </Fragment>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+
+                        {metaOpen === "files" && (
+                          <div className="mb-6">
+                            <FilesPopover
+                              files={files}
+                              setFiles={setFiles}
+                              editDisabled={
+                                isLoading || interrupt !== undefined
+                              }
+                              onDocumentClick={handleDocumentClick}
+                              onFileClick={handleFileClick}
+                            />
+                          </div>
+                        )}
+
+                        {metaOpen === "documents" && (
+                          <div className="mb-6">
+                            <div className="grid grid-cols-[repeat(auto-fill,minmax(256px,1fr))] gap-2">
+                              {documents.map((doc) => (
+                                <div
+                                  key={doc.name}
+                                  className="group relative flex flex-col items-center justify-center space-y-1 truncate rounded-md border border-border px-2 py-3 shadow-sm transition-colors"
+                                  style={{
+                                    backgroundColor: "var(--color-file-button)",
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleDocumentClick(`/${doc.name}`)
+                                    }
+                                    className="flex w-full cursor-pointer flex-col items-center justify-center space-y-1"
+                                    title={`View ${doc.name}`}
+                                  >
+                                    <FileText
+                                      size={24}
+                                      className="mx-auto text-muted-foreground"
+                                    />
+                                    <span className="mx-auto block w-full truncate break-words px-1 text-center text-sm leading-relaxed text-foreground">
+                                      {doc.name}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {(doc.size / 1024).toFixed(1)} KB
+                                    </span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteDocument(doc.name);
+                                    }}
+                                    className="absolute right-1.5 top-1.5 hidden items-center justify-center rounded-full bg-destructive/10 p-1 text-destructive transition-colors hover:bg-destructive/20 group-hover:flex"
+                                    title="Delete document"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           </div>
-                        ))}
-
-                    {metaOpen === "files" && (
-                      <div className="mb-6">
-                        <FilesPopover
-                          files={files}
-                          setFiles={setFiles}
-                          editDisabled={
-                            isLoading || interrupt !== undefined
-                          }
-                          onDocumentClick={handleDocumentClick}
-                          onFileClick={handleFileClick}
-                        />
-                      </div>
-                    )}
-
-                    {metaOpen === "documents" && (
-                      <div className="mb-6">
-                        <div className="grid grid-cols-[repeat(auto-fill,minmax(256px,1fr))] gap-2">
-                          {documents.map((doc) => (
-                            <div
-                              key={doc.name}
-                              className="group relative flex flex-col items-center justify-center space-y-1 truncate rounded-md border border-border px-2 py-3 shadow-sm transition-colors"
-                              style={{
-                                backgroundColor: "var(--color-file-button)",
-                              }}
-                            >
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleDocumentClick(`/${doc.name}`)
-                                }
-                                className="flex flex-col items-center justify-center space-y-1 w-full cursor-pointer"
-                                title={`View ${doc.name}`}
-                              >
-                                <FileText
-                                  size={24}
-                                  className="mx-auto text-muted-foreground"
-                                />
-                                <span className="mx-auto block w-full truncate break-words text-center text-sm leading-relaxed text-foreground px-1">
-                                  {doc.name}
-                                </span>
-                                <span className="text-[10px] text-muted-foreground">
-                                  {(doc.size / 1024).toFixed(1)} KB
-                                </span>
-                              </button>
-                              
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteDocument(doc.name);
-                                }}
-                                className="absolute top-1.5 right-1.5 hidden group-hover:flex items-center justify-center p-1 rounded-full bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
-                                title="Delete document"
-                              >
-                                <X size={14} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {metaOpen === "wiki" && documents.length > 0 && currentThreadId && (
-                      <div className="my-3 h-80 overflow-hidden rounded-md border border-border bg-card/40">
-                        <WikiTreeViewer
-                          threadId={currentThreadId}
-                          onSelectFile={handleFileClick}
-                          onFileCountChange={setWikiFileCount}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-          {(isUploading || isIngesting || ingestError) && (
-            <div className="mx-[18px] mt-4 mb-3">
-              <div className="flex justify-between items-center text-xs mb-2">
-                <div className="flex items-center gap-1.5">
-                  {ingestError ? (
-                    <>
-                      <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                      <span className="font-semibold text-red-600 dark:text-red-400 tracking-wide">
-                        Ingestion failed
-                      </span>
-                    </>
-                  ) : isUploading ? (
-                    <>
-                      <div className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
-                      <span className="font-semibold text-foreground/90 tracking-wide">Uploading document...</span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                      <span className="font-semibold text-foreground/90 tracking-wide">
-                        Ingesting documents
-                        {ingestCurrentSource ? (
-                          <span className="text-muted-foreground font-normal"> · {ingestCurrentSource}</span>
-                        ) : ingestPhase && ingestPhase !== "initializing" ? (
-                          <span className="text-muted-foreground font-normal"> · {ingestPhase.replace(/_/g, " ")}</span>
-                        ) : (
-                          <span className="text-muted-foreground font-normal"> · initializing…</span>
                         )}
-                      </span>
-                    </>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {isUploading && uploadElapsedMs > 0 && (
-                    <span className="text-[10px] text-muted-foreground tabular-nums">
-                      {(uploadElapsedMs / 1000).toFixed(3)}s
-                    </span>
-                  )}
-                  {!isUploading && !ingestError && ingestElapsed != null && (
-                    <span className="text-[10px] text-muted-foreground tabular-nums">
-                      {ingestElapsed < 60
-                        ? `${ingestElapsed.toFixed(3)}s`
-                        : `${Math.floor(ingestElapsed / 60)}m ${(ingestElapsed % 60).toFixed(3)}s`}
-                    </span>
-                  )}
-                  {!isUploading && !ingestError && ingestProgress !== null && (
-                    <span className="font-semibold text-foreground/90 tabular-nums bg-secondary/15 px-2 py-0.5 rounded text-[10px]">
-                      {ingestProgress}%
-                    </span>
-                  )}
-                </div>
-              </div>
 
-              <div className="relative w-full bg-secondary/10 dark:bg-white/5 border border-border/20 rounded-full h-3 p-[2px] overflow-hidden backdrop-blur-sm shadow-inner">
-                {isUploading ? (
-                  <div className="h-full rounded-full bg-gradient-to-r from-[#51a3d5] to-[#1155cc] dark:from-[#2dd4bf] dark:to-[#1155cc] w-full relative">
-                    <div className="absolute inset-0 progress-bar-animated rounded-full opacity-45" />
-                  </div>
-                ) : (
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-[#51a3d5] to-[#1155cc] dark:from-[#2dd4bf] dark:to-[#1155cc] transition-all duration-500 ease-out relative shadow-[0_0_8px_rgba(81,163,213,0.3)]"
-                    style={{ width: `${ingestProgress ?? 0}%` }}
-                  >
-                    <div className="absolute inset-0 progress-bar-animated rounded-full opacity-45" />
-                    {(ingestProgress ?? 0) > 0 && (
-                      <div className="absolute right-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_#fff]" />
-                    )}
-                  </div>
-                )}
-              </div>
-              {/* Detail line: shows current operation or per-source progress */}
-              {!isUploading && ingestDetail && (
-                <p className="text-[10px] text-muted-foreground mt-1.5 truncate leading-tight">
-                  {ingestDetail}
-                </p>
-              )}
-              {/* Error message box */}
-              {ingestError && (
-                <div className="mt-2 rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 px-3 py-2">
-                  <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed break-words">
-                    {ingestError}
-                  </p>
-                  <p className="text-[10px] text-red-500 dark:text-red-400 mt-1">
-                    Try uploading a smaller document or increasing WIKI_AGENT_RECURSION_LIMIT.
-                  </p>
+                        {metaOpen === "wiki" &&
+                          documents.length > 0 &&
+                          currentThreadId && (
+                            <div className="my-3 h-80 overflow-hidden rounded-md border border-border bg-card/40">
+                              <WikiTreeViewer
+                                threadId={currentThreadId}
+                                onSelectFile={handleFileClick}
+                                onFileCountChange={setWikiFileCount}
+                              />
+                            </div>
+                          )}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
-            </div>
-          )}
-          <form
-            onSubmit={handleSubmit}
-            className="flex flex-col"
-          >
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={isUploading ? "Uploading document, please wait..." : isIngesting ? "Ingesting documents, please wait..." : (showRunningMode ? "Running..." : "Write your message...")}
-              disabled={composerLocked}
-              className="font-inherit w-full resize-none border-0 bg-transparent px-[18px] pb-[13px] pt-[14px] text-sm leading-7 text-primary outline-none placeholder:text-tertiary max-h-[240px] overflow-y-auto"
-              rows={1}
-            />
-            <div className="flex justify-between gap-2 p-3">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setWebSearchEnabled((prev) => !prev)}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200",
-                    webSearchEnabled
-                      ? "border-[color-mix(in_srgb,var(--color-primary)_50%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_20%,transparent)]"
-                      : "border-border bg-transparent text-tertiary hover:bg-secondary/10 hover:text-secondary",
-                  )}
-                >
-                  <Globe size={14} className={webSearchEnabled ? "text-[var(--color-primary)]" : "text-tertiary"} />
-                  <span>Search</span>
-                </button>
-                <span className="self-center text-xxs italic text-[color:color-mix(in_srgb,var(--color-text-tertiary)_72%,white)]">
-                  <b className="text-inherit">Enter</b> to send, {" "}
-                  <b className="text-inherit">Shift+Enter</b> for new line
-                </span>
-              </div>
-              <div className="flex justify-end gap-2">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  multiple
-                  className="hidden"
-                />
-                {input.trim() && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInput("");
-                      setTimeout(() => textareaRef.current?.focus(), 50);
-                    }}
-                    disabled={composerLocked}
-                    title="Clear input text"
-                    className={cn(
-                      "flex items-center justify-center rounded-full p-2 transition-all duration-200 border border-transparent",
-                      composerLocked
-                        ? "text-tertiary/40 cursor-not-allowed"
-                        : "text-tertiary hover:text-destructive hover:bg-destructive/10"
+              {(isUploading || isIngesting || ingestError) && (
+                <div className="mx-[18px] mb-3 mt-4">
+                  <div className="mb-2 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5">
+                      {ingestError ? (
+                        <>
+                          <div className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                          <span className="font-semibold tracking-wide text-red-600 dark:text-red-400">
+                            Ingestion failed
+                          </span>
+                        </>
+                      ) : isUploading ? (
+                        <>
+                          <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-secondary" />
+                          <span className="font-semibold tracking-wide text-foreground/90">
+                            Uploading document...
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="h-1.5 w-1.5 animate-ping rounded-full bg-emerald-400" />
+                          <span className="font-semibold tracking-wide text-foreground/90">
+                            Ingesting documents
+                            {ingestCurrentSource ? (
+                              <span className="font-normal text-muted-foreground">
+                                {" "}
+                                · {ingestCurrentSource}
+                              </span>
+                            ) : ingestPhase &&
+                              ingestPhase !== "initializing" ? (
+                              <span className="font-normal text-muted-foreground">
+                                {" "}
+                                · {ingestPhase.replace(/_/g, " ")}
+                              </span>
+                            ) : (
+                              <span className="font-normal text-muted-foreground">
+                                {" "}
+                                · initializing…
+                              </span>
+                            )}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isUploading && uploadElapsedMs > 0 && (
+                        <span className="text-[10px] tabular-nums text-muted-foreground">
+                          {(uploadElapsedMs / 1000).toFixed(3)}s
+                        </span>
+                      )}
+                      {!isUploading &&
+                        !ingestError &&
+                        ingestElapsed != null && (
+                          <span className="text-[10px] tabular-nums text-muted-foreground">
+                            {ingestElapsed < 60
+                              ? `${ingestElapsed.toFixed(3)}s`
+                              : `${Math.floor(ingestElapsed / 60)}m ${(
+                                  ingestElapsed % 60
+                                ).toFixed(3)}s`}
+                          </span>
+                        )}
+                      {!isUploading &&
+                        !ingestError &&
+                        ingestProgress !== null && (
+                          <span className="bg-secondary/15 rounded px-2 py-0.5 text-[10px] font-semibold tabular-nums text-foreground/90">
+                            {ingestProgress}%
+                          </span>
+                        )}
+                    </div>
+                  </div>
+
+                  <div className="bg-secondary/10 relative h-3 w-full overflow-hidden rounded-full border border-border/20 p-[2px] shadow-inner backdrop-blur-sm dark:bg-white/5">
+                    {isUploading ? (
+                      <div className="relative h-full w-full rounded-full bg-gradient-to-r from-[#51a3d5] to-[#1155cc] dark:from-[#2dd4bf] dark:to-[#1155cc]">
+                        <div className="progress-bar-animated absolute inset-0 rounded-full opacity-45" />
+                      </div>
+                    ) : (
+                      <div
+                        className="relative h-full rounded-full bg-gradient-to-r from-[#51a3d5] to-[#1155cc] shadow-[0_0_8px_rgba(81,163,213,0.3)] transition-all duration-500 ease-out dark:from-[#2dd4bf] dark:to-[#1155cc]"
+                        style={{ width: `${ingestProgress ?? 0}%` }}
+                      >
+                        <div className="progress-bar-animated absolute inset-0 rounded-full opacity-45" />
+                        {(ingestProgress ?? 0) > 0 && (
+                          <div className="absolute right-0.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-white shadow-[0_0_8px_#fff]" />
+                        )}
+                      </div>
                     )}
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleAttachClick}
-                  disabled={composerLocked || isUploading}
-                  title={isUploading ? "Uploading..." : "Attach files"}
-                  className={cn(
-                    "flex items-center justify-center rounded-full p-2 transition-all duration-200 border border-transparent",
-                    composerLocked || isUploading
-                      ? "text-tertiary/40 cursor-not-allowed"
-                      : "text-tertiary hover:text-primary hover:bg-secondary/10"
+                  </div>
+                  {/* Detail line: shows current operation or per-source progress */}
+                  {!isUploading && ingestDetail && (
+                    <p className="mt-1.5 truncate text-[10px] leading-tight text-muted-foreground">
+                      {ingestDetail}
+                    </p>
                   )}
-                >
-                  <Paperclip size={18} className={isUploading ? "animate-pulse" : ""} />
-                </button>
-                <Button
-                  type={isLoading ? "button" : "submit"}
-                  variant={isLoading ? "destructive" : "default"}
-                  onClick={isLoading ? stopStream : handleSubmit}
-                  disabled={
-                    !isLoading &&
-                    (composerLocked || showRunningMode || !input.trim())
+                  {/* Error message box */}
+                  {ingestError && (
+                    <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 dark:border-red-800 dark:bg-red-950/30">
+                      <p className="break-words text-xs leading-relaxed text-red-700 dark:text-red-300">
+                        {ingestError}
+                      </p>
+                      <p className="mt-1 text-[10px] text-red-500 dark:text-red-400">
+                        Try uploading a smaller document or increasing
+                        WIKI_AGENT_RECURSION_LIMIT.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+              <form
+                onSubmit={handleSubmit}
+                className="flex flex-col"
+              >
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={
+                    isUploading
+                      ? "Uploading document, please wait..."
+                      : isIngesting
+                      ? "Ingesting documents, please wait..."
+                      : showRunningMode
+                      ? "Running..."
+                      : "Write your message..."
                   }
-                >
-                  {isLoading ? (
-                    <>
-                      <Square size={14} />
-                      <span>Stop</span>
-                    </>
-                  ) : showRunningMode ? (
-                    <>
-                      <Clock size={14} />
-                      <span>Running</span>
-                    </>
-                  ) : (
-                    <>
-                      <ArrowUp size={18} />
-                      <span>Send</span>
-                    </>
-                  )}
-                </Button>
-              </div>
+                  disabled={composerLocked}
+                  className="font-inherit max-h-[240px] w-full resize-none overflow-y-auto border-0 bg-transparent px-[18px] pb-[13px] pt-[14px] text-sm leading-7 text-primary outline-none placeholder:text-tertiary"
+                  rows={1}
+                />
+                <div className="flex justify-between gap-2 p-3">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setWebSearchEnabled((prev) => !prev)}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200",
+                        webSearchEnabled
+                          ? "border-[color-mix(in_srgb,var(--color-primary)_50%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_20%,transparent)]"
+                          : "hover:bg-secondary/10 border-border bg-transparent text-tertiary hover:text-secondary"
+                      )}
+                    >
+                      <Globe
+                        size={14}
+                        className={
+                          webSearchEnabled
+                            ? "text-[var(--color-primary)]"
+                            : "text-tertiary"
+                        }
+                      />
+                      <span>Search</span>
+                    </button>
+                    <span className="self-center text-xxs italic text-[color:color-mix(in_srgb,var(--color-text-tertiary)_72%,white)]">
+                      <b className="text-inherit">Enter</b> to send,{" "}
+                      <b className="text-inherit">Shift+Enter</b> for new line
+                    </span>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      multiple
+                      className="hidden"
+                    />
+                    {input.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInput("");
+                          setTimeout(() => textareaRef.current?.focus(), 50);
+                        }}
+                        disabled={composerLocked}
+                        title="Clear input text"
+                        className={cn(
+                          "flex items-center justify-center rounded-full border border-transparent p-2 transition-all duration-200",
+                          composerLocked
+                            ? "text-tertiary/40 cursor-not-allowed"
+                            : "text-tertiary hover:bg-destructive/10 hover:text-destructive"
+                        )}
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleAttachClick}
+                      disabled={composerLocked || isUploading}
+                      title={isUploading ? "Uploading..." : "Attach files"}
+                      className={cn(
+                        "flex items-center justify-center rounded-full border border-transparent p-2 transition-all duration-200",
+                        composerLocked || isUploading
+                          ? "text-tertiary/40 cursor-not-allowed"
+                          : "hover:bg-secondary/10 text-tertiary hover:text-primary"
+                      )}
+                    >
+                      <Paperclip
+                        size={18}
+                        className={isUploading ? "animate-pulse" : ""}
+                      />
+                    </button>
+                    <Button
+                      type={isLoading ? "button" : "submit"}
+                      variant={isLoading ? "destructive" : "default"}
+                      onClick={isLoading ? stopStream : handleSubmit}
+                      disabled={
+                        !isLoading &&
+                        (composerLocked || showRunningMode || !input.trim())
+                      }
+                    >
+                      {isLoading ? (
+                        <>
+                          <Square size={14} />
+                          <span>Stop</span>
+                        </>
+                      ) : showRunningMode ? (
+                        <>
+                          <Clock size={14} />
+                          <span>Running</span>
+                        </>
+                      ) : (
+                        <>
+                          <ArrowUp size={18} />
+                          <span>Send</span>
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </form>
             </div>
-          </form>
-        </div>
-      </div>
-      </ResizablePanel>
-      {(documentViewerState || selectedFile) && (
-        <>
-          <ResizableHandle withHandle />
-          <ResizablePanel id="doc-viewer" order={2} defaultSize={40} minSize={30} className="relative flex flex-col border-l border-border bg-background/50">
-            {documentViewerState && currentThreadId ? (
-              <DocumentViewerPanel
-                state={documentViewerState}
-                threadId={currentThreadId}
-                onClose={() => setDocumentViewerState(null)}
-              />
-            ) : selectedFile ? (
-              <FileViewPanel
-                file={selectedFile}
-                onSaveFile={async (fileName, content) => {
-                  await setFiles({ ...files, [fileName]: content });
-                  setSelectedFile({ path: fileName, content });
-                }}
-                onClose={() => setSelectedFile(null)}
-                editDisabled={isLoading || interrupt !== undefined}
-                onDocumentClick={handleDocumentClick}
-              />
-            ) : null}
-          </ResizablePanel>
-        </>
-      )}
+          </div>
+        </ResizablePanel>
+        {(documentViewerState || selectedFile) && (
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel
+              id="doc-viewer"
+              order={2}
+              defaultSize={40}
+              minSize={30}
+              className="relative flex flex-col border-l border-border bg-background/50"
+            >
+              {documentViewerState && currentThreadId ? (
+                <DocumentViewerPanel
+                  state={documentViewerState}
+                  threadId={currentThreadId}
+                  onClose={() => setDocumentViewerState(null)}
+                />
+              ) : selectedFile ? (
+                <FileViewPanel
+                  file={selectedFile}
+                  onSaveFile={async (fileName, content) => {
+                    await setFiles({ ...files, [fileName]: content });
+                    setSelectedFile({ path: fileName, content });
+                  }}
+                  onClose={() => setSelectedFile(null)}
+                  editDisabled={isLoading || interrupt !== undefined}
+                  onDocumentClick={handleDocumentClick}
+                />
+              ) : null}
+            </ResizablePanel>
+          </>
+        )}
       </ResizablePanelGroup>
-      
+
       {/* Skills Tab Trigger Button (Fixed/Absolute to right edge of chat) */}
       {!skillsDrawerOpen && (
         <button
           onClick={() => setSkillsDrawerOpen(true)}
           className={cn(
             "absolute right-0 top-[20%] z-30 flex items-center gap-1.5 rounded-l-md border-y border-l border-border bg-sidebar px-2 py-3 text-xs font-semibold text-foreground shadow-md transition-all duration-200",
-            "hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] hover:text-[var(--color-primary)] hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)]",
+            "hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] hover:text-[var(--color-primary)]",
             "skills-drawer-tab"
           )}
           title="Open Skills (Cmd+K)"
         >
-          <Sparkles size={13} className="text-[var(--color-primary)] rotate-180" />
+          <Sparkles
+            size={13}
+            className="rotate-180 text-[var(--color-primary)]"
+          />
           <span>Skills</span>
         </button>
       )}

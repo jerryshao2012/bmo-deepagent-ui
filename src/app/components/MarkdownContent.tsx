@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { cn } from "@/lib/utils";
+import { normalizeDocumentCitationPath } from "@/app/components/viewers/documentUtils";
 import { useEffect, useState } from "react";
 
 interface MermaidProps {
@@ -19,11 +20,11 @@ const Mermaid: React.FC<MermaidProps> = ({ chart }) => {
 
   useEffect(() => {
     let isMounted = true;
-    
+
     const renderChart = async () => {
       try {
         const mermaid = (await import("mermaid")).default;
-        
+
         mermaid.initialize({
           startOnLoad: false,
           theme: "dark",
@@ -37,7 +38,7 @@ const Mermaid: React.FC<MermaidProps> = ({ chart }) => {
         // Pre-process the chart syntax to upgrade legacy 'graph' to 'flowchart'
         // and automatically inject 'direction TB' into subgraphs of vertical flowcharts.
         let processedChart = chart.trim();
-        
+
         // Upgrade legacy 'graph' to 'flowchart' for better subgraph layout support
         processedChart = processedChart.replace(/^\s*graph\b/i, "flowchart");
 
@@ -45,11 +46,11 @@ const Mermaid: React.FC<MermaidProps> = ({ chart }) => {
         if (isVertical) {
           const lines = processedChart.split("\n");
           const processedLines: string[] = [];
-          
+
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             processedLines.push(line);
-            
+
             if (/^\s*subgraph\s+/i.test(line)) {
               let hasDirection = false;
               for (let j = i + 1; j < lines.length; j++) {
@@ -61,7 +62,7 @@ const Mermaid: React.FC<MermaidProps> = ({ chart }) => {
                   break;
                 }
               }
-              
+
               if (!hasDirection) {
                 const indentMatch = /^(\s*)/.exec(line);
                 const indent = indentMatch ? indentMatch[1] : "";
@@ -75,7 +76,7 @@ const Mermaid: React.FC<MermaidProps> = ({ chart }) => {
         // Unique ID for mermaid render to prevent target element mismatches
         const id = `mermaid-${Math.random().toString(36).substring(2, 9)}`;
         const { svg: renderedSvg } = await mermaid.render(id, processedChart);
-        
+
         if (isMounted) {
           setSvg(renderedSvg);
           setError(null);
@@ -126,10 +127,10 @@ const Mermaid: React.FC<MermaidProps> = ({ chart }) => {
   }
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className="mermaid-svg-container p-6 bg-[#18181b] rounded-xl border border-zinc-800 shadow-md my-4 overflow-x-auto"
-      dangerouslySetInnerHTML={{ __html: svg }} 
+      dangerouslySetInnerHTML={{ __html: svg }}
     />
   );
 };
@@ -149,9 +150,14 @@ const Mermaid: React.FC<MermaidProps> = ({ chart }) => {
 function preprocessMarkdown(content: string): string {
   if (!content) return content;
 
+  const toDocumentHref = (path: string, query?: string): string => {
+    const encodedPath = encodeURI(path);
+    return query ? `${encodedPath}?${query}` : encodedPath;
+  };
+
   // Shared: matches a document path with a supported extension.
   // Covers /raw/file.pdf.md and /file.pdf alike.
-  const DOC = /\/[A-Za-z0-9._\-/]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?/i.source;
+  const DOC = /\/[A-Za-z0-9._\-/ ]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?/i.source;
 
   // Strip backticks surrounding document paths so they can be processed and rendered as clickable links
   let result = content.replace(new RegExp(`\`(${DOC})\``, "gi"), "$1");
@@ -161,13 +167,14 @@ function preprocessMarkdown(content: string): string {
   result = result.replace(
     new RegExp(`\\((?:Source:\\s+)?(${DOC}),\\s*(?:p\\.?|pp\\.?|page|pages)\\s*(\\d+(?:\\s*,\\s*\\d+)+)\\)`, "gi"),
     (match, path: string, pageListStr: string) => {
+      const normalizedPath = normalizeDocumentCitationPath(path);
       const hasSource = match.toLowerCase().includes("source:");
       const pages = pageListStr.split(",").map(p => p.trim());
       const links = pages.map((p, idx) => {
         if (idx === 0) {
-          return `[${path}, p. ${p}](${path}?page=${p})`;
+          return `[${normalizedPath}, p. ${p}](${toDocumentHref(normalizedPath, `page=${p}`)})`;
         } else {
-          return `[p. ${p}](${path}?page=${p})`;
+          return `[p. ${p}](${toDocumentHref(normalizedPath, `page=${p}`)})`;
         }
       });
       const prefix = hasSource ? "Source: " : "";
@@ -178,12 +185,13 @@ function preprocessMarkdown(content: string): string {
   result = result.replace(
     new RegExp(`\\(\\[(${DOC})\\]\\((?:p\\.?|pp\\.?|page|pages)\\s*(\\d+(?:\\s*,\\s*\\d+)+)\\)\\)`, "gi"),
     (match, path: string, pageListStr: string) => {
+      const normalizedPath = normalizeDocumentCitationPath(path);
       const pages = pageListStr.split(",").map(p => p.trim());
       const links = pages.map((p, idx) => {
         if (idx === 0) {
-          return `[${path}, p. ${p}](${path}?page=${p})`;
+          return `[${normalizedPath}, p. ${p}](${toDocumentHref(normalizedPath, `page=${p}`)})`;
         } else {
-          return `[p. ${p}](${path}?page=${p})`;
+          return `[p. ${p}](${toDocumentHref(normalizedPath, `page=${p}`)})`;
         }
       });
       return `(${links.join(", ")})`;
@@ -193,12 +201,13 @@ function preprocessMarkdown(content: string): string {
   result = result.replace(
     new RegExp(`\\[(${DOC})\\]\\((?:p\\.?|pp\\.?|page|pages)\\s*(\\d+(?:\\s*,\\s*\\d+)+)\\)`, "gi"),
     (match, path: string, pageListStr: string) => {
+      const normalizedPath = normalizeDocumentCitationPath(path);
       const pages = pageListStr.split(",").map(p => p.trim());
       const links = pages.map((p, idx) => {
         if (idx === 0) {
-          return `[${path}, p. ${p}](${path}?page=${p})`;
+          return `[${normalizedPath}, p. ${p}](${toDocumentHref(normalizedPath, `page=${p}`)})`;
         } else {
-          return `[p. ${p}](${path}?page=${p})`;
+          return `[p. ${p}](${toDocumentHref(normalizedPath, `page=${p}`)})`;
         }
       });
       return links.join(", ");
@@ -210,11 +219,16 @@ function preprocessMarkdown(content: string): string {
   result = result.replace(
     new RegExp(`\\[([^\\]]+)\\]\\(\\[(${DOC})\\]\\(([^)]+)\\)\\)`, "gi"),
     (match, label: string, path: string, pageRef: string) => {
+      const normalizedPath = normalizeDocumentCitationPath(path);
       const cleanPageRef = pageRef.trim();
-      if (cleanPageRef === path || /^https?:\/\//i.test(cleanPageRef)) {
-        return `[${label}](${path})`;
+      if (
+        cleanPageRef === path ||
+        normalizeDocumentCitationPath(cleanPageRef) === normalizedPath ||
+        /^https?:\/\//i.test(cleanPageRef)
+      ) {
+        return `[${label}](${toDocumentHref(normalizedPath)})`;
       }
-      return `[${label}, ${cleanPageRef}](${path})`;
+      return `[${label}, ${cleanPageRef}](${toDocumentHref(normalizedPath)})`;
     },
   );
 
@@ -223,13 +237,17 @@ function preprocessMarkdown(content: string): string {
   result = result.replace(
     new RegExp(`\\(\\[(${DOC})\\]\\(([^)]+)\\)\\)`, "gi"),
     (match, path: string, pageRef: string) => {
+      const normalizedPath = normalizeDocumentCitationPath(path);
       if (/^https?:\/\//i.test(pageRef.trim())) return match;
       const cleanPageRef = pageRef.trim();
-      if (cleanPageRef === path) {
-        return `[${path}](${path})`;
+      if (
+        cleanPageRef === path ||
+        normalizeDocumentCitationPath(cleanPageRef) === normalizedPath
+      ) {
+        return `[${normalizedPath}](${toDocumentHref(normalizedPath)})`;
       }
-      const label = `${path}, ${cleanPageRef}`.replace(/\|/g, "\\|");
-      return `[${label}](${path})`;
+      const label = `${normalizedPath}, ${cleanPageRef}`.replace(/\|/g, "\\|");
+      return `[${label}](${toDocumentHref(normalizedPath)})`;
     },
   );
 
@@ -238,13 +256,17 @@ function preprocessMarkdown(content: string): string {
   result = result.replace(
     new RegExp(`\\[(${DOC})\\]\\(([^)]+)\\)`, "gi"),
     (match, path: string, pageRef: string) => {
+      const normalizedPath = normalizeDocumentCitationPath(path);
       if (/^https?:\/\//i.test(pageRef.trim())) return match;
       const cleanPageRef = pageRef.trim();
-      if (cleanPageRef === path) {
-        return `[${path}](${path})`;
+      if (
+        cleanPageRef === path ||
+        normalizeDocumentCitationPath(cleanPageRef) === normalizedPath
+      ) {
+        return `[${normalizedPath}](${toDocumentHref(normalizedPath)})`;
       }
-      const label = `${path}, ${cleanPageRef}`.replace(/\|/g, "\\|");
-      return `[${label}](${path})`;
+      const label = `${normalizedPath}, ${cleanPageRef}`.replace(/\|/g, "\\|");
+      return `[${label}](${toDocumentHref(normalizedPath)})`;
     },
   );
 
@@ -253,8 +275,9 @@ function preprocessMarkdown(content: string): string {
   result = result.replace(
     new RegExp(`\\(Source:\\s+(${DOC})([^)]*)\\)`, "gi"),
     (match, path: string, rest: string) => {
-      const label = `${path}${rest}`.replace(/\|/g, "\\|");
-      return `(Source: [${label}](${path}))`;
+      const normalizedPath = normalizeDocumentCitationPath(path);
+      const label = `${normalizedPath}${rest}`.replace(/\|/g, "\\|");
+      return `(Source: [${label}](${toDocumentHref(normalizedPath)}))`;
     },
   );
 
@@ -264,8 +287,9 @@ function preprocessMarkdown(content: string): string {
   result = result.replace(
     new RegExp(`\\((?![\`\\(])(${DOC})([^)]*)\\)`, "gi"),
     (match, path: string, rest: string) => {
-      const label = `${path}${rest}`.replace(/\|/g, "\\|");
-      return `([${label}](${path}))`;
+      const normalizedPath = normalizeDocumentCitationPath(path);
+      const label = `${normalizedPath}${rest}`.replace(/\|/g, "\\|");
+      return `([${label}](${toDocumentHref(normalizedPath)}))`;
     },
   );
 
@@ -274,22 +298,23 @@ function preprocessMarkdown(content: string): string {
   result = result.replace(
     new RegExp(`(?<![a-zA-Z0-9([\\]/:-])(${DOC})((?:[,:]\\s*(?:p\\.?|pp\\.?|page|pages)?\\s*\\d+(?:\\s*(?:[-–,:]|\\bto\\b)\\s*(?:p\\.?|pp\\.?|page|pages)?\\s*\\d+)*)+)?`, "gi"),
     (match, path: string, pageSuffix: string) => {
+      const normalizedPath = normalizeDocumentCitationPath(path);
       if (!pageSuffix) {
-        return `[${path}](${path})`;
+        return `[${normalizedPath}](${toDocumentHref(normalizedPath)})`;
       }
       const hasRange = /[-–]|\bto\b/i.test(pageSuffix);
       if (hasRange) {
         const matchPage = pageSuffix.match(/\d+/);
         const firstPage = matchPage ? matchPage[0] : "";
-        const label = `${path}${pageSuffix}`.replace(/\|/g, "\\|");
-        return `[${label}](${path}?page=${firstPage})`;
+        const label = `${normalizedPath}${pageSuffix}`.replace(/\|/g, "\\|");
+        return `[${label}](${toDocumentHref(normalizedPath, `page=${firstPage}`)})`;
       }
       const pages = pageSuffix.match(/\d+/g) || [];
       const links = pages.map((p, idx) => {
         if (idx === 0) {
-          return `[${path}, p. ${p}](${path}?page=${p})`;
+          return `[${normalizedPath}, p. ${p}](${toDocumentHref(normalizedPath, `page=${p}`)})`;
         } else {
-          return `[p. ${p}](${path}?page=${p})`;
+          return `[p. ${p}](${toDocumentHref(normalizedPath, `page=${p}`)})`;
         }
       });
       return links.join(", ");
@@ -313,7 +338,7 @@ interface MarkdownContentProps {
 }
 
 // Regex matching any bare document-path href produced by preprocessMarkdown.
-const DOC_HREF_RE = /^(\/[A-Za-z0-9._\-/]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?)(?:\?([^#]*))?(?:#(.*))?$/i;
+const DOC_HREF_RE = /^(\/[A-Za-z0-9._\-/ ]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?)(?:\?([^#]*))?(?:#(.*))?$/i;
 
 /**
  * Derive a highlight `quote` from the response text surrounding a citation
@@ -430,8 +455,10 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
         }
 
         // Extract the clean document path if the href is nested (e.g. [/file.pdf](/file.pdf))
-        const nestedMatch = href.match(/\[?(\/[A-Za-z0-9._\-/]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?)\]?(?:\([^)]*\))?/i);
-        const cleanHref = nestedMatch ? nestedMatch[1] : href;
+        const nestedMatch = href.match(/\[?(\/[A-Za-z0-9._\-/ ]+\.(?:pdf|docx|pptx|xlsx)(?:\.(?:md|txt))?)\]?(?:\([^)]*\))?/i);
+        const cleanHref = normalizeDocumentCitationPath(
+          nestedMatch ? nestedMatch[1] : href
+        );
 
         const m = DOC_HREF_RE.exec(cleanHref);
         if (!m) return;

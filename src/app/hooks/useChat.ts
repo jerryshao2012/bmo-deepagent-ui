@@ -43,6 +43,56 @@ function extractFileText(value: unknown): string {
   return String(value ?? "");
 }
 
+function normalizeStreamError(error: unknown): Error {
+  const asRecord =
+    typeof error === "object" && error !== null
+      ? (error as Record<string, unknown>)
+      : null;
+  const name =
+    typeof asRecord?.name === "string"
+      ? asRecord.name
+      : error instanceof Error
+      ? error.name
+      : "Error";
+  const message =
+    typeof asRecord?.message === "string"
+      ? asRecord.message
+      : error instanceof Error
+      ? error.message
+      : String(error ?? "Unknown stream error");
+  const status =
+    typeof asRecord?.status === "number"
+      ? asRecord.status
+      : typeof (asRecord?.response as Record<string, unknown> | undefined)
+          ?.status === "number"
+      ? ((asRecord?.response as Record<string, unknown>).status as number)
+      : undefined;
+
+  const lowerName = name.toLowerCase();
+  const lowerMessage = message.toLowerCase();
+  const isRateLimit =
+    status === 429 ||
+    lowerName.includes("ratelimit") ||
+    lowerMessage.includes("rate limit") ||
+    lowerMessage.includes("too many requests");
+
+  if (isRateLimit) {
+    const normalized = new Error(
+      "Rate limit reached. Please wait a few seconds and try again. If this keeps happening, reduce prompt size or switch to a model with higher throughput."
+    );
+    normalized.name = "RateLimitError";
+    return normalized;
+  }
+
+  if (lowerMessage === "an internal error occurred") {
+    return new Error(
+      "Backend returned an internal error. Please retry. If this persists, check backend logs and model provider quota/rate limits."
+    );
+  }
+
+  return error instanceof Error ? error : new Error(message);
+}
+
 export function useChat({
   activeAssistant,
   onHistoryRevalidateAction,
@@ -106,7 +156,7 @@ export function useChat({
     onFinish: onHistoryRevalidateAction,
     onError: (error) => {
       console.error("Stream error:", error);
-      const errorObject = error instanceof Error ? error : new Error(String(error));
+      const errorObject = normalizeStreamError(error);
       setStreamError(errorObject);
       onHistoryRevalidateAction?.();
     },
@@ -273,7 +323,9 @@ export function useChat({
       .some((m) => m.type === "ai" || m.type === "tool");
 
     const shouldFinalize =
-      pendingTurn.hasStartedLoading || hasResponseAfterHuman || hasAnyNewResponse;
+      pendingTurn.hasStartedLoading ||
+      hasResponseAfterHuman ||
+      hasAnyNewResponse;
     if (!shouldFinalize) {
       return;
     }
@@ -297,6 +349,7 @@ export function useChat({
 
   const sendMessage = useCallback(
     (content: string, stateUpdates?: Record<string, any>) => {
+      setStreamError(null);
       const humanMessageId = uuidv4();
       const newMessage: Message = {
         id: humanMessageId,
@@ -346,6 +399,7 @@ export function useChat({
       isRerunningSubagent?: boolean,
       optimisticMessages?: Message[]
     ) => {
+      setStreamError(null);
       if (checkpoint) {
         stream.submit(undefined, {
           ...(optimisticMessages
@@ -393,6 +447,7 @@ export function useChat({
 
   const continueStream = useCallback(
     (hasTaskToolCall?: boolean) => {
+      setStreamError(null);
       stream.submit(undefined, {
         // Optimistically clear todos when continuing the stream so stale
         // task list from a previous turn doesn't remain visible.
@@ -415,6 +470,7 @@ export function useChat({
   );
 
   const markCurrentThreadAsResolved = useCallback(() => {
+    setStreamError(null);
     stream.submit(null, { command: { goto: "__end__", update: null } });
     // Update thread list when marking thread as resolved
     onHistoryRevalidateAction?.();
@@ -422,12 +478,17 @@ export function useChat({
 
   const resumeInterrupt = useCallback(
     (value: any) => {
+      setStreamError(null);
       stream.submit(null, { command: { resume: value } });
       // Update thread list when resuming from interrupt
       onHistoryRevalidateAction?.();
     },
     [stream, onHistoryRevalidateAction]
   );
+
+  const clearStreamError = useCallback(() => {
+    setStreamError(null);
+  }, []);
 
   const stopStream = useCallback(() => {
     stream.stop();
@@ -461,16 +522,19 @@ export function useChat({
     };
   }, [serverSnapshot?.files, localFiles]);
 
-  const effectiveNoWeb = (shouldPreferServerSnapshot
-    ? serverSnapshot?.no_web
-    : stream.values.no_web) ?? false;
+  const effectiveNoWeb =
+    (shouldPreferServerSnapshot
+      ? serverSnapshot?.no_web
+      : stream.values.no_web) ?? false;
 
   const effectiveVerificationRound: number | undefined =
     shouldPreferServerSnapshot
-      ? (serverSnapshot as Record<string, unknown>)
-          ?.verification_round as number | undefined
-      : (stream.values as Record<string, unknown>)
-          ?.verification_round as number | undefined;
+      ? ((serverSnapshot as Record<string, unknown>)?.verification_round as
+          | number
+          | undefined)
+      : ((stream.values as Record<string, unknown>)?.verification_round as
+          | number
+          | undefined);
 
   return {
     stream,
@@ -484,6 +548,7 @@ export function useChat({
     messageTimings,
     processingHumanMessageId,
     streamError,
+    clearStreamError,
     setFiles,
     messages: effectiveMessages,
     isLoading: stream.isLoading,

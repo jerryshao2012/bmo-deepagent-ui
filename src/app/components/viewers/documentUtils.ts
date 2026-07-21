@@ -1,6 +1,24 @@
 import { getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
 
+const CANONICAL_DOCUMENT_RE = /^(?:raw\/)?(.+\.(?:pdf|docx|pptx|xlsx))(?:\.(?:md|txt))?$/i;
+
+export function normalizeDocumentCitationPath(filePath: string): string {
+  const trimmed = filePath.trim();
+  if (!trimmed) {
+    return filePath;
+  }
+
+  const hasLeadingSlash = trimmed.startsWith("/");
+  const normalized = trimmed.replace(/^\/+/, "");
+  const match = normalized.match(CANONICAL_DOCUMENT_RE);
+  if (!match) {
+    return filePath;
+  }
+
+  return `${hasLeadingSlash ? "/" : ""}${match[1]}`;
+}
+
 /**
  * Resolve a document citation path (as produced by the LLM) into a canonical
  * filename and the server folder where the file lives.
@@ -16,8 +34,9 @@ export function resolveDocumentLocation(
   filePath: string,
   threadId: string
 ): { folder: string; filename: string } {
+  const canonicalPath = normalizeDocumentCitationPath(filePath);
   // Strip a leading slash so the path is relative.
-  const normalized = filePath.replace(/^\/+/, "");
+  const normalized = canonicalPath.replace(/^\/+/, "");
 
   const isWikiRaw = normalized.startsWith("raw/");
   if (isWikiRaw) {
@@ -146,10 +165,11 @@ export async function downloadDocument(
   }
   const blob = await res.blob();
   const blobUrl = URL.createObjectURL(blob);
+  const canonicalPath = normalizeDocumentCitationPath(filePath);
 
   const a = document.createElement("a");
   a.href = blobUrl;
-  a.download = filePath.replace(/^\/+/, "");
+  a.download = canonicalPath.replace(/^\/+/, "");
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

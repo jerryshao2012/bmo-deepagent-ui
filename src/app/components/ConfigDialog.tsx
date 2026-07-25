@@ -356,7 +356,7 @@ export function ConfigDialog({
       } else {
         setPasskeyError("Incorrect passkey. Please try again.");
       }
-    } catch (err) {
+    } catch {
       setPasskeyError("Failed to verify passkey.");
     }
   };

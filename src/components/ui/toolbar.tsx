@@ -2,9 +2,8 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import type { VariantProps } from "class-variance-authority";
 
 export interface ToolbarProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: "default" | "panelHeader" | "transparent";

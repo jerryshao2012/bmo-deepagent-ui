@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { Loader2, Table2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Toolbar, ToolbarGroup, ToolbarButton } from "@/components/ui/toolbar";
 

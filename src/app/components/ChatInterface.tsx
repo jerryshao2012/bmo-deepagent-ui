@@ -46,7 +46,6 @@ import { cn } from "@/lib/utils";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { FilesPopover } from "@/app/components/TasksFilesSidebar";
 import { WikiTreeViewer } from "@/app/components/WikiTreeViewer";
-import WikiGraphViewer from "@/app/components/WikiGraphViewer";
 import { useThreadStatus } from "@/app/hooks/useThreads";
 import { useQueryState } from "nuqs";
 import {
@@ -620,15 +619,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         throw new Error(detail);
       }
 
-      // Parse upload response to detect auto-triggered wiki ingest.
-      let uploadResult: {
-        wiki_ingest_started?: boolean;
-        wiki_ingest_thread_id?: string;
-      } = {};
       try {
-        uploadResult = await response.json();
+        await response.json();
       } catch {
-        // Non-JSON response; proceed without ingest status.
+        // Non-JSON response; proceed after successful upload.
       }
 
       // Set the doc_folder state in the thread values so the agent uses this folder for research

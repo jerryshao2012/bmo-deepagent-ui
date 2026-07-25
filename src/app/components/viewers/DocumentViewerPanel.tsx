@@ -7,7 +7,6 @@ import {
   Loader2,
   Highlighter,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { PdfViewer } from "@/app/components/viewers/PdfViewer";
@@ -18,12 +17,6 @@ import {
   downloadDocument,
   fetchDocumentArrayBuffer,
 } from "@/app/components/viewers/documentUtils";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   Toolbar,
   ToolbarGroup,

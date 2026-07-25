@@ -17,7 +17,6 @@ import {
   Terminal,
   ChevronRight,
   CheckCircle,
-  FileText,
   FolderTree,
   Lock,
   MessageSquare,

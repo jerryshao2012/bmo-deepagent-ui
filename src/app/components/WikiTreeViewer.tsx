@@ -12,7 +12,6 @@ import {
   Database,
   FileCode,
   AlertCircle,
-  Network,
 } from "lucide-react";
 import { getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";

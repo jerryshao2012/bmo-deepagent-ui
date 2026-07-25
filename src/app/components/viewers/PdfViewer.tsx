@@ -17,15 +17,8 @@ import {
   ArrowLeftRight,
   ArrowUpDown,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { findBestRange } from "@/app/utils/documentHighlight";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   Toolbar,
   ToolbarGroup,

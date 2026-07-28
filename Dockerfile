@@ -1,11 +1,14 @@
 FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
+ARG NEXT_PUBLIC_LANGGRAPH_URL
+ARG NEXT_PUBLIC_ASSISTANT_ID=research
+ENV NEXT_PUBLIC_LANGGRAPH_URL=$NEXT_PUBLIC_LANGGRAPH_URL
+ENV NEXT_PUBLIC_ASSISTANT_ID=$NEXT_PUBLIC_ASSISTANT_ID
 COPY package.json yarn.lock* ./
 #RUN sed -i 's|https://bmostaging.jfrog.io/artifactory/api/npm/bmoai-npm-virtual/|https://registry.npmjs.org/|g' yarn.lock
 RUN (yarn install --frozen-lockfile || yarn install) && yarn cache clean
 COPY . .
-COPY ".env.docker" ./.env
 # Use webpack for the production image build path.
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 ENV NEXT_PRIVATE_SKIP_CANARY_CHECK=1
@@ -30,7 +33,6 @@ RUN (yarn install --production --frozen-lockfile || yarn install --production) &
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/server.cjs ./server.cjs
-COPY --from=builder /app/.env.docker ./.env
 
 EXPOSE 3000
 ENV PORT=3000

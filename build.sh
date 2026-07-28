@@ -35,8 +35,21 @@ fi
 # The container tool requires the full registry host in the image name for pushing.
 FULL_IMAGE_NAME="docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest"
 
-container build --platform linux/amd64 -t $FULL_IMAGE_NAME .
-if [ $? -ne 0 ]; then
+# Apple Container can fail on macOS filesystem metadata in the working tree.
+# Stage regular build inputs into a clean, ignored directory first.
+BUILD_CONTEXT_DIR=$(mktemp -d ".container-build-context.XXXXXX")
+trap 'rm -rf "$BUILD_CONTEXT_DIR"' EXIT
+rsync -a \
+  --exclude-from=".dockerignore" \
+  ./ "$BUILD_CONTEXT_DIR/"
+cp Dockerfile "$BUILD_CONTEXT_DIR/Dockerfile"
+
+if ! container build \
+    --platform linux/amd64 \
+    --build-arg NEXT_PUBLIC_LANGGRAPH_URL="$NEXT_PUBLIC_LANGGRAPH_URL" \
+    --build-arg NEXT_PUBLIC_ASSISTANT_ID="${NEXT_PUBLIC_ASSISTANT_ID:-research}" \
+    -t "$FULL_IMAGE_NAME" \
+    "$BUILD_CONTEXT_DIR"; then
   echo "❌ Local container build failed."
   exit 1
 fi
@@ -46,8 +59,7 @@ echo "✅ Local build completed successfully."
 # brew install container
 # container registry login docker.io
 echo "⬆️ Pushing image to Docker Hub..."
-container image push "$FULL_IMAGE_NAME"
-if [ $? -ne 0 ]; then
+if ! container image push "$FULL_IMAGE_NAME"; then
   echo "❌ Container push failed for '$FULL_IMAGE_NAME'."
   exit 1
 fi

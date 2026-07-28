@@ -1,1 +1,4 @@
- ./build.sh;./deploy.sh
+#!/bin/bash
+set -e
+
+./deploy.sh

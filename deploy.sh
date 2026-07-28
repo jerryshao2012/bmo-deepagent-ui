@@ -1,181 +1,205 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 source ./env.sh
-# Overwrite with docker/production environment variables
+
 if [ -f .env.docker ]; then
   echo "📖 Loading production environment variables from .env.docker..."
-  # Use a more robust way to source variables that handles quotes and comments
-  while IFS='=' read -r key value; do
-    # Skip comments and empty lines
-    [[ $key =~ ^#.* ]] || [[ -z $key ]] && continue
-    # Strip potential quotes from value
-    value=$(echo "$value" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+  while IFS='=' read -r key value || [ -n "$key" ]; do
+    [[ "$key" =~ ^#.*$ ]] || [ -z "$key" ] && continue
+    value="${value%$'\r'}"
+    value="${value#\"}"
+    value="${value%\"}"
+    value="${value#\'}"
+    value="${value%\'}"
     export "$key=$value"
   done < .env.docker
 fi
 
-echo "🚀 Starting deployment process for deepagent-ui..."
-
-# Fetch secrets from Azure Key Vault if available (overrides env vars)
-if [ -n "$KV_NAME" ]; then
-  echo "🔐 Attempting to fetch secrets from Azure Key Vault: $KV_NAME"
-  KV_UPLOAD_API_KEY=$(az keyvault secret show --vault-name $KV_NAME --name UPLOAD-API-KEY --query value -o tsv 2>/dev/null || true)
-  KV_LANGCHAIN_API_KEY=$(az keyvault secret show --vault-name $KV_NAME --name LANGCHAIN-API-KEY --query value -o tsv 2>/dev/null || true)
-  KV_AUTH_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-SECRET --query value -o tsv 2>/dev/null || true)
-  KV_AUTH_GITHUB_ID=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GITHUB-ID --query value -o tsv 2>/dev/null || true)
-  KV_AUTH_GITHUB_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GITHUB-SECRET --query value -o tsv 2>/dev/null || true)
-  KV_AUTH_GOOGLE_ID=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GOOGLE-ID --query value -o tsv 2>/dev/null || true)
-  KV_AUTH_GOOGLE_SECRET=$(az keyvault secret show --vault-name $KV_NAME --name AUTH-GOOGLE-SECRET --query value -o tsv 2>/dev/null || true)
-
-  # Override env vars with Key Vault values if available
-  [ -n "$KV_UPLOAD_API_KEY" ] && export UPLOAD_API_KEY="$KV_UPLOAD_API_KEY" && echo "  ✓ UPLOAD_API_KEY from Key Vault"
-  [ -n "$KV_LANGCHAIN_API_KEY" ] && export LANGCHAIN_API_KEY="$KV_LANGCHAIN_API_KEY" && echo "  ✓ LANGCHAIN_API_KEY from Key Vault"
-  [ -n "$KV_AUTH_SECRET" ] && export AUTH_SECRET="$KV_AUTH_SECRET" && echo "  ✓ AUTH_SECRET from Key Vault"
-  [ -n "$KV_AUTH_GITHUB_ID" ] && export AUTH_GITHUB_ID="$KV_AUTH_GITHUB_ID" && echo "  ✓ AUTH_GITHUB_ID from Key Vault"
-  [ -n "$KV_AUTH_GITHUB_SECRET" ] && export AUTH_GITHUB_SECRET="$KV_AUTH_GITHUB_SECRET" && echo "  ✓ AUTH_GITHUB_SECRET from Key Vault"
-  [ -n "$KV_AUTH_GOOGLE_ID" ] && export AUTH_GOOGLE_ID="$KV_AUTH_GOOGLE_ID" && echo "  ✓ AUTH_GOOGLE_ID from Key Vault"
-  [ -n "$KV_AUTH_GOOGLE_SECRET" ] && export AUTH_GOOGLE_SECRET="$KV_AUTH_GOOGLE_SECRET" && echo "  ✓ AUTH_GOOGLE_SECRET from Key Vault"
-
-  if [ -z "$KV_LANGCHAIN_API_KEY" ] && [ -z "$KV_AUTH_SECRET" ]; then
-    echo "  ⚠️  No secrets found in Key Vault, falling back to environment variables"
+for required_command in az yarn zip curl; do
+  if ! command -v "$required_command" >/dev/null 2>&1; then
+    echo "❌ Required command not found: $required_command"
+    exit 1
   fi
-  if [ -z "$KV_UPLOAD_API_KEY" ] && [ -z "$KV_AUTH_SECRET" ]; then
-    echo "  ⚠️  No secrets found in Key Vault, falling back to environment variables"
-  fi
-else
-  echo "  ⚠️  KV_NAME not set, using environment variables for secrets"
-fi
+done
 
-# Validate Docker Hub credentials
-echo "🔑 Checking Docker Hub credentials..."
-if [ -z "$DOCKER_HUB_USERNAME" ] || [ -z "$DOCKER_HUB_PAT" ]; then
-  echo "❌ Error: DOCKER_HUB_USERNAME or DOCKER_HUB_PAT is not set. Please set them in your .env file."
+WEBAPP_NAME="${WEBAPP_NAME:-bmo-deepagent-ui-$SEED}"
+ASSISTANT_ID="${NEXT_PUBLIC_ASSISTANT_ID:-research}"
+
+fail_if_webapp_quota_exceeded() {
+  local webapp_status
+  local webapp_state
+  local webapp_usage_state
+
+  if ! webapp_status=$(az webapp show \
+    --name "$WEBAPP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query "join('|', [state, usageState])" \
+    -o tsv); then
+    echo "❌ Could not read App Service quota status."
+    return 1
+  fi
+
+  webapp_state="${webapp_status%%|*}"
+  webapp_usage_state="${webapp_status#*|}"
+  if [ "$webapp_state" = "QuotaExceeded" ] || \
+    [ "$webapp_usage_state" = "Exceeded" ]; then
+    echo "❌ App Service F1 quota is exceeded; Azure has disabled both the site and deployment endpoint."
+    echo "   Azure state: $webapp_state; usage state: $webapp_usage_state."
+    echo "   Wait for the quota reset shown under App Service > Quotas, then rerun ./deploy.sh."
+    echo "   To deploy immediately, scale the App Service plan above F1 (paid)."
+    return 1
+  fi
+}
+
+echo "🚀 Starting App Service F1 deployment for $WEBAPP_NAME..."
+echo "🌐 Checking App Service status..."
+if ! WEBAPP_HOST=$(az webapp show \
+  --name "$WEBAPP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query defaultHostName \
+  -o tsv); then
+  echo "❌ App Service '$WEBAPP_NAME' was not found in '$RESOURCE_GROUP'."
   exit 1
 fi
-echo "✅ Credentials found."
-# Get the agent's internal FQDN
-echo "🔍 Fetching internal FQDN for deep-research-agent-$SEED..."
-AGENT_FQDN=$(az containerapp show \
-  --name deep-research-agent-$SEED \
-  --resource-group $RESOURCE_GROUP \
+
+if [ -z "$WEBAPP_HOST" ]; then
+  echo "❌ App Service '$WEBAPP_NAME' has no default hostname."
+  exit 1
+fi
+
+fail_if_webapp_quota_exceeded || exit 1
+
+WEBAPP_URL="https://$WEBAPP_HOST"
+echo "✅ App Service: $WEBAPP_URL"
+
+echo "🔍 Fetching backend Container App hostname..."
+if ! AGENT_FQDN=$(az containerapp show \
+  --name "deep-research-agent-$SEED" \
+  --resource-group "$RESOURCE_GROUP" \
   --query properties.configuration.ingress.fqdn \
-  -o tsv)
+  -o tsv); then
+  echo "❌ Backend Container App 'deep-research-agent-$SEED' was not found."
+  exit 1
+fi
 
 if [ -z "$AGENT_FQDN" ]; then
-  echo "❌ Failed to retrieve Agent FQDN. Ensure 'deep-research-agent-$SEED' is deployed."
+  echo "❌ Backend Container App has no ingress hostname."
   exit 1
 fi
-echo "✅ Agent FQDN: https://$AGENT_FQDN"
+BACKEND_URL="https://$AGENT_FQDN"
+export NEXT_PUBLIC_LANGGRAPH_URL="$BACKEND_URL"
+export NEXT_PUBLIC_ASSISTANT_ID="$ASSISTANT_ID"
+echo "✅ Backend: $BACKEND_URL"
 
-# Check if container app already exists
-echo "📦 Checking Container App status..."
-UI_FQDN=$(az containerapp show --name deepagent-ui --resource-group $RESOURCE_GROUP --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null)
-
-if [ -n "$UI_FQDN" ]; then
-  echo "📝 Container app 'deepagent-ui' already exists. Updating with new image..."
-  echo "✅ UI FQDN: https://$UI_FQDN"
-  
-  # Ensure the container app has registry credentials configured for Docker Hub
-  echo "🔑 Setting registry credentials for docker.io..."
-  az containerapp registry set \
-    --name deepagent-ui \
-    --resource-group $RESOURCE_GROUP \
-    --server docker.io \
-    --username $DOCKER_HUB_USERNAME \
-    --password $DOCKER_HUB_PAT
-  
-  # Update the container app with the new image and ensure all environment variables are set
-  az containerapp update \
-    --name deepagent-ui \
-    --resource-group $RESOURCE_GROUP \
-    --image docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest \
-    --min-replicas 0 \
-    --set-env-vars \
-      NEXT_PUBLIC_LANGGRAPH_URL=${NEXT_PUBLIC_LANGGRAPH_URL:-https://$AGENT_FQDN} \
-      NEXT_PUBLIC_ASSISTANT_ID=${NEXT_PUBLIC_ASSISTANT_ID:-research} \
-      UPLOAD_API_KEY=$UPLOAD_API_KEY \
-      NEXT_PUBLIC_LANGSMITH_API_KEY=$LANGCHAIN_API_KEY \
-      AUTH_SECRET=$AUTH_SECRET \
-      AUTH_GITHUB_ID=$AUTH_GITHUB_ID \
-      AUTH_GITHUB_SECRET=$AUTH_GITHUB_SECRET \
-      AUTH_GOOGLE_ID=$AUTH_GOOGLE_ID \
-      AUTH_GOOGLE_SECRET=$AUTH_GOOGLE_SECRET \
-      AUTH_TRUST_HOST=true \
-      AUTH_URL=https://$UI_FQDN \
-      NEXTAUTH_URL=https://$UI_FQDN \
-      NODE_ENV=production \
-      PORT=3000 \
-      RESTART_TRIGGER="$(date +%s)"
-    
-  if [ $? -ne 0 ]; then
-    echo "❌ Failed to update container app."
-    exit 1
-  fi
-else
-  echo "✨ Creating new container app 'deepagent-ui'..."
-  az containerapp create \
-    --name deepagent-ui \
-    --resource-group $RESOURCE_GROUP \
-    --environment $ENV_NAME \
-    --image docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest \
-    --registry-server docker.io \
-    --registry-username $DOCKER_HUB_USERNAME \
-    --registry-password $DOCKER_HUB_PAT \
-    --target-port 3000 \
-    --ingress external \
-    --min-replicas 0 \
-    --cpu 1.0 \
-    --memory 2Gi \
-    --env-vars \
-      NEXT_PUBLIC_LANGGRAPH_URL=${NEXT_PUBLIC_LANGGRAPH_URL:-https://$AGENT_FQDN} \
-      NEXT_PUBLIC_ASSISTANT_ID=${NEXT_PUBLIC_ASSISTANT_ID:-research} \
-      UPLOAD_API_KEY=$UPLOAD_API_KEY \
-      NEXT_PUBLIC_LANGSMITH_API_KEY=$LANGCHAIN_API_KEY \
-      AUTH_SECRET=$AUTH_SECRET \
-      AUTH_GITHUB_ID=$AUTH_GITHUB_ID \
-      AUTH_GITHUB_SECRET=$AUTH_GITHUB_SECRET \
-      AUTH_GOOGLE_ID=$AUTH_GOOGLE_ID \
-      AUTH_GOOGLE_SECRET=$AUTH_GOOGLE_SECRET \
-      AUTH_TRUST_HOST=true \
-      NODE_ENV=production \
-      PORT=3000
-      
-  if [ $? -ne 0 ]; then
-    echo "❌ Failed to create container app."
-    exit 1
-  fi
-
-  # After creation, we need to set AUTH_URL since we now have the FQDN
-  echo "🌐 Retrieving public URL to set AUTH_URL..."
-  UI_FQDN=$(az containerapp show \
-    --name deepagent-ui \
-    --resource-group $RESOURCE_GROUP \
-    --query properties.configuration.ingress.fqdn \
-    -o tsv)
-  
-  if [ -n "$UI_FQDN" ]; then
-    echo "📝 Setting AUTH_URL to https://$UI_FQDN..."
-    az containerapp update \
-      --name deepagent-ui \
-      --resource-group $RESOURCE_GROUP \
-      --set-env-vars \
-        AUTH_URL=https://$UI_FQDN \
-        NEXTAUTH_URL=https://$UI_FQDN
-  fi
+echo "🔐 Checking Key Vault upload secret..."
+if ! az keyvault secret show \
+  --vault-name "$KV_NAME" \
+  --name UPLOAD-API-KEY \
+  --query id \
+  -o tsv >/dev/null; then
+  echo "❌ Key Vault secret '$KV_NAME/UPLOAD-API-KEY' is unavailable."
+  exit 1
 fi
 
-# Retrieve and display the public URL
-echo "🌐 Retrieving public URL for deepagent-ui..."
-PUBLIC_URL=$(az containerapp show \
-  --name deepagent-ui \
-  --resource-group $RESOURCE_GROUP \
-  --query properties.configuration.ingress.fqdn \
-  -o tsv)
+echo "⚙️ Configuring App Service runtime..."
+az webapp config set \
+  --name "$WEBAPP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --linux-fx-version "NODE|22-lts" \
+  --startup-file "node server.cjs" \
+  --always-on false \
+  --http20-enabled true \
+  --min-tls-version 1.2 \
+  --ftps-state Disabled \
+  --web-sockets-enabled true \
+  -o none
 
-if [ -n "$PUBLIC_URL" ]; then
-  echo "🎉 Deployment completed successfully!"
-  echo "🔗 Public URL: https://$PUBLIC_URL"
-else
-  echo "⚠️ Deployment finished, but could not retrieve the public URL immediately. Please check the Azure Portal."
+az webapp update \
+  --name "$WEBAPP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --https-only true \
+  -o none
+
+az webapp config appsettings set \
+  --name "$WEBAPP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --settings \
+    "SCM_DO_BUILD_DURING_DEPLOYMENT=false" \
+    "ENABLE_ORYX_BUILD=false" \
+    "NEXT_TELEMETRY_DISABLED=1" \
+    "NEXT_PUBLIC_LANGGRAPH_URL=$BACKEND_URL" \
+    "BACKEND_API_URL=$BACKEND_URL" \
+    "NEXT_PUBLIC_ASSISTANT_ID=$ASSISTANT_ID" \
+    "MARKDOWN_STORAGE_DIR=/home/data/markdown_threads" \
+    "AUTH_URL=$WEBAPP_URL" \
+    "NEXTAUTH_URL=$WEBAPP_URL" \
+    "AUTH_TRUST_HOST=true" \
+    "NODE_ENV=production" \
+    "UPLOAD_API_KEY=@Microsoft.KeyVault(VaultName=${KV_NAME};SecretName=UPLOAD-API-KEY)" \
+  -o none
+
+echo "📦 Installing dependencies and building production bundle..."
+yarn install --frozen-lockfile
+yarn build
+
+DEPLOY_TMP_ROOT="${TMPDIR:-/tmp}"
+DEPLOY_WORK_DIR=$(mktemp -d "$DEPLOY_TMP_ROOT/bmo-deepagent-ui-deploy.XXXXXX")
+PACKAGE_ROOT="$DEPLOY_WORK_DIR/package"
+PACKAGE_PATH="$DEPLOY_WORK_DIR/app.zip"
+trap 'rm -rf "$DEPLOY_WORK_DIR"' EXIT
+mkdir -p "$PACKAGE_ROOT/.next" "$PACKAGE_ROOT/public"
+
+cp -R .next/standalone/. "$PACKAGE_ROOT/"
+mkdir -p "$PACKAGE_ROOT/node_modules"
+cp -R node_modules/ws "$PACKAGE_ROOT/node_modules/ws"
+cp -R .next/static "$PACKAGE_ROOT/.next/static"
+cp -R public/. "$PACKAGE_ROOT/public/"
+cp server.cjs "$PACKAGE_ROOT/server.cjs"
+find "$PACKAGE_ROOT" -maxdepth 1 -type f -name '.env*' -delete
+
+echo "🗜️ Creating standalone deployment package..."
+(
+  cd "$PACKAGE_ROOT"
+  zip -qry "$PACKAGE_PATH" .
+)
+
+fail_if_webapp_quota_exceeded || exit 1
+
+echo "☁️ Deploying package to App Service..."
+if ! az webapp deploy \
+  --name "$WEBAPP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --src-path "$PACKAGE_PATH" \
+  --type zip \
+  --clean true \
+  --restart true \
+  --track-status false \
+  --timeout 600000 \
+  -o none; then
+  fail_if_webapp_quota_exceeded || exit 1
+  echo "❌ App Service package deployment failed."
+  exit 1
 fi
+
+echo "🩺 Verifying deployed site..."
+HTTP_STATUS=""
+for attempt in {1..12}; do
+  HTTP_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" \
+    --connect-timeout 10 \
+    --max-time 30 \
+    "$WEBAPP_URL/" || true)
+  case "$HTTP_STATUS" in
+    200|301|302|303|307|308)
+      echo "✅ Deployment completed successfully (HTTP $HTTP_STATUS)."
+      echo "🔗 Public URL: $WEBAPP_URL"
+      exit 0
+      ;;
+  esac
+  fail_if_webapp_quota_exceeded || exit 1
+  echo "   Site returned HTTP ${HTTP_STATUS:-000}; retrying ($attempt/12)..."
+  sleep 5
+done
+
+echo "❌ Deployment finished, but health verification failed with HTTP ${HTTP_STATUS:-000}."
+exit 1

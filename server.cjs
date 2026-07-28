@@ -3,7 +3,7 @@ const next = require("next");
 const { WebSocketServer } = require("ws");
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = "localhost";
+const hostname = process.env.HOST || "0.0.0.0";
 const port = process.env.PORT || 3000;
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
@@ -85,8 +85,10 @@ app.prepare().then(() => {
   const fs = require("fs");
   const path = require("path");
 
-  // Storage directory within the workspace
-  const STORAGE_DIR = path.join(__dirname, "data", "markdown_threads");
+  // App Service run-from-package is read-only; use its persistent /home storage.
+  const STORAGE_DIR =
+    process.env.MARKDOWN_STORAGE_DIR ||
+    path.join(__dirname, "data", "markdown_threads");
   if (!fs.existsSync(STORAGE_DIR)) {
     fs.mkdirSync(STORAGE_DIR, { recursive: true });
   }

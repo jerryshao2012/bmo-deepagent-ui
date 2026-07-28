@@ -16,7 +16,7 @@ if [ -f .env.docker ]; then
   done < .env.docker
 fi
 
-for required_command in az yarn zip curl; do
+for required_command in az yarn zip curl grep; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     echo "❌ Required command not found: $required_command"
     exit 1
@@ -103,41 +103,80 @@ if ! az keyvault secret show \
 fi
 
 echo "⚙️ Configuring App Service runtime..."
-az webapp config set \
+current_runtime_config=$(az webapp config show \
   --name "$WEBAPP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --linux-fx-version "NODE|22-lts" \
-  --startup-file "node server.cjs" \
-  --always-on false \
-  --http20-enabled true \
-  --min-tls-version 1.2 \
-  --ftps-state Disabled \
-  --web-sockets-enabled true \
-  -o none
+  --query "join('|', [linuxFxVersion, appCommandLine, to_string(alwaysOn), to_string(http20Enabled), minTlsVersion, ftpsState, to_string(webSocketsEnabled)])" \
+  -o tsv)
+expected_runtime_config="NODE|22-lts|node server.cjs|false|true|1.2|Disabled|true"
 
-az webapp update \
-  --name "$WEBAPP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --https-only true \
-  -o none
+if [ "$current_runtime_config" != "$expected_runtime_config" ]; then
+  az webapp config set \
+    --name "$WEBAPP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --linux-fx-version "NODE|22-lts" \
+    --startup-file "node server.cjs" \
+    --always-on false \
+    --http20-enabled true \
+    --min-tls-version 1.2 \
+    --ftps-state Disabled \
+    --web-sockets-enabled true \
+    -o none
+else
+  echo "✅ App Service runtime already configured; skipping restart."
+fi
 
-az webapp config appsettings set \
+current_https_only=$(az webapp show \
   --name "$WEBAPP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --settings \
-    "SCM_DO_BUILD_DURING_DEPLOYMENT=false" \
-    "ENABLE_ORYX_BUILD=false" \
-    "NEXT_TELEMETRY_DISABLED=1" \
-    "NEXT_PUBLIC_LANGGRAPH_URL=$BACKEND_URL" \
-    "BACKEND_API_URL=$BACKEND_URL" \
-    "NEXT_PUBLIC_ASSISTANT_ID=$ASSISTANT_ID" \
-    "MARKDOWN_STORAGE_DIR=/home/data/markdown_threads" \
-    "AUTH_URL=$WEBAPP_URL" \
-    "NEXTAUTH_URL=$WEBAPP_URL" \
-    "AUTH_TRUST_HOST=true" \
-    "NODE_ENV=production" \
-    "UPLOAD_API_KEY=@Microsoft.KeyVault(VaultName=${KV_NAME};SecretName=UPLOAD-API-KEY)" \
-  -o none
+  --query httpsOnly \
+  -o tsv)
+if [ "$current_https_only" != "true" ]; then
+  az webapp update \
+    --name "$WEBAPP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --https-only true \
+    -o none
+else
+  echo "✅ HTTPS-only already enabled."
+fi
+
+desired_app_settings=(
+  "SCM_DO_BUILD_DURING_DEPLOYMENT=false"
+  "ENABLE_ORYX_BUILD=false"
+  "NEXT_TELEMETRY_DISABLED=1"
+  "NEXT_PUBLIC_LANGGRAPH_URL=$BACKEND_URL"
+  "BACKEND_API_URL=$BACKEND_URL"
+  "NEXT_PUBLIC_ASSISTANT_ID=$ASSISTANT_ID"
+  "MARKDOWN_STORAGE_DIR=/home/data/markdown_threads"
+  "AUTH_URL=$WEBAPP_URL"
+  "NEXTAUTH_URL=$WEBAPP_URL"
+  "AUTH_TRUST_HOST=true"
+  "NODE_ENV=production"
+  "UPLOAD_API_KEY=@Microsoft.KeyVault(VaultName=${KV_NAME};SecretName=UPLOAD-API-KEY)"
+)
+current_app_settings=$(az webapp config appsettings list \
+  --name "$WEBAPP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query "[].join('=', [name, value])" \
+  -o tsv)
+app_settings_changed=false
+for desired_setting in "${desired_app_settings[@]}"; do
+  if ! grep -Fqx -- "$desired_setting" <<< "$current_app_settings"; then
+    app_settings_changed=true
+    break
+  fi
+done
+
+if $app_settings_changed; then
+  az webapp config appsettings set \
+    --name "$WEBAPP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --settings "${desired_app_settings[@]}" \
+    -o none
+else
+  echo "✅ App settings already current; skipping restart."
+fi
 
 echo "📦 Installing dependencies and building production bundle..."
 yarn install --frozen-lockfile
@@ -151,7 +190,8 @@ trap 'rm -rf "$DEPLOY_WORK_DIR"' EXIT
 mkdir -p "$PACKAGE_ROOT/.next" "$PACKAGE_ROOT/public"
 
 cp -R .next/standalone/. "$PACKAGE_ROOT/"
-mkdir -p "$PACKAGE_ROOT/node_modules"
+mkdir -p "$PACKAGE_ROOT/node_modules/next"
+cp -R node_modules/next/. "$PACKAGE_ROOT/node_modules/next/"
 cp -R node_modules/ws "$PACKAGE_ROOT/node_modules/ws"
 cp -R .next/static "$PACKAGE_ROOT/.next/static"
 cp -R public/. "$PACKAGE_ROOT/public/"

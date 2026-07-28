@@ -39,6 +39,15 @@ test("custom server listens on the platform network interface", async () => {
   assert.match(server, /const hostname = process\.env\.HOST \|\| "0\.0\.0\.0";/);
 });
 
+test("custom server closes and exits on App Service termination", async () => {
+  const server = await source("server.cjs");
+
+  assert.match(server, /process\.once\("SIGTERM", shutdown\)/);
+  assert.match(server, /server\.close\(\(\) => process\.exit\(0\)\)/);
+  assert.match(server, /setTimeout\(\(\) => process\.exit\(1\), 10_000\)\.unref\(\)/);
+  assert.doesNotMatch(server, /process\.on\("SIGTERM"/);
+});
+
 test("production build uses standalone output for constrained hosting tiers", async () => {
   const nextConfig = await source("next.config.ts");
 
@@ -68,6 +77,10 @@ test("App Service deployment uses a prebuilt standalone zip", async () => {
   assert.match(deployScript, /\.next\/static/);
   assert.match(deployScript, /cp -R public/);
   assert.match(deployScript, /cp -R node_modules\/ws/);
+  assert.match(
+    deployScript,
+    /cp -R node_modules\/next\/\. "\$PACKAGE_ROOT\/node_modules\/next\/"/,
+  );
   assert.match(deployScript, /cp server\.cjs/);
   assert.match(
     deployScript,
@@ -120,6 +133,27 @@ test("App Service deployment owns startup polling so quota changes fail fast", a
   assert.match(deployScript, /--track-status false/);
   assert.ok(deployment >= 0 && deployment < verification);
   assert.ok(lastQuotaCheck > verification);
+});
+
+test("App Service deployment skips unchanged settings to preserve F1 stop quota", async () => {
+  const deployScript = await source("deploy.sh");
+
+  assert.match(
+    deployScript,
+    /current_runtime_config=\$\(az webapp config show[\s\S]*expected_runtime_config=/,
+  );
+  assert.match(
+    deployScript,
+    /if \[ "\$current_runtime_config" != "\$expected_runtime_config" \]; then[\s\S]*az webapp config set/,
+  );
+  assert.match(
+    deployScript,
+    /current_app_settings=\$\(az webapp config appsettings list/,
+  );
+  assert.match(
+    deployScript,
+    /if \$app_settings_changed; then[\s\S]*az webapp config appsettings set/,
+  );
 });
 
 test("all-in-one deployment runs the App Service deploy flow", async () => {

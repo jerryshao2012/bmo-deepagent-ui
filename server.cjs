@@ -201,30 +201,6 @@ app.prepare().then(() => {
   // Set up periodic batch save interval (for remaining unsaved items)
   const batchSaveInterval = setInterval(flushPendingSaves, BATCH_SAVE_INTERVAL);
 
-  // Also flush on graceful shutdown
-  process.on("SIGTERM", () => {
-    console.log("[WS] Graceful shutdown - flushing pending saves...");
-    // Clear all debounce timers first
-    for (const [threadId, timer] of debounceTimers.entries()) {
-      clearTimeout(timer);
-    }
-    debounceTimers.clear();
-    // Flush all pending saves
-    flushPendingSaves();
-    clearInterval(batchSaveInterval);
-  });
-
-  process.on("SIGINT", () => {
-    console.log("[WS] Graceful shutdown - flushing pending saves...");
-    // Clear all debounce timers first
-    for (const [threadId, timer] of debounceTimers.entries()) {
-      clearTimeout(timer);
-    }
-    debounceTimers.clear();
-    // Flush all pending saves
-    flushPendingSaves();
-    clearInterval(batchSaveInterval);
-  });
   function loadThreadContent(threadId) {
     const filePath = getFilePath(threadId);
     if (fs.existsSync(filePath)) {
@@ -289,6 +265,32 @@ app.prepare().then(() => {
   // Group clients by thread ID
   const rooms = new Map(); // Map<threadId, Set<WebSocket>>
   const roomContent = new LRUCache(200); // Thread Cache (max 200 active threads)
+
+  let shuttingDown = false;
+  function shutdown() {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log("[WS] Graceful shutdown - flushing pending saves...");
+
+    for (const timer of debounceTimers.values()) {
+      clearTimeout(timer);
+    }
+    debounceTimers.clear();
+    flushPendingSaves();
+    clearInterval(batchSaveInterval);
+
+    for (const clients of rooms.values()) {
+      for (const client of clients) {
+        client.close(1001, "Server shutting down");
+      }
+    }
+    wss.close();
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 10_000).unref();
+  }
+
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
 
   // Bidirectional bridge: notifies both SSE subscribers AND WebSocket
   // clients in the same thread.  Called from the SSE POST handler as well

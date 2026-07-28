@@ -104,17 +104,26 @@ set -eu
   printf ' <%s>' "$@"
   printf '\\n'
 } >> "$FAKE_COMMAND_LOG"
+identity=""
+port=""
+batch_mode=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    -i|-P|-o) [ "$#" -ge 2 ] || exit 64; shift 2 ;;
+    -i) [ "$#" -ge 2 ] || exit 64; identity="$2"; shift 2 ;;
+    -P) [ "$#" -ge 2 ] || exit 64; port="$2"; shift 2 ;;
+    -o) [ "$#" -ge 2 ] || exit 64; batch_mode="$2"; shift 2 ;;
     -*) exit 64 ;;
     *) break ;;
   esac
 done
+[ "$identity" = "$FAKE_EXPECTED_KEY" ] || exit 64
+[ "$port" = "22" ] || exit 64
+[ "$batch_mode" = "BatchMode=yes" ] || exit 64
 [ "$#" -eq 2 ] || exit 64
 source_file="$1"
 destination="$2"
-case "$destination" in *"@"*":deepagent-ui/.env.docker") ;; *) exit 64 ;; esac
+[ "$source_file" = "$FAKE_EXPECTED_ENV" ] || exit 64
+[ "$destination" = "$FAKE_EXPECTED_REMOTE:deepagent-ui/.env.docker" ] || exit 64
 /bin/mkdir -p "$FAKE_REMOTE_HOME/deepagent-ui"
 /bin/cp "$source_file" "$FAKE_REMOTE_HOME/deepagent-ui/.env.docker"
 `,
@@ -127,6 +136,13 @@ case "$destination" in *"@"*":deepagent-ui/.env.docker") ;; *) exit 64 ;; esac
   printf ' <%s>' "$@"
   printf '\\n'
 } >> "$FAKE_COMMAND_LOG"
+matched_url=0
+for argument in "$@"; do
+  case "$argument" in
+    http://*|https://*) [ "$argument" = "$FAKE_EXPECTED_PUBLIC_URL" ] || exit 64; matched_url=$((matched_url + 1)) ;;
+  esac
+done
+[ "$matched_url" -eq 1 ] || exit 64
 printf '${curlStatus}'
 `,
     );
@@ -169,14 +185,8 @@ set -eu
   printf ' <%s>' "$@"
   printf '\\n'
 } >> "$FAKE_COMMAND_LOG"
-for target in "$@"; do
-  case "$target" in
-    -*) ;;
-    "$FAKE_REMOTE_HOME"|"$FAKE_REMOTE_HOME"/*) ;;
-    *) exit 65 ;;
-  esac
-done
-/bin/mkdir "$@"
+[ "$#" -eq 2 ] && [ "$1" = "-p" ] && [ "$2" = "$FAKE_REMOTE_HOME/deepagent-ui/data" ] || exit 65
+/bin/mkdir -p "$FAKE_REMOTE_HOME/deepagent-ui/data"
 `,
     );
     for (const command of ["chmod"]) {
@@ -208,8 +218,10 @@ exit 0
         FAKE_COMMAND_LOG: logPath,
         FAKE_REMOTE_HOME: remoteHome,
         FAKE_REMOTE_BIN: remoteBin,
+        FAKE_EXPECTED_ENV: envPath,
         FAKE_EXPECTED_KEY: keyPath,
         FAKE_EXPECTED_REMOTE: remote,
+        FAKE_EXPECTED_PUBLIC_URL: "http://203.0.113.10",
       },
       envPath,
       keyPath,
@@ -259,6 +271,7 @@ test("deploys existing AMD64 image with secure runtime and persistent data", asy
     const publicUrl = "https://ui.example.test/app?x=one&y=two";
     const result = run([], {
       ...baseEnv,
+      FAKE_EXPECTED_PUBLIC_URL: publicUrl,
       ORACLE_HOST: "203.0.113.10",
       ORACLE_SSH_KEY: keyPath,
       ORACLE_ENV_FILE: envPath,

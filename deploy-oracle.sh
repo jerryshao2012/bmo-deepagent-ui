@@ -202,12 +202,12 @@ fi
   -e "AUTH_URL=$public_url" \
   -e "NEXTAUTH_URL=$public_url" \
   -e AUTH_TRUST_HOST=true \
-  -v "$remote_root/data:/app/data/markdown_threads" \
+  -v "$remote_root/data:/app/data/markdown_threads:Z" \
   "$image"
 REMOTE_SCRIPT
 
 for attempt in {1..12}; do
-  http_status="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 30 -- "$ORACLE_PUBLIC_URL" || true)"
+  http_status="$(curl --disable --globoff -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 30 -- "$ORACLE_PUBLIC_URL" || true)"
   case "$http_status" in
     200|301|302|303|307|308)
       printf 'Deployment available at %s\n' "$ORACLE_PUBLIC_URL"

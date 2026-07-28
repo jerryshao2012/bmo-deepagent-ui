@@ -138,6 +138,7 @@ destination="$2"
 } >> "$FAKE_COMMAND_LOG"
 matched_url=0
 previous_argument=""
+[ "$1" = "--disable" ] && [ "$2" = "--globoff" ] || exit 64
 for argument in "$@"; do
   case "$argument" in
     http://*|https://*) [ "$previous_argument" = "--" ] && [ "$argument" = "$FAKE_EXPECTED_PUBLIC_URL" ] || exit 64; matched_url=$((matched_url + 1)) ;;
@@ -171,7 +172,7 @@ case "$1 \${2:-}" in
       shift
     done
     [ "$env_file" = "$HOME/deepagent-ui/.env.docker" ] && [ -f "$env_file" ] || exit 65
-    [ "$volume" = "$HOME/deepagent-ui/data:/app/data/markdown_threads" ] || exit 65
+    [ "$volume" = "$HOME/deepagent-ui/data:/app/data/markdown_threads:Z" ] || exit 65
     [ -d "$HOME/deepagent-ui/data" ] || exit 65
     printf 'test-container-id\\n'
     ;;
@@ -290,7 +291,7 @@ test("deploys existing AMD64 image with secure runtime and persistent data", asy
     remoteHome,
     remote,
   }) => {
-    const publicUrl = "https://ui.example.test/app?x=one&y=two";
+    const publicUrl = "https://ui.example.test/app/[1-2]?x=one&y=two";
     const result = run([], {
       ...baseEnv,
       FAKE_EXPECTED_PUBLIC_URL: publicUrl,
@@ -314,12 +315,13 @@ test("deploys existing AMD64 image with secure runtime and persistent data", asy
     assert.match(log, /<--restart> <unless-stopped>/);
     assert.match(log, /<-p> <80:3000>/);
     assert.match(log, new RegExp(`<--env-file> <${escapeRegex(`${remoteHome}/deepagent-ui/.env.docker`)}>`));
-    assert.match(log, /<AUTH_URL=https:\/\/ui\.example\.test\/app\?x=one&y=two>/);
-    assert.match(log, /<NEXTAUTH_URL=https:\/\/ui\.example\.test\/app\?x=one&y=two>/);
+    assert.match(log, new RegExp(`<AUTH_URL=${escapeRegex(publicUrl)}>`));
+    assert.match(log, new RegExp(`<NEXTAUTH_URL=${escapeRegex(publicUrl)}>`));
     assert.match(log, /<AUTH_TRUST_HOST=true>/);
     assert.match(log, /\/app\/data\/markdown_threads/);
-    assert.match(log, new RegExp(`<${escapeRegex(`${remoteHome}/deepagent-ui/data:/app/data/markdown_threads`)}>`));
+    assert.match(log, new RegExp(`<${escapeRegex(`${remoteHome}/deepagent-ui/data:/app/data/markdown_threads:Z`)}>`));
     assert.match(log, /curl(?=[^\n]*<--connect-timeout> <10>)(?=[^\n]*<--max-time> <30>)[^\n]*/);
+    assert.match(log, /curl <--disable> <--globoff> <-sS>/);
     assert.match(log, new RegExp(`curl[^\\n]* <--> <${escapeRegex(publicUrl)}>`));
     assert.equal((log.match(/^curl /gm) ?? []).length, 1);
     assert.doesNotMatch(log + output, /test-secret/);

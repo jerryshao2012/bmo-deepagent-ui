@@ -47,7 +47,8 @@ private repositories must already be authenticated on VM.
 3. Validate required local commands, configuration, SSH key, and `.env.docker`.
 4. Verify SSH access and availability of either directly usable Docker or
    passwordless `sudo docker`.
-5. Create `~/deepagent-ui/data` and secure remote deployment directory.
+5. Create `~/deepagent-ui/data` and set remote `~/deepagent-ui` deployment
+   directory mode to `0700`.
 6. Copy `.env.docker` to `~/deepagent-ui/.env.docker` and apply mode `0600`.
 7. Pull configured AMD64 image.
 8. Remove existing named container when present.
@@ -55,10 +56,14 @@ private repositories must already be authenticated on VM.
    - `--restart unless-stopped`;
    - host `$ORACLE_HTTP_PORT` mapped to container port `3000`;
    - copied environment file;
-   - `AUTH_URL`, `NEXTAUTH_URL`, and `AUTH_TRUST_HOST` runtime overrides;
+   - `AUTH_URL=$ORACLE_PUBLIC_URL`,
+     `NEXTAUTH_URL=$ORACLE_PUBLIC_URL`, and `AUTH_TRUST_HOST=true` runtime
+     overrides;
    - persistent `~/deepagent-ui/data` volume mounted at
      `/app/data/markdown_threads`.
-10. Poll `$ORACLE_PUBLIC_URL` for a successful HTTP or redirect response.
+10. Poll `$ORACLE_PUBLIC_URL` up to 12 times at five-second intervals. Each
+    request uses a 10-second connection timeout and 30-second total timeout.
+    Treat HTTP `200`, `301`, `302`, `303`, `307`, or `308` as success.
 11. On failed health verification, print recent remote container logs and exit
     nonzero.
 

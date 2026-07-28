@@ -150,7 +150,6 @@ fi
 
 remote_bash <<'REMOTE_SCRIPT'
 set -euo pipefail
-export FAKE_REMOTE_HOME="${FAKE_REMOTE_HOME:-$HOME}"
 remote_root="$HOME/deepagent-ui"
 mkdir -p "$remote_root/data"
 chmod 0700 "$remote_root"
@@ -171,7 +170,6 @@ image="$3"
 http_port="$4"
 public_url="$5"
 remote_root="$HOME/deepagent-ui"
-export FAKE_REMOTE_HOME="${FAKE_REMOTE_HOME:-$HOME}"
 
 case "$docker_mode" in
   direct) docker_cmd=(docker) ;;

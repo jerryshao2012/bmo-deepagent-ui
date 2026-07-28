@@ -168,9 +168,9 @@ case "$1 \${2:-}" in
       esac
       shift
     done
-    [ "$env_file" = "$FAKE_REMOTE_HOME/deepagent-ui/.env.docker" ] && [ -f "$env_file" ] || exit 65
-    [ "$volume" = "$FAKE_REMOTE_HOME/deepagent-ui/data:/app/data/markdown_threads" ] || exit 65
-    [ -d "$FAKE_REMOTE_HOME/deepagent-ui/data" ] || exit 65
+    [ "$env_file" = "$HOME/deepagent-ui/.env.docker" ] && [ -f "$env_file" ] || exit 65
+    [ "$volume" = "$HOME/deepagent-ui/data:/app/data/markdown_threads" ] || exit 65
+    [ -d "$HOME/deepagent-ui/data" ] || exit 65
     printf 'test-container-id\\n'
     ;;
 esac
@@ -185,8 +185,8 @@ set -eu
   printf ' <%s>' "$@"
   printf '\\n'
 } >> "$FAKE_COMMAND_LOG"
-[ "$#" -eq 2 ] && [ "$1" = "-p" ] && [ "$2" = "$FAKE_REMOTE_HOME/deepagent-ui/data" ] || exit 65
-/bin/mkdir -p "$FAKE_REMOTE_HOME/deepagent-ui/data"
+[ "$#" -eq 2 ] && [ "$1" = "-p" ] && [ "$2" = "$HOME/deepagent-ui/data" ] || exit 65
+/bin/mkdir -p "$HOME/deepagent-ui/data"
 `,
     );
     for (const command of ["chmod"]) {

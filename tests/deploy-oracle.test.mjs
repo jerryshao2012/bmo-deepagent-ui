@@ -22,6 +22,14 @@ const assertCompleted = (result) =>
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const assertSshTransport = (log, keyPath, remote) =>
+  assert.match(
+    log,
+    new RegExp(
+      `ssh(?=[^\\n]*<-i> <${escapeRegex(keyPath)}>)(?=[^\\n]*<-p> <22>)(?=[^\\n]*<-o> <BatchMode=yes>)(?=[^\\n]*<${escapeRegex(remote)}>)[^\\n]*`,
+    ),
+  );
+
 const writeExecutable = async (filePath, contents) => {
   await writeFile(filePath, contents);
   await chmod(filePath, 0o755);
@@ -36,6 +44,7 @@ const withFakeCommands = async (curlStatus, callback) => {
     const envPath = path.join(directory, ".env.docker");
     const remoteHome = path.join(directory, "remote-home");
     const remoteBin = path.join(directory, "remote-bin");
+    const remote = "opc@203.0.113.10";
 
     await Promise.all([
       mkdir(remoteBin, { recursive: true }),
@@ -53,22 +62,37 @@ set -eu
   printf ' <%s>' "$@"
   printf '\\n'
 } >> "$FAKE_COMMAND_LOG"
+identity=""
+port=""
+batch_mode=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    -i|-p|-o) [ "$#" -ge 2 ] || exit 64; shift 2 ;;
+    -i) [ "$#" -ge 2 ] || exit 64; identity="$2"; shift 2 ;;
+    -p) [ "$#" -ge 2 ] || exit 64; port="$2"; shift 2 ;;
+    -o) [ "$#" -ge 2 ] || exit 64; batch_mode="$2"; shift 2 ;;
     -*) exit 64 ;;
     *) destination="$1"; shift; break ;;
   esac
 done
-[ "\${destination:-}" ] && [ "$#" -eq 1 ] || exit 64
+[ "$identity" = "$FAKE_EXPECTED_KEY" ] || exit 64
+[ "$port" = "22" ] || exit 64
+[ "$batch_mode" = "BatchMode=yes" ] || exit 64
+[ "\${destination:-}" = "$FAKE_EXPECTED_REMOTE" ] && [ "$#" -eq 1 ] || exit 64
 remote_command="$1"
-safe_command="\${remote_command//\\/dev\\/null/}"
-safe_command="\${safe_command//\\/app\\/data\\/markdown_threads/}"
-if [[ "$safe_command" =~ (^|[\\;\\|\\&\\(\\)[:space:]])/ ]]; then
+payload_path="$FAKE_REMOTE_HOME/remote-payload.sh"
+/bin/cat > "$payload_path"
+payload="$( /bin/cat "$payload_path" )"
+scan="\${remote_command}"$'\\n'"\${payload}"
+safe_scan="\${scan//>\\/dev\\/null/}"
+safe_scan="\${safe_scan//2>\\&1/}"
+if [[ "$safe_scan" == *'>'* || "$safe_scan" == *'<'* ]]; then
+  exit 64
+fi
+if [[ "$safe_scan" =~ (^|[\\;\\|\\&\\(]|[[:space:]])/ ]]; then
   exit 64
 fi
 cd "$FAKE_REMOTE_HOME"
-/usr/bin/env -i HOME="$FAKE_REMOTE_HOME" PATH="$FAKE_REMOTE_BIN" FAKE_COMMAND_LOG="$FAKE_COMMAND_LOG" /bin/bash -c "$remote_command"
+/usr/bin/env -i HOME="$FAKE_REMOTE_HOME" PATH="$FAKE_REMOTE_BIN" FAKE_COMMAND_LOG="$FAKE_COMMAND_LOG" /bin/bash -c "$remote_command" < "$payload_path"
 `,
     );
     await writeExecutable(
@@ -120,17 +144,42 @@ case "$1 \${2:-}" in
   "container inspect") exit 1 ;;
   "run -d")
     env_file=""
+    volume=""
     while [ "$#" -gt 0 ]; do
-      [ "$1" = "--env-file" ] && { shift; env_file="$1"; }
+      case "$1" in
+        --env-file) shift; [ "$#" -gt 0 ] || exit 65; env_file="$1" ;;
+        -v|--volume) shift; [ "$#" -gt 0 ] || exit 65; volume="$1" ;;
+      esac
       shift
     done
-    [ -f "$env_file" ] || exit 65
+    [ "$env_file" = "$FAKE_REMOTE_HOME/deepagent-ui/.env.docker" ] && [ -f "$env_file" ] || exit 65
+    [ "$volume" = "$FAKE_REMOTE_HOME/deepagent-ui/data:/app/data/markdown_threads" ] || exit 65
+    [ -d "$FAKE_REMOTE_HOME/deepagent-ui/data" ] || exit 65
     printf 'test-container-id\\n'
     ;;
 esac
 `,
     );
-    for (const command of ["chmod", "mkdir"]) {
+    await writeExecutable(
+      path.join(directory, "mkdir"),
+      `#!/bin/bash
+set -eu
+{
+  printf 'mkdir'
+  printf ' <%s>' "$@"
+  printf '\\n'
+} >> "$FAKE_COMMAND_LOG"
+for target in "$@"; do
+  case "$target" in
+    -*) ;;
+    "$FAKE_REMOTE_HOME"|"$FAKE_REMOTE_HOME"/*) ;;
+    *) exit 65 ;;
+  esac
+done
+/bin/mkdir "$@"
+`,
+    );
+    for (const command of ["chmod"]) {
       await writeExecutable(
         path.join(directory, command),
         `#!/bin/bash
@@ -154,33 +203,42 @@ exit 0
 
     await callback({
       commandPath: `${directory}:${process.env.PATH}`,
+      baseEnv: {
+        PATH: `${directory}:${process.env.PATH}`,
+        FAKE_COMMAND_LOG: logPath,
+        FAKE_REMOTE_HOME: remoteHome,
+        FAKE_REMOTE_BIN: remoteBin,
+        FAKE_EXPECTED_KEY: keyPath,
+        FAKE_EXPECTED_REMOTE: remote,
+      },
       envPath,
       keyPath,
       logPath,
       remoteHome,
+      remote,
     });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 };
 
-test("--help documents required Oracle configuration", () => {
-  const result = run(["--help"]);
+test("--help documents required Oracle configuration", async () => {
+  await withFakeCommands("200", async ({ baseEnv, logPath }) => {
+    const result = run(["--help"], baseEnv);
 
-  assertCompleted(result);
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Usage: \.\/deploy-oracle\.sh/);
-  assert.match(result.stdout, /ORACLE_HOST/);
-  assert.match(result.stdout, /ORACLE_SSH_KEY/);
-  assert.match(result.stdout, /DOCKER_HUB_USERNAME/);
+    assertCompleted(result);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Usage: \.\/deploy-oracle\.sh/);
+    assert.match(result.stdout, /ORACLE_HOST/);
+    assert.match(result.stdout, /ORACLE_SSH_KEY/);
+    assert.match(result.stdout, /DOCKER_HUB_USERNAME/);
+    assert.equal(await readFile(logPath, "utf8"), "");
+  });
 });
 
 test("missing Oracle configuration fails before remote action", async () => {
-  await withFakeCommands("200", async ({ commandPath, logPath }) => {
-    const result = run([], {
-      PATH: commandPath,
-      FAKE_COMMAND_LOG: logPath,
-    });
+  await withFakeCommands("200", async ({ baseEnv, logPath }) => {
+    const result = run([], baseEnv);
 
     assertCompleted(result);
     assert.notEqual(result.status, 0);
@@ -191,19 +249,16 @@ test("missing Oracle configuration fails before remote action", async () => {
 
 test("deploys existing AMD64 image with secure runtime and persistent data", async () => {
   await withFakeCommands("200", async ({
-    commandPath,
+    baseEnv,
     envPath,
     keyPath,
     logPath,
     remoteHome,
+    remote,
   }) => {
-    const remote = "opc@203.0.113.10";
     const publicUrl = "https://ui.example.test/app?x=one&y=two";
     const result = run([], {
-      PATH: commandPath,
-      FAKE_COMMAND_LOG: logPath,
-      FAKE_REMOTE_HOME: remoteHome,
-      FAKE_REMOTE_BIN: path.join(path.dirname(remoteHome), "remote-bin"),
+      ...baseEnv,
       ORACLE_HOST: "203.0.113.10",
       ORACLE_SSH_KEY: keyPath,
       ORACLE_ENV_FILE: envPath,
@@ -215,6 +270,7 @@ test("deploys existing AMD64 image with secure runtime and persistent data", asy
 
     assertCompleted(result);
     assert.equal(result.status, 0, output);
+    assertSshTransport(log, keyPath, remote);
     assert.match(log, /docker\.io\/example\/deepagent-ui:latest/);
     assert.match(log, new RegExp(`scp(?: <[^>]+>)* <${escapeRegex(envPath)}> <${remote}:deepagent-ui/\\.env\\.docker>`));
     assert.match(log, new RegExp(`chmod <0700> <${escapeRegex(`${remoteHome}/deepagent-ui`)}>`));
@@ -227,6 +283,7 @@ test("deploys existing AMD64 image with secure runtime and persistent data", asy
     assert.match(log, /<NEXTAUTH_URL=https:\/\/ui\.example\.test\/app\?x=one&y=two>/);
     assert.match(log, /<AUTH_TRUST_HOST=true>/);
     assert.match(log, /\/app\/data\/markdown_threads/);
+    assert.match(log, new RegExp(`<${escapeRegex(`${remoteHome}/deepagent-ui/data:/app/data/markdown_threads`)}>`));
     assert.match(log, /curl(?=[^\n]*<--connect-timeout> <10>)(?=[^\n]*<--max-time> <30>)[^\n]*/);
     assert.equal((log.match(/^curl /gm) ?? []).length, 1);
     assert.doesNotMatch(log + output, /test-secret/);
@@ -235,17 +292,15 @@ test("deploys existing AMD64 image with secure runtime and persistent data", asy
 
 test("failed health verification requests logs and exits nonzero", async () => {
   await withFakeCommands("500", async ({
-    commandPath,
+    baseEnv,
     envPath,
     keyPath,
     logPath,
     remoteHome,
+    remote,
   }) => {
     const result = run([], {
-      PATH: commandPath,
-      FAKE_COMMAND_LOG: logPath,
-      FAKE_REMOTE_HOME: remoteHome,
-      FAKE_REMOTE_BIN: path.join(path.dirname(remoteHome), "remote-bin"),
+      ...baseEnv,
       ORACLE_HOST: "203.0.113.10",
       ORACLE_SSH_KEY: keyPath,
       ORACLE_ENV_FILE: envPath,
@@ -259,5 +314,6 @@ test("failed health verification requests logs and exits nonzero", async () => {
     assert.equal((log.match(/^curl /gm) ?? []).length, 12);
     assert.match(log, /curl(?=[^\n]*<--connect-timeout> <10>)(?=[^\n]*<--max-time> <30>)[^\n]*/);
     assert.match(log, /docker <logs> <--tail> <100>/);
+    assertSshTransport(log, keyPath, remote);
   });
 });

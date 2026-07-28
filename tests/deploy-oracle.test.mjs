@@ -137,10 +137,12 @@ destination="$2"
   printf '\\n'
 } >> "$FAKE_COMMAND_LOG"
 matched_url=0
+previous_argument=""
 for argument in "$@"; do
   case "$argument" in
-    http://*|https://*) [ "$argument" = "$FAKE_EXPECTED_PUBLIC_URL" ] || exit 64; matched_url=$((matched_url + 1)) ;;
+    http://*|https://*) [ "$previous_argument" = "--" ] && [ "$argument" = "$FAKE_EXPECTED_PUBLIC_URL" ] || exit 64; matched_url=$((matched_url + 1)) ;;
   esac
+  previous_argument="$argument"
 done
 [ "$matched_url" -eq 1 ] || exit 64
 printf '${curlStatus}'
@@ -259,6 +261,26 @@ test("missing Oracle configuration fails before remote action", async () => {
   });
 });
 
+test("invalid Oracle public URLs fail before remote action", async () => {
+  await withFakeCommands("200", async ({ baseEnv, envPath, keyPath, logPath }) => {
+    for (const publicUrl of ["-not-a-url", "ftp://ui.example.test"]) {
+      const result = run([], {
+        ...baseEnv,
+        ORACLE_HOST: "203.0.113.10",
+        ORACLE_SSH_KEY: keyPath,
+        ORACLE_ENV_FILE: envPath,
+        DOCKER_HUB_USERNAME: "example",
+        ORACLE_PUBLIC_URL: publicUrl,
+      });
+
+      assertCompleted(result);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr + result.stdout, /ORACLE_PUBLIC_URL is invalid/);
+    }
+    assert.equal(await readFile(logPath, "utf8"), "");
+  });
+});
+
 test("deploys existing AMD64 image with secure runtime and persistent data", async () => {
   await withFakeCommands("200", async ({
     baseEnv,
@@ -298,6 +320,7 @@ test("deploys existing AMD64 image with secure runtime and persistent data", asy
     assert.match(log, /\/app\/data\/markdown_threads/);
     assert.match(log, new RegExp(`<${escapeRegex(`${remoteHome}/deepagent-ui/data:/app/data/markdown_threads`)}>`));
     assert.match(log, /curl(?=[^\n]*<--connect-timeout> <10>)(?=[^\n]*<--max-time> <30>)[^\n]*/);
+    assert.match(log, new RegExp(`curl[^\\n]* <--> <${escapeRegex(publicUrl)}>`));
     assert.equal((log.match(/^curl /gm) ?? []).length, 1);
     assert.doesNotMatch(log + output, /test-secret/);
   });

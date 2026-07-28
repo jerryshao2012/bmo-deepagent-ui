@@ -81,12 +81,25 @@ valid_port() {
   [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
 }
 
+valid_public_url() {
+  local url="$1" authority
+  if [[ "$url" =~ [[:cntrl:]] ]] || ! [[ "$url" =~ ^https?://([^/?#]+) ]]; then
+    return 1
+  fi
+  authority="${BASH_REMATCH[1]}"
+  [[ "$authority" != *"@"* ]] && ! [[ "$authority" =~ [[:space:]] ]]
+}
+
 if ! valid_port "$ORACLE_SSH_PORT"; then
   printf 'ORACLE_SSH_PORT must be between 1 and 65535\n' >&2
   exit 1
 fi
 if ! valid_port "$ORACLE_HTTP_PORT"; then
   printf 'ORACLE_HTTP_PORT must be between 1 and 65535\n' >&2
+  exit 1
+fi
+if ! valid_public_url "$ORACLE_PUBLIC_URL"; then
+  printf 'ORACLE_PUBLIC_URL is invalid\n' >&2
   exit 1
 fi
 if ! [[ "$ORACLE_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]; then
@@ -194,7 +207,7 @@ fi
 REMOTE_SCRIPT
 
 for attempt in {1..12}; do
-  http_status="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 30 "$ORACLE_PUBLIC_URL" || true)"
+  http_status="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 30 -- "$ORACLE_PUBLIC_URL" || true)"
   case "$http_status" in
     200|301|302|303|307|308)
       printf 'Deployment available at %s\n' "$ORACLE_PUBLIC_URL"

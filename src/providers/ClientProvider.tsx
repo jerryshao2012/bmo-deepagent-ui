@@ -1,14 +1,9 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, ReactNode } from "react";
+import { useEffect, useMemo, ReactNode } from "react";
 import { Client } from "@langchain/langgraph-sdk";
 import { createLangGraphClientConfig, installGlobalAuthInterceptor, startProactiveSessionRefresh } from "@/lib/langgraph-client";
-
-interface ClientContextValue {
-  client: Client;
-}
-
-const ClientContext = createContext<ClientContextValue | null>(null);
+import { ClientContext } from "@/providers/ClientContext";
 
 interface ClientProviderProps {
   children: ReactNode;
@@ -44,13 +39,4 @@ export function ClientProvider({
   return (
     <ClientContext.Provider value={value}>{children}</ClientContext.Provider>
   );
-}
-
-export function useClient(): Client {
-  const context = useContext(ClientContext);
-
-  if (!context) {
-    throw new Error("useClient must be used within a ClientProvider");
-  }
-  return context.client;
 }

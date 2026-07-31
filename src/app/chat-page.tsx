@@ -12,7 +12,8 @@ import { getConfig, saveConfig, StandaloneConfig } from "@/lib/config";
 import { ConfigDialog } from "@/app/components/ConfigDialog";
 import { Button } from "@/components/ui/button";
 import { Assistant } from "@langchain/langgraph-sdk";
-import { ClientProvider, useClient } from "@/providers/ClientProvider";
+import { ClientProvider } from "@/providers/ClientProvider";
+import { useClient } from "@/providers/ClientContext";
 import { Settings, MessagesSquare, SquarePen } from "lucide-react";
 import { HealthIndicator } from "./components/HealthIndicator";
 import {
@@ -21,7 +22,8 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { ThreadList } from "@/app/components/ThreadList";
-import { ChatProvider, useChatContext } from "@/providers/ChatProvider";
+import { ChatProvider } from "@/providers/ChatProvider";
+import { useChatContext } from "@/providers/ChatContext";
 import { ChatInterface } from "@/app/components/ChatInterface";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -31,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { logoutFromLangGraph } from "@/lib/langgraph-client";
+import { findAssistantForGraph } from "@/lib/findAssistantForGraph";
 
 interface HomePageInnerProps {
   config: StandaloneConfig;
@@ -106,16 +109,10 @@ function HomePageInner({
       }
     } else {
       try {
-        // We should try to list out the assistants for this graph, and then use the default one.
-        // TODO: Paginate this search, but 100 should be enough for graph name
-        const assistants = await client.assistants.search({
-          graphId: config.assistantId,
-          limit: 100,
-        });
-        const defaultAssistant =
-          assistants.find(
-            (assistant) => assistant.metadata?.["created_by"] === "system"
-          ) || assistants[0];
+        const defaultAssistant = await findAssistantForGraph(
+          client,
+          config.assistantId
+        );
         if (defaultAssistant === undefined) {
           console.warn("No assistant found for graph, using fallback assistant");
           setAssistant({

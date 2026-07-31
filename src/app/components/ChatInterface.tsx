@@ -29,19 +29,17 @@ import {
 } from "lucide-react";
 import { SkillsDrawer } from "@/app/components/SkillsDrawer";
 import { buildSkillDraftPrompt } from "@/app/utils/buildSkillDraftPrompt";
-import { useClient } from "@/providers/ClientProvider";
+import { useClient } from "@/providers/ClientContext";
 import { getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
 import { ChatMessage } from "@/app/components/ChatMessage";
 import type {
   TodoItem,
-  ToolCall,
   ActionRequest,
   ReviewConfig,
 } from "@/app/types/types";
-import { Assistant, Message } from "@langchain/langgraph-sdk";
-import { extractStringFromMessageContent } from "@/app/utils/utils";
-import { useChatContext } from "@/providers/ChatProvider";
+import { Assistant } from "@langchain/langgraph-sdk";
+import { useChatContext } from "@/providers/ChatContext";
 import { cn } from "@/lib/utils";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { FilesPopover } from "@/app/components/TasksFilesSidebar";
@@ -59,34 +57,11 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
+import { useProcessedMessages } from "@/app/hooks/useProcessedMessages";
 
 interface ChatInterfaceProps {
   assistant: Assistant | null;
 }
-
-const parseToolArgs = (value: unknown): Record<string, unknown> => {
-  if (value && typeof value === "object") {
-    return value as Record<string, unknown>;
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (parsed && typeof parsed === "object") {
-          return parsed as Record<string, unknown>;
-        }
-      } catch {
-        // Fall through to raw string wrapper below.
-      }
-    }
-
-    return { raw: value };
-  }
-
-  return {};
-};
 
 const getAriaExpandedProps = (expanded: boolean) => ({
   "aria-expanded": expanded ? ("true" as const) : ("false" as const),
@@ -895,110 +870,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     [handleSubmit, composerLocked]
   );
 
-  // TODO: can we make this part of the hook?
-  const processedMessages = useMemo(() => {
-    /*
-     1. Loop through all messages
-     2. For each AI message, add the AI message, and any tool calls to the messageMap
-     3. For each tool message, find the corresponding tool call in the messageMap and update the status and output
-    */
-    const messageMap = new Map<
-      string,
-      { message: Message; toolCalls: ToolCall[] }
-    >();
-    messages.forEach((message: Message) => {
-      if (message.type === "ai") {
-        const toolCallsInMessage: Array<{
-          id?: string;
-          function?: { name?: string; arguments?: unknown };
-          name?: string;
-          type?: string;
-          args?: unknown;
-          input?: unknown;
-        }> = [];
-        if (
-          message.additional_kwargs?.tool_calls &&
-          Array.isArray(message.additional_kwargs.tool_calls)
-        ) {
-          toolCallsInMessage.push(...message.additional_kwargs.tool_calls);
-        } else if (message.tool_calls && Array.isArray(message.tool_calls)) {
-          toolCallsInMessage.push(
-            ...message.tool_calls.filter(
-              (toolCall: { name?: string }) => toolCall.name !== ""
-            )
-          );
-        } else if (Array.isArray(message.content)) {
-          const toolUseBlocks = message.content.filter(
-            (block: { type?: string }) => block.type === "tool_use"
-          );
-          toolCallsInMessage.push(...toolUseBlocks);
-        }
-        const toolCallsWithStatus = toolCallsInMessage.map(
-          (toolCall: {
-            id?: string;
-            function?: { name?: string; arguments?: unknown };
-            name?: string;
-            type?: string;
-            args?: unknown;
-            input?: unknown;
-          }) => {
-            const name =
-              toolCall.function?.name ||
-              toolCall.name ||
-              toolCall.type ||
-              "unknown";
-            const args =
-              toolCall.function?.arguments ||
-              toolCall.args ||
-              toolCall.input ||
-              {};
-            return {
-              id: toolCall.id || `tool-${Math.random()}`,
-              name,
-              args: parseToolArgs(args),
-              status: interrupt ? "interrupted" : ("pending" as const),
-            } as ToolCall;
-          }
-        );
-        messageMap.set(message.id!, {
-          message,
-          toolCalls: toolCallsWithStatus,
-        });
-      } else if (message.type === "tool") {
-        const toolCallId = message.tool_call_id;
-        if (!toolCallId) {
-          return;
-        }
-        for (const [, data] of messageMap.entries()) {
-          const toolCallIndex = data.toolCalls.findIndex(
-            (tc: ToolCall) => tc.id === toolCallId
-          );
-          if (toolCallIndex === -1) {
-            continue;
-          }
-          data.toolCalls[toolCallIndex] = {
-            ...data.toolCalls[toolCallIndex],
-            status: "completed" as const,
-            result: extractStringFromMessageContent(message),
-          };
-          break;
-        }
-      } else if (message.type === "human") {
-        messageMap.set(message.id!, {
-          message,
-          toolCalls: [],
-        });
-      }
-    });
-    const processedArray = Array.from(messageMap.values());
-    return processedArray.map((data, index) => {
-      const prevMessage = index > 0 ? processedArray[index - 1].message : null;
-      return {
-        ...data,
-        showAvatar: data.message.type !== prevMessage?.type,
-      };
-    });
-  }, [messages, interrupt]);
+  const processedMessages = useProcessedMessages(messages, interrupt);
 
   const displayTodos = useMemo(() => {
     const hasPending = todos.some((t) => t.status === "pending");

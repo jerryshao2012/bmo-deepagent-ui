@@ -14,7 +14,9 @@ type SSEController = ReadableStreamDefaultController<Uint8Array>;
 declare global {
   var __sseThreadStore: Map<string, string> | undefined;
   var __sseSubscribers: Map<string, Set<{ controller: SSEController }>> | undefined;
-  var __sseNotify: ((threadId: string, content: string) => void) | undefined;
+  var __sseNotify:
+    | ((threadId: string, content: string, immediate?: boolean) => void)
+    | undefined;
 }
 
 const threadStore: Map<string, string> =
@@ -60,11 +62,15 @@ function removeSubscriber(threadId: string, controller: SSEController): void {
   );
 }
 
-function notifySubscribers(threadId: string, content: string): void {
+function notifySubscribers(
+  threadId: string,
+  content: string,
+  immediate = false
+): void {
   // Use the global bridge when available (it is kept in sync by server.cjs),
   // otherwise fall back to the local implementation.
   if (typeof globalThis.__sseNotify === "function") {
-    globalThis.__sseNotify(threadId, content);
+    globalThis.__sseNotify(threadId, content, immediate);
     return;
   }
 
@@ -96,17 +102,14 @@ function notifySubscribers(threadId: string, content: string): void {
  *    bridge.  Best-effort on serverless — works in real time when both
  *    clients land on the same function instance.
  *
- * 2. Polling exchange (with `?poll=1&push=<urlencoded-content>`):
- *    Short, stateless request/response.  The server stores the pushed
- *    content in its in-memory Map and immediately returns whatever content
- *    it currently has (possibly from another client on a *different*
- *    instance that happened to hit this instance earlier).  This provides
- *    eventual-consistency catch-up across serverless function instances.
+ * 2. Read-only polling (with `?poll=1`):
+ *    Short request/response used when a proxy buffers or interrupts SSE.
+ *    Mutations always use POST so a newly opened empty browser cannot erase
+ *    content written by another client.
  *
  * Expected query parameters:
  * - threadId: The ID of the thread
  * - poll (optional): If "1", use polling mode
- * - push (optional, only with poll): URL-encoded content to store
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -118,18 +121,6 @@ export async function GET(req: NextRequest) {
 
   // ── Polling mode (cross-instance catch-up) ──────────────────────────
   if (searchParams.get("poll") === "1") {
-    const pushContent = searchParams.get("push");
-
-    if (pushContent !== null) {
-      if (pushContent.trim() === "") {
-        threadStore.delete(threadId);
-      } else {
-        threadStore.set(threadId, pushContent);
-      }
-      // Also push to any SSE subscribers on this instance
-      notifySubscribers(threadId, pushContent);
-    }
-
     const currentContent = threadStore.get(threadId) || "";
 
     return new Response(
@@ -162,7 +153,7 @@ export async function GET(req: NextRequest) {
 
       // Send current content immediately
       const content = threadStore.get(threadId) || "";
-      const syncMessage = `event: sync\ndata: ${JSON.stringify({ type: "sync", content })}\n\n`;
+      const syncMessage = `event: sync\ndata: ${JSON.stringify({ type: "sync", content, initial: true })}\n\n`;
       controller.enqueue(encoder.encode(syncMessage));
 
       console.log(
@@ -244,7 +235,7 @@ export async function POST(req: NextRequest) {
 
       // Push update to all connected SSE subscribers
       // (When the global bridge is active, this also reaches WebSocket clients)
-      notifySubscribers(threadId, content || "");
+      notifySubscribers(threadId, content || "", immediate === true);
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { "Content-Type": "application/json" },

@@ -73,13 +73,34 @@ function IntroPageContent() {
   const pollingIntervalRef = useRef<number | null>(null);
   const sharedTextRef = useRef<string>("");
   const lastPollPushedRef = useRef<string | null>(null);
+  const fallbackInitializedRef = useRef<boolean>(false);
   const crossDeployPollRef = useRef<number | null>(null);
   const lastBackendSyncRef = useRef<string | null>(null);
+  const contentVersionRef = useRef(0);
+  const pendingWebSocketContentRef = useRef<string | null>(null);
+  const pendingBackendContentRef = useRef<string | null>(null);
+  const backendWriteInFlightRef = useRef(false);
+  const pendingFallbackUpdateRef = useRef<{
+    content: string;
+    immediate: boolean;
+  } | null>(null);
+  const fallbackWriteInFlightRef = useRef(false);
+  const activeThreadIdRef = useRef(threadId);
+  activeThreadIdRef.current = threadId;
 
-  // Keep sharedTextRef in sync for the polling interval callback
-  useEffect(() => {
-    sharedTextRef.current = sharedText;
-  }, [sharedText]);
+  const applyContent = useCallback(
+    (content: string) => {
+      contentVersionRef.current += 1;
+      sharedTextRef.current = content;
+      setSharedText(content);
+      if (content) {
+        localStorage.setItem(`markdown_thread_${threadId}`, content);
+      } else {
+        localStorage.removeItem(`markdown_thread_${threadId}`);
+      }
+    },
+    [threadId]
+  );
 
   // Prevent background body scroll when the telemetry dialog is open
   useEffect(() => {
@@ -98,12 +119,16 @@ function IntroPageContent() {
   useEffect(() => {
     if (threadId) {
       hasFallenBackRef.current = false;
+      contentVersionRef.current += 1;
+      pendingWebSocketContentRef.current = null;
+      pendingBackendContentRef.current = null;
+      pendingFallbackUpdateRef.current = null;
       const cached = localStorage.getItem(`markdown_thread_${threadId}`);
       if (cached) {
-        setSharedText(cached);
+        applyContent(cached);
       }
     }
-  }, [threadId]);
+  }, [threadId, applyContent]);
 
   // ── Cross-deployment sync via LangGraph backend ─────────────────────
   // When the same thread is opened on two different deployments (e.g.
@@ -114,27 +139,49 @@ function IntroPageContent() {
   const syncContentToBackend = useCallback(
     async (content: string) => {
       if (!threadId) return;
-      if (content === lastBackendSyncRef.current) return;
       const config = getConfig();
       if (!config) return;
+      if (
+        content === lastBackendSyncRef.current &&
+        pendingBackendContentRef.current === null
+      ) {
+        return;
+      }
+
+      pendingBackendContentRef.current = content;
+      if (backendWriteInFlightRef.current) return;
+      backendWriteInFlightRef.current = true;
+
       try {
-        const token = getBrowserSessionToken();
-        const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
-        const res = await fetch(`${cleanUrl}/chat_threads/${threadId}/state`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-API-Key": token || "",
-          },
-          body: JSON.stringify({
-            values: { markdown_content: content },
-          }),
-        });
-        if (res.ok) {
-          lastBackendSyncRef.current = content;
+        while (pendingBackendContentRef.current !== null) {
+          const pendingContent: string = pendingBackendContentRef.current;
+          const token = getBrowserSessionToken();
+          const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
+          const res = await fetch(
+            `${cleanUrl}/chat_threads/${threadId}/state`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-API-Key": token || "",
+              },
+              body: JSON.stringify({
+                values: { markdown_content: pendingContent },
+              }),
+            }
+          );
+          if (activeThreadIdRef.current !== threadId) return;
+          if (!res.ok) break;
+
+          lastBackendSyncRef.current = pendingContent;
+          if (pendingBackendContentRef.current === pendingContent) {
+            pendingBackendContentRef.current = null;
+          }
         }
       } catch {
         // Silently ignore — cross-deploy sync is best-effort
+      } finally {
+        backendWriteInFlightRef.current = false;
       }
     },
     [threadId]
@@ -148,8 +195,14 @@ function IntroPageContent() {
     lastBackendSyncRef.current = null;
 
     crossDeployPollRef.current = window.setInterval(async () => {
+      if (pendingBackendContentRef.current !== null) {
+        void syncContentToBackend(pendingBackendContentRef.current);
+        return;
+      }
+
       const config = getConfig();
       if (!config) return;
+      const requestVersion = contentVersionRef.current;
       try {
         const token = getBrowserSessionToken();
         const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
@@ -161,6 +214,12 @@ function IntroPageContent() {
         });
         if (!res.ok) return;
         const data = await res.json();
+        if (
+          requestVersion !== contentVersionRef.current ||
+          pendingBackendContentRef.current !== null
+        ) {
+          return;
+        }
         const remoteContent: string =
           data?.values?.markdown_content ?? "";
         const localContent = sharedTextRef.current;
@@ -172,26 +231,83 @@ function IntroPageContent() {
           console.log(
             "[Cross-Deploy] Received remote content from backend"
           );
-          sharedTextRef.current = remoteContent;
           lastBackendSyncRef.current = remoteContent;
           lastPollPushedRef.current = remoteContent;
-          setSharedText(remoteContent);
-          localStorage.setItem(
-            `markdown_thread_${threadId}`,
-            remoteContent
-          );
+
+          const activeSocket = wsRef.current;
+          if (
+            activeSocket &&
+            activeSocket.readyState !== WebSocket.CLOSING &&
+            activeSocket.readyState !== WebSocket.CLOSED
+          ) {
+            pendingWebSocketContentRef.current = remoteContent;
+            if (activeSocket.readyState === WebSocket.OPEN) {
+              activeSocket.send(
+                JSON.stringify({ type: "update", content: remoteContent })
+              );
+            }
+          } else {
+            pendingFallbackUpdateRef.current = {
+              content: remoteContent,
+              immediate: false,
+            };
+          }
+          applyContent(remoteContent);
         }
       } catch {
         // Silently ignore transient failures
       }
     }, 4000);
-  }, [threadId]);
+  }, [threadId, syncContentToBackend, applyContent]);
+
+  const sendFallbackUpdate = useCallback(
+    async (val: string, immediate = false) => {
+      pendingFallbackUpdateRef.current = { content: val, immediate };
+      if (fallbackWriteInFlightRef.current) return;
+      fallbackWriteInFlightRef.current = true;
+
+      try {
+        while (pendingFallbackUpdateRef.current !== null) {
+          const pendingUpdate: {
+            content: string;
+            immediate: boolean;
+          } = pendingFallbackUpdateRef.current;
+          const response = await fetch("/api/ws-fallback", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              threadId,
+              type: "update",
+              content: pendingUpdate.content,
+              immediate: pendingUpdate.immediate,
+            }),
+          });
+          if (activeThreadIdRef.current !== threadId) return;
+          if (!response.ok) {
+            throw new Error(`HTTP fallback returned ${response.status}`);
+          }
+          fallbackInitializedRef.current = true;
+          if (pendingFallbackUpdateRef.current === pendingUpdate) {
+            pendingFallbackUpdateRef.current = null;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to send content update via HTTP fallback:", err);
+      } finally {
+        fallbackWriteInFlightRef.current = false;
+      }
+    },
+    [threadId]
+  );
 
   const startFallbackSSE = useCallback(() => {
     if (!threadId) return;
     if (eventSourceRef.current) return;
 
     hasFallenBackRef.current = true;
+    fallbackInitializedRef.current = false;
     setWsStatus("fallback");
     console.log(
       "Initiating HTTP streaming (SSE) fallback for thread:",
@@ -199,7 +315,7 @@ function IntroPageContent() {
     );
 
     const eventSource = new EventSource(
-      `/api/ws-fallback?threadId=${threadId}`
+      `/api/ws-fallback?threadId=${encodeURIComponent(threadId)}`
     );
     eventSourceRef.current = eventSource;
 
@@ -207,12 +323,24 @@ function IntroPageContent() {
       try {
         const data = JSON.parse(event.data);
         if (data.type === "sync") {
-          setSharedText(data.content);
-          if (data.content) {
-            localStorage.setItem(`markdown_thread_${threadId}`, data.content);
-          } else {
-            localStorage.removeItem(`markdown_thread_${threadId}`);
+          if (data.initial && !data.content && sharedTextRef.current) {
+            lastPollPushedRef.current = sharedTextRef.current;
+            void sendFallbackUpdate(sharedTextRef.current, true).finally(() => {
+              fallbackInitializedRef.current = true;
+            });
+            return;
           }
+
+          const incomingContent: string = data.content ?? "";
+          if (
+            pendingFallbackUpdateRef.current !== null &&
+            incomingContent !== pendingFallbackUpdateRef.current.content
+          ) {
+            return;
+          }
+          lastPollPushedRef.current = incomingContent;
+          fallbackInitializedRef.current = true;
+          applyContent(incomingContent);
         }
       } catch (err) {
         console.error("SSE error parsing message:", err);
@@ -237,70 +365,49 @@ function IntroPageContent() {
     // ── Cross-instance polling fallback ──────────────────────────────
     // On serverless platforms (Vercel) different function instances don't
     // share memory, so real-time SSE push may not reach all subscribers.
-    // This polling loop exchanges content via the ?poll=1&push=… endpoint
-    // every few seconds, providing eventual-consistency catch-up.
-    //
-    // To avoid ping-pong overwrites, we only push when the local content
-    // has changed since the last push, and we track the last received
-    // remote content so we don't push it back.
+    // Polling is read-only. Only explicit editor actions use POST, so opening
+    // an empty browser cannot publish a delete over another machine's content.
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
     }
-    lastPollPushedRef.current = null;
+    lastPollPushedRef.current = sharedTextRef.current;
     pollingIntervalRef.current = window.setInterval(async () => {
       try {
+        if (pendingFallbackUpdateRef.current !== null) {
+          const pendingUpdate = pendingFallbackUpdateRef.current;
+          void sendFallbackUpdate(
+            pendingUpdate.content,
+            pendingUpdate.immediate
+          );
+          return;
+        }
+        if (!fallbackInitializedRef.current) return;
+        const requestVersion = contentVersionRef.current;
         const currentContent = sharedTextRef.current;
-        const hasChanged = currentContent !== lastPollPushedRef.current;
-        const encoded = encodeURIComponent(currentContent);
-        const pushParam = hasChanged ? `&push=${encoded}` : "";
         const res = await fetch(
-          `/api/ws-fallback?threadId=${threadId}&poll=1${pushParam}`
+          `/api/ws-fallback?threadId=${encodeURIComponent(threadId)}&poll=1`
         );
         if (!res.ok) return;
         const data = await res.json();
+        if (
+          pendingFallbackUpdateRef.current !== null ||
+          requestVersion !== contentVersionRef.current
+        ) {
+          return;
+        }
         if (data.type === "sync") {
-          if (hasChanged) {
-            lastPollPushedRef.current = currentContent;
-          }
           const remoteContent: string = data.content ?? "";
-          if (remoteContent && remoteContent !== currentContent) {
+          if (remoteContent !== currentContent) {
             console.log("[SSE Poll] Received remote content update");
-            sharedTextRef.current = remoteContent;
             lastPollPushedRef.current = remoteContent;
-            setSharedText(remoteContent);
-            localStorage.setItem(
-              `markdown_thread_${threadId}`,
-              remoteContent
-            );
+            applyContent(remoteContent);
           }
         }
       } catch {
         // Silently ignore transient poll failures
       }
     }, 3000);
-  }, [threadId]);
-
-  const sendFallbackUpdate = useCallback(
-    async (val: string, immediate = false) => {
-      try {
-        await fetch("/api/ws-fallback", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            threadId,
-            type: "update",
-            content: val,
-            immediate,
-          }),
-        });
-      } catch (err) {
-        console.error("Failed to send content update via HTTP fallback:", err);
-      }
-    },
-    [threadId]
-  );
+  }, [threadId, sendFallbackUpdate, applyContent]);
 
   const connectWS = useCallback(() => {
     if (!threadId) return;
@@ -366,12 +473,15 @@ function IntroPageContent() {
       try {
         const data = JSON.parse(event.data);
         if (data.type === "sync") {
-          setSharedText(data.content);
-          if (data.content) {
-            localStorage.setItem(`markdown_thread_${threadId}`, data.content);
-          } else {
-            localStorage.removeItem(`markdown_thread_${threadId}`);
+          const incomingContent: string = data.content ?? "";
+          if (
+            pendingWebSocketContentRef.current !== null &&
+            incomingContent !== pendingWebSocketContentRef.current
+          ) {
+            return;
           }
+          pendingWebSocketContentRef.current = null;
+          applyContent(incomingContent);
         }
       } catch (err) {
         console.error("WS error parsing message:", err);
@@ -406,7 +516,7 @@ function IntroPageContent() {
       setSocket(null);
       startFallbackSSE();
     };
-  }, [threadId, startFallbackSSE]);
+  }, [threadId, startFallbackSSE, applyContent]);
 
   // Main connection management effect
   useEffect(() => {
@@ -431,6 +541,7 @@ function IntroPageContent() {
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
       }
+      fallbackInitializedRef.current = false;
       if (crossDeployPollRef.current) {
         clearInterval(crossDeployPollRef.current);
         crossDeployPollRef.current = null;
@@ -452,55 +563,51 @@ function IntroPageContent() {
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
-    setSharedText(val);
-    if (val) {
-      localStorage.setItem(`markdown_thread_${threadId}`, val);
-    } else {
-      localStorage.removeItem(`markdown_thread_${threadId}`);
-    }
+    applyContent(val);
     if (socket && socket.readyState === WebSocket.OPEN) {
+      pendingWebSocketContentRef.current = val;
       socket.send(JSON.stringify({ type: "update", content: val }));
-    } else if (wsStatus === "fallback") {
-      sendFallbackUpdate(val);
+    } else {
+      void sendFallbackUpdate(val);
     }
-    syncContentToBackend(val);
+    void syncContentToBackend(val);
   };
 
   const handleRemove = () => {
-    setSharedText("");
-    localStorage.removeItem(`markdown_thread_${threadId}`);
+    applyContent("");
     if (socket && socket.readyState === WebSocket.OPEN) {
+      pendingWebSocketContentRef.current = "";
       socket.send(JSON.stringify({ type: "update", content: "" }));
-    } else if (wsStatus === "fallback") {
-      sendFallbackUpdate("");
+    } else {
+      void sendFallbackUpdate("");
     }
-    syncContentToBackend("");
+    void syncContentToBackend("");
     toast.success("Content removed from local and server storage.");
   };
 
   const handlePaste = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      setSharedText(text);
+      applyContent(text);
       if (text) {
-        localStorage.setItem(`markdown_thread_${threadId}`, text);
         // Save to server immediately if content is not empty
         if (socket && socket.readyState === WebSocket.OPEN) {
+          pendingWebSocketContentRef.current = text;
           socket.send(
             JSON.stringify({ type: "update", content: text, immediate: true })
           );
-        } else if (wsStatus === "fallback") {
-          sendFallbackUpdate(text, true);
+        } else {
+          void sendFallbackUpdate(text, true);
         }
-        syncContentToBackend(text);
+        void syncContentToBackend(text);
       } else {
-        localStorage.removeItem(`markdown_thread_${threadId}`);
         if (socket && socket.readyState === WebSocket.OPEN) {
+          pendingWebSocketContentRef.current = "";
           socket.send(JSON.stringify({ type: "update", content: "" }));
-        } else if (wsStatus === "fallback") {
-          sendFallbackUpdate("");
+        } else {
+          void sendFallbackUpdate("");
         }
-        syncContentToBackend("");
+        void syncContentToBackend("");
       }
     } catch (err) {
       console.error("Failed to read from clipboard:", err);

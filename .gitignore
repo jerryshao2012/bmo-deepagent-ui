@@ -19,6 +19,9 @@ data/
 *.swo
 *~
 .DS_Store
+graphify-out/
+.container-build-context*/
+.deepeval/
 
 # Temporary files
 *.tmp

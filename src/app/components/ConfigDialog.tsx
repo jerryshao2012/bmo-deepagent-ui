@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -132,6 +132,21 @@ export function ConfigDialog({
   const [isDiagnosticsUnlocked, setIsDiagnosticsUnlocked] = useState(false);
   const [passkeyInput, setPasskeyInput] = useState("");
   const [passkeyError, setPasskeyError] = useState("");
+  const skillsUrlRef = useRef(initialConfig?.deploymentUrl || deploymentUrl);
+  skillsUrlRef.current = initialConfig?.deploymentUrl || deploymentUrl;
+
+  const loadSkills = useCallback(async (url: string) => {
+    setSkillsLoading(true);
+    try {
+      const res = await fetchAvailableSkills(url);
+      setSkills(res.skills);
+      setIsLiveSkills(res.isLive);
+    } catch (err) {
+      console.error("Failed to load skills:", err);
+    } finally {
+      setSkillsLoading(false);
+    }
+  }, []);
 
   const handleCopySkillName = async (name: string) => {
     try {
@@ -153,7 +168,7 @@ export function ConfigDialog({
     try {
       const res = await uploadSkill(file, deploymentUrl);
       setUploadStatus({ type: "success", message: res.message });
-      await loadSkills();
+      await loadSkills(deploymentUrl);
     } catch (err) {
       setUploadStatus({
         type: "error",
@@ -178,7 +193,7 @@ export function ConfigDialog({
       const fileList = Array.from(files);
       const res = await uploadSkill(fileList, deploymentUrl);
       setUploadStatus({ type: "success", message: res.message });
-      await loadSkills();
+      await loadSkills(deploymentUrl);
     } catch (err) {
       setUploadStatus({
         type: "error",
@@ -232,7 +247,7 @@ export function ConfigDialog({
         const res = await uploadSkill(scannedFiles, deploymentUrl);
         setUploadStatus({ type: "success", message: res.message });
       }
-      await loadSkills();
+      await loadSkills(deploymentUrl);
     } catch (err) {
       setUploadStatus({
         type: "error",
@@ -254,7 +269,7 @@ export function ConfigDialog({
     try {
       const res = await deleteSkill(skillId, deploymentUrl);
       setUploadStatus({ type: "success", message: res.message });
-      await loadSkills();
+      await loadSkills(deploymentUrl);
     } catch (err) {
       setUploadStatus({
         type: "error",
@@ -275,24 +290,11 @@ export function ConfigDialog({
     }
   }, [open, initialConfig]);
 
-  const loadSkills = async (url?: string) => {
-    setSkillsLoading(true);
-    try {
-      const res = await fetchAvailableSkills(url || deploymentUrl);
-      setSkills(res.skills);
-      setIsLiveSkills(res.isLive);
-    } catch (err) {
-      console.error("Failed to load skills:", err);
-    } finally {
-      setSkillsLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (open) {
-      loadSkills(initialConfig?.deploymentUrl || deploymentUrl);
+      void loadSkills(skillsUrlRef.current);
     }
-  }, [open]);
+  }, [open, loadSkills]);
 
   // Reset storage info when dialog closes
   useEffect(() => {
@@ -783,7 +785,7 @@ export function ConfigDialog({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    onClick={() => loadSkills()}
+                    onClick={() => loadSkills(deploymentUrl)}
                     disabled={skillsLoading}
                     className="h-7 w-7 text-muted-foreground hover:text-foreground"
                     title="Refresh skills"

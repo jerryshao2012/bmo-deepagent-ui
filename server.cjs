@@ -295,8 +295,35 @@ app.prepare().then(() => {
   // Bidirectional bridge: notifies both SSE subscribers AND WebSocket
   // clients in the same thread.  Called from the SSE POST handler as well
   // as from the WebSocket message handler so both transports stay in sync.
-  globalThis.__sseNotify = (threadId, content) => {
-    const payload = JSON.stringify({ type: "sync", content });
+  globalThis.__sseNotify = (threadId, content, immediate = false) => {
+    const normalizedContent = typeof content === "string" ? content : "";
+    if (normalizedContent.trim() === "") {
+      globalThis.__sseThreadStore.delete(threadId);
+      roomContent.delete(threadId);
+    } else {
+      globalThis.__sseThreadStore.set(threadId, normalizedContent);
+      roomContent.set(threadId, normalizedContent);
+    }
+
+    if (immediate && normalizedContent.trim() !== "") {
+      try {
+        fs.writeFileSync(getFilePath(threadId), normalizedContent, "utf8");
+        pendingSaves.delete(threadId);
+        if (debounceTimers.has(threadId)) {
+          clearTimeout(debounceTimers.get(threadId));
+          debounceTimers.delete(threadId);
+        }
+      } catch (err) {
+        console.error(
+          `[WS Immediate] Error writing file for thread ${threadId}:`,
+          err
+        );
+      }
+    } else {
+      scheduleBatchSave(threadId, normalizedContent);
+    }
+
+    const payload = JSON.stringify({ type: "sync", content: normalizedContent });
 
     // Push to SSE subscribers
     const subs = globalThis.__sseSubscribers.get(threadId);
@@ -329,7 +356,7 @@ app.prepare().then(() => {
     }
 
     console.log(
-      `[WS↔SSE Bridge] Synced thread ${threadId} (content ${content.length} bytes)`
+      `[WS↔SSE Bridge] Synced thread ${threadId} (content ${normalizedContent.length} bytes)`
     );
   };
 
@@ -405,61 +432,30 @@ app.prepare().then(() => {
             }
           }
 
+          if (currentContent.trim() === "") {
+            globalThis.__sseThreadStore.delete(threadId);
+          } else {
+            globalThis.__sseThreadStore.set(threadId, currentContent);
+          }
+
           // Acknowledge by sending the resolved sync state to this connecting client
-          ws.send(JSON.stringify({ type: "sync", content: currentContent }));
+          ws.send(
+            JSON.stringify({
+              type: "sync",
+              content: currentContent,
+              initial: true,
+            })
+          );
         }
 
         if (data.type === "update") {
-          if (!data.content || data.content.trim() === "") {
-            roomContent.delete(threadId);
-          } else {
-            roomContent.set(threadId, data.content);
-          }
-          
-          // Check if immediate save is requested
-          if (data.immediate === true && data.content && data.content.trim() !== "") {
-            // Save immediately without debounce delay
-            console.log(`[WS Immediate] Saving thread ${threadId} immediately`);
-            try {
-              const filePath = getFilePath(threadId);
-              fs.writeFileSync(filePath, data.content, "utf8");
-              console.log(
-                `[WS Immediate] Content saved. Wrote file for thread: ${threadId}`
-              );
-              // Remove from pending saves since we just flushed it
-              pendingSaves.delete(threadId);
-              // Clear any existing debounce timer
-              if (debounceTimers.has(threadId)) {
-                clearTimeout(debounceTimers.get(threadId));
-                debounceTimers.delete(threadId);
-              }
-            } catch (err) {
-              console.error(
-                `[WS Immediate] Error writing file for thread ${threadId}:`,
-                err
-              );
-            }
-          } else {
-            // Schedule for batch save with debounce
-            scheduleBatchSave(threadId, data.content);
-          }
-
-          // Broadcast to all other clients with the same thread ID
-          const clients = rooms.get(threadId);
-          if (clients) {
-            for (const client of clients) {
-              if (client !== ws && client.readyState === 1) {
-                // 1 = OPEN
-                client.send(
-                  JSON.stringify({ type: "sync", content: data.content })
-                );
-              }
-            }
-          }
-
-          // Push to SSE fallback subscribers so both transports stay in sync
+          // Update shared storage and push to both WebSocket and SSE clients.
           if (typeof globalThis.__sseNotify === "function") {
-            globalThis.__sseNotify(threadId, data.content || "");
+            globalThis.__sseNotify(
+              threadId,
+              data.content || "",
+              data.immediate === true
+            );
           }
         }
       } catch (err) {

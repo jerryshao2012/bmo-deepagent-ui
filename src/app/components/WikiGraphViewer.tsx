@@ -181,16 +181,6 @@ export default function WikiGraphViewer({ threadId }: Props) {
     };
   }, [threadId]);
 
-  // Kick off simulation after data is set and canvas is in the DOM.
-  const dataRef = useRef(data);
-  dataRef.current = data;
-  useEffect(() => {
-    if (!data || !canvasRef.current) return;
-    // Small delay to ensure layout is complete.
-    const timer = setTimeout(() => initSimulation(data), 50);
-    return () => clearTimeout(timer);
-  }, [data]);
-
   // Init force simulation
   const initSimulation = useCallback((g: GraphData) => {
     if (!canvasRef.current) return;
@@ -220,6 +210,14 @@ export default function WikiGraphViewer({ threadId }: Props) {
     if (animRef.current) cancelAnimationFrame(animRef.current);
     run();
   }, []);
+
+  // Kick off simulation after data is set and canvas is in the DOM.
+  useEffect(() => {
+    if (!data || !canvasRef.current) return;
+    // Small delay to ensure layout is complete.
+    const timer = setTimeout(() => initSimulation(data), 50);
+    return () => clearTimeout(timer);
+  }, [data, initSimulation]);
 
   // Resize handler
   useEffect(() => {

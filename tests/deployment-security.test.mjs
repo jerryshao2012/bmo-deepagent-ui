@@ -1,9 +1,22 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
 const source = async (relativePath) =>
   readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
+
+test("App Service deployment script has valid Bash syntax", () => {
+  const result = spawnSync("bash", ["-n", "deploy.sh"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+});
 
 test("container image never embeds local environment files", async () => {
   const [dockerfile, dockerignore] = await Promise.all([

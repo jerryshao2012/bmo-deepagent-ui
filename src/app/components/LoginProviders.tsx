@@ -1,11 +1,16 @@
 "use client";
 
-import React, { useState, useEffect, useTransition } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  readRememberedLogin,
+  type LoginProvider,
+  type RememberedLogin,
+} from "@/lib/remembered-login";
 
 interface LoginProvidersProps {
-  onSignIn: (provider: string) => Promise<void>;
+  onSignIn: (provider: LoginProvider) => Promise<void>;
 }
 
 const GoogleIcon = () => (
@@ -35,105 +40,172 @@ const GithubIcon = () => (
   </svg>
 );
 
-export default function LoginProviders({ onSignIn }: LoginProvidersProps) {
-  const [lastUsed, setLastUsed] = useState<string>("google");
-  const [isPending, startTransition] = useTransition();
-  const [activeProvider, setActiveProvider] = useState<string | null>(null);
+const providers: Array<{
+  id: LoginProvider;
+  name: string;
+  icon: React.ReactNode;
+}> = [
+  { id: "google", name: "Google", icon: <GoogleIcon /> },
+  { id: "github", name: "Github", icon: <GithubIcon /> },
+];
 
-  useEffect(() => {
-    const stored = localStorage.getItem("last_used_provider");
-    if (stored) {
-      setLastUsed(stored);
-    }
+function providerName(provider: LoginProvider) {
+  return provider === "google" ? "Google" : "GitHub";
+}
+
+function accountInitials(account: RememberedLogin) {
+  const source = account.name || account.email || providerName(account.provider);
+  const parts = source.split(/\s+/).filter(Boolean);
+
+  if (parts.length > 1) {
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  }
+
+  return source.slice(0, 2).toUpperCase();
+}
+
+function isRedirectError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+
+  const candidate = error as { message?: unknown; digest?: unknown };
+  return (
+    candidate.message === "NEXT_REDIRECT" ||
+    (typeof candidate.digest === "string" &&
+      candidate.digest.startsWith("NEXT_REDIRECT"))
+  );
+}
+
+export default function LoginProviders({ onSignIn }: LoginProvidersProps) {
+  const [remembered, setRemembered] = useState<RememberedLogin | null>(null);
+  const [activeProvider, setActiveProvider] = useState<LoginProvider | null>(
+    null,
+  );
+  const signInStartedRef = useRef(false);
+
+  const resetSignIn = useCallback(() => {
+    signInStartedRef.current = false;
+    setActiveProvider(null);
   }, []);
 
-  const handleProviderClick = (provider: string) => {
-    localStorage.setItem("last_used_provider", provider);
-    setLastUsed(provider);
+  useEffect(() => {
+    setRemembered(readRememberedLogin());
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) resetSignIn();
+    };
+
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, [resetSignIn]);
+
+  const handleProviderClick = (provider: LoginProvider) => {
+    if (signInStartedRef.current) return;
+
+    signInStartedRef.current = true;
     setActiveProvider(provider);
 
-    startTransition(async () => {
-      try {
-        await onSignIn(provider);
-      } catch (error: any) {
-        // If it is a Next.js redirect error (which is thrown to perform the redirection),
-        // let Next.js handle it and do not show an error toast to the user.
-        if (
-          error?.message === "NEXT_REDIRECT" ||
-          (error?.digest && typeof error.digest === "string" && error.digest.startsWith("NEXT_REDIRECT"))
-        ) {
-          return;
-        }
-        toast.error(`Failed to sign in with ${provider}. Please try again.`);
-        setActiveProvider(null);
-      }
-    });
+    void onSignIn(provider)
+      .then(resetSignIn)
+      .catch((error: unknown) => {
+        if (isRedirectError(error)) return;
+
+        toast.error(
+          `Failed to sign in with ${providerName(provider)}. Please try again.`,
+        );
+        resetSignIn();
+      });
   };
 
-  const providers = [
-    { id: "google", name: "Google", icon: <GoogleIcon /> },
-    { id: "github", name: "Github", icon: <GithubIcon /> },
-  ];
+  const isSigningIn = activeProvider !== null;
+  const rememberedLabel = remembered?.name || remembered?.email || null;
+  const rememberedProvider = remembered
+    ? providers.find((provider) => provider.id === remembered.provider)
+    : null;
 
   return (
     <div className="w-full">
-      {/* Divider */}
+      {remembered && rememberedLabel && rememberedProvider && (
+        <button
+          type="button"
+          aria-label={`Continue as ${rememberedLabel} with ${providerName(remembered.provider)}`}
+          aria-busy={activeProvider === remembered.provider}
+          disabled={isSigningIn}
+          onClick={() => handleProviderClick(remembered.provider)}
+          className="group relative flex w-full items-center gap-3 rounded-2xl border border-[#1155cc]/30 bg-gradient-to-br from-white to-blue-50/60 px-4 py-3.5 text-left shadow-sm shadow-[#1155cc]/10 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#1155cc]/60 hover:shadow-lg hover:shadow-blue-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1155cc] focus-visible:ring-offset-2 active:translate-y-0 disabled:cursor-wait disabled:opacity-70"
+        >
+          <Avatar className="h-12 w-12 border border-white bg-[#1155cc] shadow-sm">
+            {remembered.avatarUrl && (
+              <AvatarImage
+                src={remembered.avatarUrl}
+                alt={rememberedLabel}
+                referrerPolicy="no-referrer"
+              />
+            )}
+            <AvatarFallback className="bg-[#1155cc] text-sm font-bold text-white">
+              {accountInitials(remembered)}
+            </AvatarFallback>
+          </Avatar>
+
+          <span className="min-w-0 flex-1">
+            <span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-[#1155cc]">
+              Continue as
+            </span>
+            <span className="mt-0.5 block truncate text-sm font-semibold text-slate-900">
+              {rememberedLabel}
+            </span>
+            {remembered.email && remembered.email !== rememberedLabel && (
+              <span className="mt-0.5 block truncate text-xs text-slate-500">
+                {remembered.email}
+              </span>
+            )}
+          </span>
+
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm">
+            {activeProvider === remembered.provider ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#1155cc] border-t-transparent" />
+            ) : (
+              rememberedProvider.icon
+            )}
+          </span>
+        </button>
+      )}
+
       <div className="relative my-6 flex items-center justify-center">
         <div className="absolute inset-0 flex items-center" aria-hidden="true">
-          <div className="w-full border-t border-slate-200/80"></div>
+          <div className="w-full border-t border-slate-200/80" />
         </div>
-        <div className="relative bg-[#f8fafc] sm:bg-white/80 px-4 text-xs font-semibold tracking-wider text-slate-500/90 rounded-full">
-          Log in with
+        <div className="relative rounded-full bg-[#f8fafc] px-4 text-xs font-semibold tracking-wider text-slate-500/90 sm:bg-white/80">
+          {remembered ? "Or sign in with" : "Log in with"}
         </div>
       </div>
 
-      {/* Button Grid - 2 horizontal buttons */}
       <div className="grid grid-cols-2 gap-3.5">
-        {providers.map((p) => {
-          const isLastUsed = lastUsed === p.id;
-          const isLoading = isPending && activeProvider === p.id;
-
-          // BMO corporate blue styling for the last used button
-          const borderClass = isLastUsed
-            ? "border-[#1155cc] hover:border-[#1155cc]/80 shadow-sm shadow-[#1155cc]/5"
-            : "border-slate-200 hover:border-slate-300";
+        {providers.map((provider) => {
+          const isLoading = activeProvider === provider.id;
 
           return (
-            <div key={p.id} className="relative group">
-              {/* LAST USED Overlapping Badge (outside the button to avoid overflow clipping!) */}
-              {isLastUsed && (
-                <div className="absolute -top-[9px] left-[12px] px-1.5 bg-white border border-[#1155cc] rounded text-[8px] font-extrabold tracking-widest text-[#1155cc] leading-none select-none z-10 whitespace-nowrap py-0.5 pointer-events-none transition-all duration-300 group-hover:-translate-y-0.5">
-                  LAST USED
-                </div>
-              )}
-
-              <button
-                onClick={() => handleProviderClick(p.id)}
-                disabled={isPending && activeProvider !== p.id}
-                className={`signin-btn relative flex w-full items-center justify-center rounded-xl bg-white py-3.5 px-3 text-sm font-semibold transition-all duration-300 hover:bg-slate-50 hover:text-slate-900 hover:shadow-lg hover:shadow-slate-200/50 group-hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] border ${borderClass} ${
-                  isPending && activeProvider !== p.id ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
-                }`}
-              >
-                {/* Icon & Label horizontally aligned */}
-                <div className="flex items-center justify-center gap-2 w-full">
-                  {isLoading ? (
-                    <div className="h-4.5 w-4.5 animate-spin rounded-full border-2 border-[#1155cc] border-t-transparent" />
-                  ) : (
-                    <div className="transition-transform duration-300 group-hover:scale-105 flex items-center justify-center">
-                      {p.icon}
-                    </div>
-                  )}
-                  <span className={`text-[13px] font-semibold tracking-tight whitespace-nowrap ${
-                    isLastUsed ? "text-slate-900" : "text-slate-700 group-hover:text-slate-900"
-                  }`}>
-                    {p.name}
+            <button
+              key={provider.id}
+              type="button"
+              onClick={() => handleProviderClick(provider.id)}
+              disabled={isSigningIn}
+              aria-busy={isLoading}
+              className="signin-btn group relative flex w-full cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-3.5 text-sm font-semibold transition-all duration-300 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 hover:shadow-lg hover:shadow-slate-200/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1155cc] focus-visible:ring-offset-2 active:translate-y-0 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
+            >
+              <span className="flex w-full items-center justify-center gap-2">
+                {isLoading ? (
+                  <span className="h-4.5 w-4.5 animate-spin rounded-full border-2 border-[#1155cc] border-t-transparent" />
+                ) : (
+                  <span className="flex items-center justify-center transition-transform duration-300 group-hover:scale-105">
+                    {provider.icon}
                   </span>
-                </div>
-
-                {/* Original Moving Shimmer Effect on Hover */}
-                <div className="signin-btn-shimmer absolute inset-0 pointer-events-none rounded-xl" />
-              </button>
-            </div>
+                )}
+                <span className="whitespace-nowrap text-[13px] font-semibold tracking-tight text-slate-700 group-hover:text-slate-900">
+                  {provider.name}
+                </span>
+              </span>
+              <span className="signin-btn-shimmer pointer-events-none absolute inset-0 rounded-xl" />
+            </button>
           );
         })}
       </div>

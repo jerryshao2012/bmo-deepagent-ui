@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import ChatPage from "../chat-page";
 import { redirect } from "next/navigation";
+import type { AuthenticatedUser } from "@/lib/remembered-login";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export default async function WorkspacePage() {
   const backendUrl = process.env.NEXT_PUBLIC_LANGGRAPH_URL || "http://localhost:2024";
   const cleanBackendUrl = backendUrl.replace(/\/+$/, "");
 
-  let user = null;
+  let user: AuthenticatedUser | null = null;
   let validationFailed = false;
   
   try {

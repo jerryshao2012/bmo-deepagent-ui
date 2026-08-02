@@ -127,7 +127,7 @@ test("App Service deployment preserves runtime and Key Vault settings", async ()
 test("App Service deployment fails fast when Azure reports exhausted quota", async () => {
   const deployScript = await source("deploy.sh");
   const quotaCheck = deployScript.indexOf("fail_if_webapp_quota_exceeded");
-  const build = deployScript.indexOf("yarn install --frozen-lockfile");
+  const build = deployScript.indexOf("yarn install --immutable");
 
   assert.match(deployScript, /--query "join\('\|', \[state, usageState\]\)"/);
   assert.match(deployScript, /\$webapp_usage_state" = "Exceeded"/);

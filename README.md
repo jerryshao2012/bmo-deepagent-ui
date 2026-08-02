@@ -9,24 +9,22 @@
 ```bash
 git clone https://github.com/jerryshao2012/bmo-deepagent-ui.git
 cd bmo-deep-agents-ui
-# Install yarn
+# Configure npm authentication for corporation network
 npm config set "bin-links" true
 npm config set "strict-ssl" false
 npm config set registry https://bmostaging.jfrog.io/artifactory/api/npm/bmoai-npm-virtual/
 # Choose SAML SSO
 npm login --auth-type=web
-npm install -g yarn
 # Add %AppData%\npm to PATH for Windows
 
-# For corporation network
-yarn config set "strict-ssl" false
-# Get configuration from npm config list
-yarn config set registry https://bmostaging.jfrog.io/artifactory/api/npm/bmoai-npm-virtual/
+# Enable package-manager shim included with Node.js 22
+corepack enable
 
-# Update yarn.lock
-# Replace https://registry.npmjs.org/ with https://bmostaging.jfrog.io/artifactory/api/npm/bmoai-npm-virtual/
-# Replace https://registry.yarnpkg.com/ with https://bmostaging.jfrog.io/artifactory/api/npm/bmoai-npm-virtual/
-yarn install
+# For corporation network
+yarn config set enableStrictSsl false
+yarn config set npmRegistryServer https://bmostaging.jfrog.io/artifactory/api/npm/bmoai-npm-virtual/
+
+yarn install --immutable
 yarn dev
 ```
 

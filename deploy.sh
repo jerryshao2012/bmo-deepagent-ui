@@ -179,7 +179,7 @@ else
 fi
 
 echo "📦 Installing dependencies and building production bundle..."
-yarn install --frozen-lockfile
+yarn install --immutable
 yarn build
 
 DEPLOY_TMP_ROOT="${TMPDIR:-/tmp}"

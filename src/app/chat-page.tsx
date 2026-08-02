@@ -34,13 +34,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { logoutFromLangGraph } from "@/lib/langgraph-client";
 import { findAssistantForGraph } from "@/lib/findAssistantForGraph";
+import RememberedLoginCapture from "@/app/components/RememberedLoginCapture";
+import type { AuthenticatedUser } from "@/lib/remembered-login";
 
 interface HomePageInnerProps {
   config: StandaloneConfig;
   configDialogOpen: boolean;
   setConfigDialogOpen: (open: boolean) => void;
   handleSaveConfig: (config: StandaloneConfig) => void;
-  user: any;
+  user: AuthenticatedUser;
 }
 
 function ChatControlsBridge({
@@ -319,7 +321,7 @@ function HomePageInner({
   );
 }
 
-function HomePageContent({ user }: { user: any }) {
+function HomePageContent({ user }: { user: AuthenticatedUser }) {
   const [config, setConfig] = useState<StandaloneConfig | null>(null);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [assistantId, setAssistantId] = useQueryState("assistantId");
@@ -395,16 +397,19 @@ function HomePageContent({ user }: { user: any }) {
   );
 }
 
-export default function HomePage({ user }: { user: any }) {
+export default function HomePage({ user }: { user: AuthenticatedUser }) {
   return (
-    <Suspense
-      fallback={
-        <div className="flex h-screen items-center justify-center">
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      }
-    >
-      <HomePageContent user={user} />
-    </Suspense>
+    <>
+      <RememberedLoginCapture user={user} />
+      <Suspense
+        fallback={
+          <div className="flex h-screen items-center justify-center">
+            <p className="text-muted-foreground">Loading...</p>
+          </div>
+        }
+      >
+        <HomePageContent user={user} />
+      </Suspense>
+    </>
   );
 }

@@ -1,13 +1,15 @@
 FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
+RUN corepack enable
 ARG NEXT_PUBLIC_LANGGRAPH_URL
 ARG NEXT_PUBLIC_ASSISTANT_ID=research
 ENV NEXT_PUBLIC_LANGGRAPH_URL=$NEXT_PUBLIC_LANGGRAPH_URL
 ENV NEXT_PUBLIC_ASSISTANT_ID=$NEXT_PUBLIC_ASSISTANT_ID
-COPY package.json yarn.lock* ./
+COPY package.json yarn.lock .yarnrc.yml ./
+COPY .yarn/releases ./.yarn/releases
 #RUN sed -i 's|https://bmostaging.jfrog.io/artifactory/api/npm/bmoai-npm-virtual/|https://registry.npmjs.org/|g' yarn.lock
-RUN (yarn install --frozen-lockfile || yarn install) && yarn cache clean
+RUN yarn install --immutable && yarn cache clean --all
 COPY . .
 # Use webpack for the production image build path.
 ENV NODE_OPTIONS="--max-old-space-size=4096"
@@ -21,13 +23,15 @@ FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+RUN corepack enable
 
 # Copy package config and lock files
-COPY package.json yarn.lock* ./
+COPY package.json yarn.lock .yarnrc.yml ./
+COPY .yarn/releases ./.yarn/releases
 #RUN sed -i 's|https://bmostaging.jfrog.io/artifactory/api/npm/bmoai-npm-virtual/|https://registry.npmjs.org/|g' yarn.lock
 
 # Install only production dependencies
-RUN (yarn install --production --frozen-lockfile || yarn install --production) && yarn cache clean
+RUN yarn workspaces focus --all --production && yarn cache clean --all
 
 # Copy pre-compiled production build and public files
 COPY --from=builder /app/.next ./.next

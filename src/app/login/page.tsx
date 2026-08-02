@@ -4,6 +4,8 @@ import { HealthIndicator } from "../components/HealthIndicator";
 import LoginProviders from "../components/LoginProviders";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
+import type { LoginProvider } from "@/lib/remembered-login";
+import { buildOAuthLoginUrl } from "@/lib/oauth-login";
 
 export const dynamic = "force-dynamic";
 
@@ -169,13 +171,12 @@ export default async function LoginPage({
 
           {/* Sign-in buttons */}
           <LoginProviders
-            onSignIn={async (provider: string) => {
+            onSignIn={async (provider: LoginProvider) => {
               "use server";
               const backendUrl =
                 process.env.NEXT_PUBLIC_LANGGRAPH_URL ||
                 "http://localhost:2024";
-              const cleanBackendUrl = backendUrl.replace(/\/+$/, "");
-              redirect(`${cleanBackendUrl}/auth/login/${provider}`);
+              redirect(buildOAuthLoginUrl(backendUrl, provider));
             }}
           />
 

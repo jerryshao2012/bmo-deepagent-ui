@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
+import { clearRememberedLogin } from "@/lib/remembered-login";
 import {
   buildSyncedImageMarkdown,
   canStartSyncedImageGesture,
@@ -67,7 +68,7 @@ function IntroPageContent() {
 
     // Also clear localStorage items
     localStorage.removeItem("last_thread_id");
-    localStorage.removeItem("last_used_provider");
+    clearRememberedLogin();
 
     // Clear all markdown thread data
     Object.keys(localStorage).forEach((key) => {

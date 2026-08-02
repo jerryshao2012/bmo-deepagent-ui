@@ -3,6 +3,8 @@
 # Node
 node_modules/
 .next/
+.yarn/*
+!.yarn/releases/
 # Build artifacts
 dist/
 build/

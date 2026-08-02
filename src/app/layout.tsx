@@ -5,7 +5,7 @@ import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 
 export const metadata = {
-  title: "BMO Deep Agent",
+  title: "BMO Applied AI Deep Agent",
 };
 
 export default function RootLayout({

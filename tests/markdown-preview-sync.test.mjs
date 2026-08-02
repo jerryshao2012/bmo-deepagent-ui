@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -77,5 +78,60 @@ test("cross-machine markdown updates converge every local transport", async () =
   assert.match(
     introPage,
     /pendingFallbackUpdateRef\.current = \{\s*content:\s*remoteContent/,
+  );
+});
+
+test("synced images are opt-in and ordinary markdown images keep existing rendering", async () => {
+  const markdownContent = await source("src/app/components/MarkdownContent.tsx");
+
+  assert.match(markdownContent, /syncedImageContext\?:\s*\{/);
+  assert.match(markdownContent, /parseSyncedImageSource\(src\)/);
+  assert.match(markdownContent, /<SyncedMarkdownImage/);
+  assert.match(markdownContent, /if\s*\(assetId\s*&&\s*syncedImageContext\)/);
+  assert.match(markdownContent, /<img\s+[\s\S]*src=\{src\}/);
+});
+
+test("synced image renderer cleans object URLs and exposes download", async () => {
+  const renderer = await source("src/app/components/SyncedMarkdownImage.tsx");
+
+  assert.match(renderer, /fetchMarkdownImage/);
+  assert.match(renderer, /downloadMarkdownImage/);
+  assert.match(renderer, /URL\.createObjectURL/);
+  assert.match(renderer, /URL\.revokeObjectURL/);
+  assert.match(renderer, /new AbortController\(\)/);
+  assert.match(renderer, /controller\.abort\(\)/);
+  assert.match(renderer, /Image unavailable/);
+});
+
+test("synced image requests use same-origin server-authenticated proxy", async () => {
+  const helper = await source("src/lib/markdown-images.ts");
+
+  assert.match(helper, /`\/api\/markdown-images\/\$\{markdownId\}`/);
+  assert.doesNotMatch(helper, /getBrowserSessionToken/);
+  assert.doesNotMatch(helper, /NEXT_PUBLIC.*API_KEY/);
+});
+
+test("synced image proxy keeps backend credentials server-side", async () => {
+  const routeUrl = new URL(
+    "../src/app/api/markdown-images/[markdownId]/[[...assetPath]]/route.ts",
+    import.meta.url,
+  );
+
+  assert.equal(existsSync(routeUrl), true, "Markdown image proxy route is missing");
+});
+
+test("intro image gestures publish references and removal invalidates pending uploads", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(introPage, /onPaste=\{handleMarkdownImagePaste\}/);
+  assert.match(introPage, /onDrop=\{handleMarkdownImageDrop\}/);
+  assert.match(introPage, /imageOperationEpochRef\.current \+= 1/);
+  assert.match(introPage, /activeImageUploadPromiseRef\.current/);
+  assert.match(introPage, /removeSyncedMarkdownWorkspace\(\{/);
+  assert.match(introPage, /markdownId:\s*markdownIdToRemove/);
+  assert.match(introPage, /deleteNamespace:\s*deleteMarkdownImages/);
+  assert.match(
+    introPage,
+    /syncedImageContext=\{\{\s*markdownId:\s*threadId,\s*allowDownload:\s*true,?\s*\}\}/,
   );
 });

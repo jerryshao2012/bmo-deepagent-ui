@@ -57,7 +57,7 @@ export default async function LoginPage({
             className="h-6 w-auto"
           />
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-            Deep Agent
+            Applied AI Deep Agent
           </h1>
         </a>
         <HealthIndicator />

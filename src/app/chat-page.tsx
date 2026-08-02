@@ -172,7 +172,7 @@ function HomePageInner({
               alt="BMO"
               className="h-6 w-auto"
             />
-            <h1 className="text-xl font-semibold">Deep Agent</h1>
+            <h1 className="text-xl font-semibold">Applied AI Deep Agent</h1>
             <HealthIndicator />
             {!sidebar && (
               <Button
@@ -363,7 +363,7 @@ function HomePageContent({ user }: { user: any }) {
         />
         <div className="flex h-screen items-center justify-center">
           <div className="text-center">
-            <h1 className="text-2xl font-bold">Welcome to Deep Agent</h1>
+            <h1 className="text-2xl font-bold">Welcome to Applied AI Deep Agent</h1>
             <p className="mt-2 text-muted-foreground">
               Configure your deployment to get started
             </p>

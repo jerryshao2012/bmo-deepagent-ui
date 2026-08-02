@@ -7,6 +7,8 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { cn } from "@/lib/utils";
 import { normalizeDocumentCitationPath } from "@/app/components/viewers/documentUtils";
+import { SyncedMarkdownImage } from "@/app/components/SyncedMarkdownImage";
+import { parseSyncedImageSource } from "@/lib/markdown-images";
 import { useEffect, useState } from "react";
 
 interface MermaidProps {
@@ -329,6 +331,10 @@ interface MarkdownContentProps {
   content: string;
   className?: string;
   light?: boolean;
+  syncedImageContext?: {
+    markdownId: string;
+    allowDownload: boolean;
+  };
   onDocumentClick?: (
     filePath: string,
     page?: number,
@@ -437,7 +443,13 @@ function extractSurroundingQuote(anchor: HTMLAnchorElement): string | undefined 
 }
 
 export const MarkdownContent = React.memo<MarkdownContentProps>(
-  ({ content, className = "", light = false, onDocumentClick }) => {
+  ({
+    content,
+    className = "",
+    light = false,
+    onDocumentClick,
+    syncedImageContext,
+  }) => {
     // Capture-phase click handler: intercepts ALL anchor clicks inside this
     // container before the browser (or Next.js router) can navigate.
     const handleLinkCapture = React.useCallback(
@@ -655,6 +667,19 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
               );
             },
             img({ src, alt, className, ...props }) {
+              const assetId =
+                typeof src === "string" ? parseSyncedImageSource(src) : null;
+              if (assetId && syncedImageContext) {
+                return (
+                  <SyncedMarkdownImage
+                    markdownId={syncedImageContext.markdownId}
+                    assetId={assetId}
+                    alt={alt}
+                    allowDownload={syncedImageContext.allowDownload}
+                    light={light}
+                  />
+                );
+              }
               return (
                 <span className="block my-6 max-w-full text-center">
                   <img

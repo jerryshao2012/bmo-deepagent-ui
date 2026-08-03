@@ -15,6 +15,7 @@
     "test:passkeys": "node --import tsx --test --test-isolation=none tests/passkey-bff.test.ts tests/passkey-login.test.tsx tests/passkey-management.test.tsx",
     "test:thread-retention": "node --test tests/thread-retention.test.mjs",
     "test:markdown-images": "tsx --test tests/markdown-images.test.ts",
+    "test:architecture": "node --test tests/architecture-boundaries.test.mjs && node scripts/check-architecture.mjs",
     "analyze:har": "node scripts/analyze-har.mjs",
     "postinstall": "mkdir -p public/pdfjs && cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdfjs/"
   },

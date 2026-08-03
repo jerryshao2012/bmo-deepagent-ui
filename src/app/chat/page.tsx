@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import ChatPage from "../chat-page";
 import { redirect } from "next/navigation";
 import type { AuthenticatedUser } from "@/lib/remembered-login";
+import { isPasskeyBffConfigured } from "@/lib/server/passkey-bff";
 
 export const dynamic = "force-dynamic";
 
@@ -14,12 +15,13 @@ export default async function WorkspacePage() {
   }
 
   // Fetch user data from the backend validation endpoint
-  const backendUrl = process.env.NEXT_PUBLIC_LANGGRAPH_URL || "http://localhost:2024";
+  const backendUrl =
+    process.env.NEXT_PUBLIC_LANGGRAPH_URL || "http://localhost:2024";
   const cleanBackendUrl = backendUrl.replace(/\/+$/, "");
 
   let user: AuthenticatedUser | null = null;
   let validationFailed = false;
-  
+
   try {
     const res = await fetch(`${cleanBackendUrl}/auth/session/validate`, {
       headers: {
@@ -37,6 +39,7 @@ export default async function WorkspacePage() {
           image: data.user.avatar_url,
           identity: data.user.identity,
           provider: data.user.provider,
+          auth_method: data.user.auth_method,
         };
       } else {
         validationFailed = true;
@@ -56,5 +59,11 @@ export default async function WorkspacePage() {
     redirect("/login?error=session_invalid");
   }
 
-  return <ChatPage user={user} />;
+  return (
+    <ChatPage
+      user={user}
+      passkeysEnabled={isPasskeyBffConfigured()}
+      oauthBackendUrl={cleanBackendUrl}
+    />
+  );
 }

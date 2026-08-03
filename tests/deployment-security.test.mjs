@@ -33,8 +33,27 @@ test("deployment never exposes server API keys through NEXT_PUBLIC variables", a
 
   assert.doesNotMatch(
     deployScript,
-    /NEXT_PUBLIC_LANGSMITH_API_KEY\s*=\s*\$LANGCHAIN_API_KEY/,
+    /NEXT_PUBLIC_LANGSMITH_API_KEY\s*=\s*\$LANGCHAIN_API_KEY/
   );
+});
+
+test("passkey BFF example stays disabled and documents matched trusted-proxy settings", async () => {
+  const [envExample, readme] = await Promise.all([
+    source(".env.docker.example"),
+    source("README.md"),
+  ]);
+
+  assert.match(envExample, /^PASSKEY_ENABLED=false$/m);
+  for (const setting of [
+    "PASSKEY_ORIGIN",
+    "PASSKEY_PROXY_ID",
+    "PASSKEY_PROXY_SECRET",
+  ]) {
+    assert.match(envExample, new RegExp(`^${setting}=`, "m"));
+    assert.match(readme, new RegExp(setting));
+  }
+  assert.match(readme, /same.*PASSKEY_PROXY_(?:ID|SECRET)/is);
+  assert.match(readme, /OAuth recovery/i);
 });
 
 test("custom server supports writable storage outside a read-only package", async () => {
@@ -42,14 +61,17 @@ test("custom server supports writable storage outside a read-only package", asyn
 
   assert.match(
     server,
-    /process\.env\.MARKDOWN_STORAGE_DIR\s*\|\|\s*path\.join\(__dirname,\s*"data",\s*"markdown_threads"\)/,
+    /process\.env\.MARKDOWN_STORAGE_DIR\s*\|\|\s*path\.join\(__dirname,\s*"data",\s*"markdown_threads"\)/
   );
 });
 
 test("custom server listens on the platform network interface", async () => {
   const server = await source("server.cjs");
 
-  assert.match(server, /const hostname = process\.env\.HOST \|\| "0\.0\.0\.0";/);
+  assert.match(
+    server,
+    /const hostname = process\.env\.HOST \|\| "0\.0\.0\.0";/
+  );
 });
 
 test("custom server closes and exits on App Service termination", async () => {
@@ -57,7 +79,10 @@ test("custom server closes and exits on App Service termination", async () => {
 
   assert.match(server, /process\.once\("SIGTERM", shutdown\)/);
   assert.match(server, /server\.close\(\(\) => process\.exit\(0\)\)/);
-  assert.match(server, /setTimeout\(\(\) => process\.exit\(1\), 10_000\)\.unref\(\)/);
+  assert.match(
+    server,
+    /setTimeout\(\(\) => process\.exit\(1\), 10_000\)\.unref\(\)/
+  );
   assert.doesNotMatch(server, /process\.on\("SIGTERM"/);
 });
 
@@ -74,7 +99,10 @@ test("local container build uses a clean staged context", async () => {
   ]);
 
   assert.match(buildScript, /mktemp -d ["']?\.container-build-context\./);
-  assert.match(buildScript, /rsync[\s\S]*--exclude-from=["']?\.dockerignore["']?/);
+  assert.match(
+    buildScript,
+    /rsync[\s\S]*--exclude-from=["']?\.dockerignore["']?/
+  );
   assert.match(buildScript, /container build[\s\S]*"\$BUILD_CONTEXT_DIR"/);
   assert.match(buildScript, /trap ['"]rm -rf "\$BUILD_CONTEXT_DIR"['"] EXIT/);
   assert.match(dockerignore, /^\.container-build-context\.\*\/$/m);
@@ -92,17 +120,17 @@ test("App Service deployment uses a prebuilt standalone zip", async () => {
   assert.match(deployScript, /cp -R node_modules\/ws/);
   assert.match(
     deployScript,
-    /cp -R node_modules\/next\/\. "\$PACKAGE_ROOT\/node_modules\/next\/"/,
+    /cp -R node_modules\/next\/\. "\$PACKAGE_ROOT\/node_modules\/next\/"/
   );
   assert.match(deployScript, /cp server\.cjs/);
   assert.match(
     deployScript,
-    /find "\$PACKAGE_ROOT" -maxdepth 1 -type f -name '\.env\*' -delete/,
+    /find "\$PACKAGE_ROOT" -maxdepth 1 -type f -name '\.env\*' -delete/
   );
   assert.match(deployScript, /az webapp deploy[\s\S]*--type zip/);
   assert.doesNotMatch(
     deployScript,
-    /az containerapp (?:show|update|create)[\s\S]*--name deepagent-ui/,
+    /az containerapp (?:show|update|create)[\s\S]*--name deepagent-ui/
   );
   assert.doesNotMatch(deployScript, /DOCKER_HUB_(?:USERNAME|PAT)/);
 });
@@ -116,11 +144,11 @@ test("App Service deployment preserves runtime and Key Vault settings", async ()
   assert.match(deployScript, /SCM_DO_BUILD_DURING_DEPLOYMENT=false/);
   assert.match(
     deployScript,
-    /UPLOAD_API_KEY=@Microsoft\.KeyVault\(VaultName=\$\{KV_NAME\};SecretName=UPLOAD-API-KEY\)/,
+    /UPLOAD_API_KEY=@Microsoft\.KeyVault\(VaultName=\$\{KV_NAME\};SecretName=UPLOAD-API-KEY\)/
   );
   assert.match(
     deployScript,
-    /MARKDOWN_STORAGE_DIR=\/home\/data\/markdown_threads/,
+    /MARKDOWN_STORAGE_DIR=\/home\/data\/markdown_threads/
   );
 });
 
@@ -138,9 +166,11 @@ test("App Service deployment fails fast when Azure reports exhausted quota", asy
 test("App Service deployment owns startup polling so quota changes fail fast", async () => {
   const deployScript = await source("deploy.sh");
   const deployment = deployScript.indexOf("az webapp deploy");
-  const verification = deployScript.indexOf('echo "🩺 Verifying deployed site..."');
+  const verification = deployScript.indexOf(
+    'echo "🩺 Verifying deployed site..."'
+  );
   const lastQuotaCheck = deployScript.lastIndexOf(
-    "fail_if_webapp_quota_exceeded",
+    "fail_if_webapp_quota_exceeded"
   );
 
   assert.match(deployScript, /--track-status false/);
@@ -153,19 +183,19 @@ test("App Service deployment skips unchanged settings to preserve F1 stop quota"
 
   assert.match(
     deployScript,
-    /current_runtime_config=\$\(az webapp config show[\s\S]*expected_runtime_config=/,
+    /current_runtime_config=\$\(az webapp config show[\s\S]*expected_runtime_config=/
   );
   assert.match(
     deployScript,
-    /if \[ "\$current_runtime_config" != "\$expected_runtime_config" \]; then[\s\S]*az webapp config set/,
+    /if \[ "\$current_runtime_config" != "\$expected_runtime_config" \]; then[\s\S]*az webapp config set/
   );
   assert.match(
     deployScript,
-    /current_app_settings=\$\(az webapp config appsettings list/,
+    /current_app_settings=\$\(az webapp config appsettings list/
   );
   assert.match(
     deployScript,
-    /if \$app_settings_changed; then[\s\S]*az webapp config appsettings set/,
+    /if \$app_settings_changed; then[\s\S]*az webapp config appsettings set/
   );
 });
 

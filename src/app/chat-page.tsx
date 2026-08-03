@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Assistant } from "@langchain/langgraph-sdk";
 import { ClientProvider } from "@/providers/ClientProvider";
 import { useClient } from "@/providers/ClientContext";
-import { Settings, MessagesSquare, SquarePen } from "lucide-react";
+import { KeyRound, Settings, MessagesSquare, SquarePen } from "lucide-react";
 import { HealthIndicator } from "./components/HealthIndicator";
 import {
   ResizableHandle,
@@ -35,7 +35,11 @@ import {
 import { logoutFromLangGraph } from "@/lib/langgraph-client";
 import { findAssistantForGraph } from "@/lib/findAssistantForGraph";
 import RememberedLoginCapture from "@/app/components/RememberedLoginCapture";
-import type { AuthenticatedUser } from "@/lib/remembered-login";
+import { PasskeyManagementQueryDialog } from "@/app/components/PasskeyManagementDialog";
+import {
+  isLoginProvider,
+  type AuthenticatedUser,
+} from "@/lib/remembered-login";
 
 interface HomePageInnerProps {
   config: StandaloneConfig;
@@ -43,6 +47,8 @@ interface HomePageInnerProps {
   setConfigDialogOpen: (open: boolean) => void;
   handleSaveConfig: (config: StandaloneConfig) => void;
   user: AuthenticatedUser;
+  passkeysEnabled: boolean;
+  oauthBackendUrl: string;
 }
 
 function ChatControlsBridge({
@@ -65,11 +71,15 @@ function HomePageInner({
   setConfigDialogOpen,
   handleSaveConfig,
   user,
+  passkeysEnabled,
+  oauthBackendUrl,
 }: HomePageInnerProps) {
   const client = useClient();
   const [threadId, setThreadId] = useQueryState("threadId");
   const [sidebar, setSidebar] = useQueryState("sidebar");
+  const [managePasskeys, setManagePasskeys] = useQueryState("manage");
   const stopCurrentStreamRef = useRef<(() => void) | null>(null);
+  const loginProvider = isLoginProvider(user.provider) ? user.provider : null;
 
   const [mutateThreads, setMutateThreads] = useState<(() => void) | null>(null);
   const [interruptCount, setInterruptCount] = useState(0);
@@ -116,7 +126,9 @@ function HomePageInner({
           config.assistantId
         );
         if (defaultAssistant === undefined) {
-          console.warn("No assistant found for graph, using fallback assistant");
+          console.warn(
+            "No assistant found for graph, using fallback assistant"
+          );
           setAssistant({
             assistant_id: config.assistantId,
             graph_id: config.assistantId,
@@ -163,6 +175,17 @@ function HomePageInner({
         onSave={handleSaveConfig}
         initialConfig={config}
       />
+      {passkeysEnabled && loginProvider && (
+        <PasskeyManagementQueryDialog
+          manageQuery={managePasskeys}
+          passkeysEnabled={passkeysEnabled}
+          onOpenChange={(open) => {
+            void setManagePasskeys(open ? "passkeys" : null);
+          }}
+          provider={loginProvider}
+          oauthBackendUrl={oauthBackendUrl}
+        />
+      )}
       <div className="flex h-screen flex-col">
         <header
           className="flex h-16 items-center justify-between border-b border-border px-6"
@@ -221,6 +244,7 @@ function HomePageInner({
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
+                    aria-label="Account menu"
                     className="relative h-8 w-8 rounded-full border border-border"
                   >
                     <Avatar className="h-8 w-8 bg-primary">
@@ -245,6 +269,14 @@ function HomePageInner({
                       {user.email}
                     </div>
                   </DropdownMenuItem>
+                  {passkeysEnabled && loginProvider && (
+                    <DropdownMenuItem
+                      onClick={() => void setManagePasskeys("passkeys")}
+                    >
+                      <KeyRound aria-hidden="true" />
+                      Manage passkeys
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem
                     onClick={async () => {
                       // Call LangGraph server logout to clean up server session
@@ -321,7 +353,15 @@ function HomePageInner({
   );
 }
 
-function HomePageContent({ user }: { user: AuthenticatedUser }) {
+function HomePageContent({
+  user,
+  passkeysEnabled,
+  oauthBackendUrl,
+}: {
+  user: AuthenticatedUser;
+  passkeysEnabled: boolean;
+  oauthBackendUrl: string;
+}) {
   const [config, setConfig] = useState<StandaloneConfig | null>(null);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [assistantId, setAssistantId] = useQueryState("assistantId");
@@ -347,11 +387,14 @@ function HomePageContent({ user }: { user: AuthenticatedUser }) {
     }
   }, [config, assistantId, setAssistantId]);
 
-  const handleSaveConfig = useCallback((newConfig: StandaloneConfig) => {
-    saveConfig(newConfig);
-    setConfig(newConfig);
-    setAssistantId(newConfig.assistantId);
-  }, [setAssistantId]);
+  const handleSaveConfig = useCallback(
+    (newConfig: StandaloneConfig) => {
+      saveConfig(newConfig);
+      setConfig(newConfig);
+      setAssistantId(newConfig.assistantId);
+    },
+    [setAssistantId]
+  );
 
   const langsmithApiKey = process.env.NEXT_PUBLIC_LANGSMITH_API_KEY || "";
 
@@ -365,7 +408,9 @@ function HomePageContent({ user }: { user: AuthenticatedUser }) {
         />
         <div className="flex h-screen items-center justify-center">
           <div className="text-center">
-            <h1 className="text-2xl font-bold">Welcome to Applied AI Deep Agent</h1>
+            <h1 className="text-2xl font-bold">
+              Welcome to Applied AI Deep Agent
+            </h1>
             <p className="mt-2 text-muted-foreground">
               Configure your deployment to get started
             </p>
@@ -392,12 +437,22 @@ function HomePageContent({ user }: { user: AuthenticatedUser }) {
         setConfigDialogOpen={setConfigDialogOpen}
         handleSaveConfig={handleSaveConfig}
         user={user}
+        passkeysEnabled={passkeysEnabled}
+        oauthBackendUrl={oauthBackendUrl}
       />
     </ClientProvider>
   );
 }
 
-export default function HomePage({ user }: { user: AuthenticatedUser }) {
+export default function HomePage({
+  user,
+  passkeysEnabled,
+  oauthBackendUrl,
+}: {
+  user: AuthenticatedUser;
+  passkeysEnabled: boolean;
+  oauthBackendUrl: string;
+}) {
   return (
     <>
       <RememberedLoginCapture user={user} />
@@ -408,7 +463,11 @@ export default function HomePage({ user }: { user: AuthenticatedUser }) {
           </div>
         }
       >
-        <HomePageContent user={user} />
+        <HomePageContent
+          user={user}
+          passkeysEnabled={passkeysEnabled}
+          oauthBackendUrl={oauthBackendUrl}
+        />
       </Suspense>
     </>
   );

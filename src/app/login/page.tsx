@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import type { LoginProvider } from "@/lib/remembered-login";
 import { buildOAuthLoginUrl } from "@/lib/oauth-login";
+import { isPasskeyBffConfigured } from "@/lib/server/passkey-bff";
 
 export const dynamic = "force-dynamic";
 
@@ -171,6 +172,7 @@ export default async function LoginPage({
 
           {/* Sign-in buttons */}
           <LoginProviders
+            passkeysEnabled={isPasskeyBffConfigured()}
             onSignIn={async (provider: LoginProvider) => {
               "use server";
               const backendUrl =

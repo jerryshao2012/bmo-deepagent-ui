@@ -30,6 +30,7 @@ export interface RememberedLoginCandidate {
 export interface AuthenticatedUser {
   identity: string;
   provider: string;
+  auth_method?: "oauth" | "passkey";
   name: string | null;
   email: string | null;
   image: string | null;
@@ -77,7 +78,7 @@ function normalizeProvider(value: unknown): LoginProvider | null {
 
 function normalizeCandidate(
   value: unknown,
-  requireVersion: boolean,
+  requireVersion: boolean
 ): RememberedLogin | null {
   if (!value || typeof value !== "object") return null;
 
@@ -108,7 +109,7 @@ function safeRemove(storage: RememberedLoginStorage, key: string) {
 }
 
 export function readRememberedLogin(
-  storage: RememberedLoginStorage | null = browserStorage(),
+  storage: RememberedLoginStorage | null = browserStorage()
 ): RememberedLogin | null {
   if (!storage) return null;
 
@@ -130,7 +131,7 @@ export function readRememberedLogin(
 
 export function writeRememberedLogin(
   candidate: RememberedLoginCandidate,
-  storage: RememberedLoginStorage | null = browserStorage(),
+  storage: RememberedLoginStorage | null = browserStorage()
 ): RememberedLogin | null {
   if (!storage) return null;
 
@@ -148,7 +149,7 @@ export function writeRememberedLogin(
 }
 
 export function clearRememberedLogin(
-  storage: RememberedLoginStorage | null = browserStorage(),
+  storage: RememberedLoginStorage | null = browserStorage()
 ) {
   if (!storage) return;
 

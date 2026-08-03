@@ -30,6 +30,7 @@ yarn dev
 
 Please follow instructions in this page in corporate environment before `yarn install`:
 https://bmo.atlassian.net/wiki/spaces/ARCAAI/pages/1205864484/How+to+Install+npm+Packages+from+our+Artifactory
+
 ```bash
 npm login --auth-type=web
 ```
@@ -52,9 +53,31 @@ killall -9 node
 **Setup OAuth**
 
 OAuth authentication (Google & GitHub) is managed directly by the FastAPI backend server using Authlib. To configure client credentials and enable OAuth:
+
 1. Refer to the [Backend OAuth Guide](../deepagents-demo/deep_research/README.md#oauth-authentication).
 2. Set up the OAuth client ID and secrets in your backend `.env` file.
 3. Define the `FRONTEND_URL` in the backend `.env` (defaults to `http://localhost:3000` for local development) so the backend can redirect users back to the UI after successful login.
+
+**Enable Passkeys (Optional)**
+
+Passkeys remain disabled unless both UI and backend set `PASSKEY_ENABLED=true`.
+OAuth recovery must stay configured: users enroll after Google or GitHub sign-in,
+and the same provider is used for reauthentication and account recovery.
+
+Configure the UI server with:
+
+```env
+PASSKEY_ENABLED=true
+PASSKEY_ORIGIN=https://your-ui.example.com
+PASSKEY_PROXY_ID=web-bff
+PASSKEY_PROXY_SECRET=<at-least-32-random-bytes>
+```
+
+`PASSKEY_ORIGIN` must be the exact browser origin, with no path or trailing
+slash. Configure the backend with the same `PASSKEY_PROXY_ID` and
+`PASSKEY_PROXY_SECRET`; store the shared secret in Azure Key Vault. Never expose
+it through a `NEXT_PUBLIC_*` variable. See backend passkey deployment section
+for relying-party, OAuth, and durable SQLite settings.
 
 **Deploy a Deep Agent**
 
@@ -128,6 +151,7 @@ NEXT_PUBLIC_LANGSMITH_API_KEY="lsv2_xxxx"
 ```
 
 **Authentication Architecture:**
+
 - **Production**: All API requests (except health checks) are proxied through `/api/proxy` which adds the `X-API-Key` header from `UPLOAD_API_KEY`
 - **Health Checks**: Endpoints `/health` and `/ok` bypass authentication
 - **Local Development**: Can optionally use `NEXT_PUBLIC_LANGSMITH_API_KEY` for direct client-side authentication

@@ -7,7 +7,8 @@ const { LruCache } = require("./runtime/state.cjs");
 const { createMarkdownPersistence } = require("./runtime/persistence.cjs");
 const { createMermaidImageStore } = require("./runtime/images.cjs");
 
-const { dev, hostname, port } = runtimeConfig();
+const { dev, port } = runtimeConfig();
+const hostname = process.env.HOST || "0.0.0.0";
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 

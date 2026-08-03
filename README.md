@@ -54,7 +54,7 @@ killall -9 node
 
 OAuth authentication (Google & GitHub) is managed directly by the FastAPI backend server using Authlib. To configure client credentials and enable OAuth:
 
-1. Refer to the [Backend OAuth Guide](../deepagents-demo/deep_research/README.md#oauth-authentication).
+1. Refer to the [Backend OAuth Guide](https://github.com/jerryshao2012/deep-research/blob/main/README.md#-oauth-authentication).
 2. Set up the OAuth client ID and secrets in your backend `.env` file.
 3. Define the `FRONTEND_URL` in the backend `.env` (defaults to `http://localhost:3000` for local development) so the backend can redirect users back to the UI after successful login.
 
@@ -78,6 +78,10 @@ slash. Configure the backend with the same `PASSKEY_PROXY_ID` and
 `PASSKEY_PROXY_SECRET`; store the shared secret in Azure Key Vault. Never expose
 it through a `NEXT_PUBLIC_*` variable. See backend passkey deployment section
 for relying-party, OAuth, and durable SQLite settings.
+
+See [Passkey Authentication](docs/passkey-authentication.md) for enrollment,
+identifier-free sign-in, management/reauthentication sequence diagrams, trust
+boundaries, and multi-domain RP behavior.
 
 **Deploy a Deep Agent**
 

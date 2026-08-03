@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  startRegistration,
-  type PublicKeyCredentialCreationOptionsJSON,
-  type RegistrationResponseJSON,
-} from "@simplewebauthn/browser";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { KeyRound, Laptop, Plus, Save, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,20 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
+  enrollManagedPasskey,
+  loadManagedPasskeys,
+  ManagementRequestError,
+  renameManagedPasskey,
+  revokeManagedPasskey,
+  validatePasskeyLabel,
+  type ManagedPasskey,
+} from "@/features/auth/application/passkey-management";
+import { PasskeyManagementBffGateway } from "@/features/auth/infrastructure/passkey-management-bff-gateway";
+import {
+  WebAuthnRegistrationAuthenticator,
+  type StartRegistrationImplementation,
+} from "@/features/auth/infrastructure/webauthn-registration-authenticator";
+import {
   buildOAuthLoginUrl,
   PASSKEY_MANAGEMENT_RETURN_PATH,
   shouldOpenPasskeyManagement,
@@ -25,15 +40,7 @@ import {
 import { isPasskeyCancellation } from "@/lib/passkey-client";
 import { isLoginProvider, type LoginProvider } from "@/lib/remembered-login";
 
-export interface ManagedPasskey {
-  credential_id: string;
-  label: string;
-  transports: string[];
-  device_type: string;
-  backed_up: boolean;
-  created_at: number;
-  last_used_at: number | null;
-}
+export type { ManagedPasskey };
 
 export interface PasskeyManagementDialogProps {
   open: boolean;
@@ -41,7 +48,7 @@ export interface PasskeyManagementDialogProps {
   provider: LoginProvider;
   oauthBackendUrl: string;
   fetchImpl?: typeof fetch;
-  startRegistrationImpl?: typeof startRegistration;
+  startRegistrationImpl?: StartRegistrationImplementation;
   navigate?: (url: string) => void;
 }
 
@@ -63,106 +70,6 @@ type LabelErrorTarget =
   | { kind: "enrollment" }
   | { kind: "rename"; credentialId: string };
 
-class ManagementRequestError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly code: string | null,
-    public readonly provider: LoginProvider | null
-  ) {
-    super("Passkey management request failed");
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function isProvider(value: unknown): value is LoginProvider {
-  return value === "google" || value === "github";
-}
-
-function isWellFormedUnicode(value: string) {
-  for (let index = 0; index < value.length; index += 1) {
-    const codeUnit = value.charCodeAt(index);
-    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
-      index += 1;
-    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function parsePasskey(value: unknown): ManagedPasskey | null {
-  if (!isRecord(value)) return null;
-  const rawLabel = typeof value.label === "string" ? value.label : "";
-  const label = rawLabel.trim();
-  if (
-    typeof value.credential_id !== "string" ||
-    !/^[A-Za-z0-9_-]{1,2048}$/.test(value.credential_id) ||
-    !isWellFormedUnicode(rawLabel) ||
-    !label ||
-    Array.from(label).length > 100 ||
-    !Array.isArray(value.transports) ||
-    !value.transports.every((item) => typeof item === "string") ||
-    typeof value.device_type !== "string" ||
-    typeof value.backed_up !== "boolean" ||
-    typeof value.created_at !== "number" ||
-    (value.last_used_at !== null && typeof value.last_used_at !== "number")
-  ) {
-    return null;
-  }
-  return {
-    credential_id: value.credential_id,
-    label,
-    transports: value.transports,
-    device_type: value.device_type,
-    backed_up: value.backed_up,
-    created_at: value.created_at,
-    last_used_at: value.last_used_at,
-  };
-}
-
-const LABEL_TOO_LONG = "Passkey labels must be 100 characters or fewer.";
-const LABEL_REQUIRED = "Enter a passkey label.";
-const LABEL_INVALID = "Passkey labels contain invalid characters.";
-
-async function responseJson(response: Response): Promise<unknown> {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
-async function requestJson(
-  fetchImpl: typeof fetch,
-  url: string,
-  init?: RequestInit
-) {
-  const response = await fetchImpl(url, {
-    credentials: "same-origin",
-    cache: "no-store",
-    headers: {
-      accept: "application/json",
-      ...(init?.body ? { "content-type": "application/json" } : {}),
-      ...init?.headers,
-    },
-    ...init,
-  });
-  const result = await responseJson(response);
-  if (!response.ok) {
-    const code =
-      isRecord(result) && typeof result.code === "string" ? result.code : null;
-    const provider =
-      isRecord(result) && isProvider(result.provider) ? result.provider : null;
-    throw new ManagementRequestError(response.status, code, provider);
-  }
-  return result;
-}
-
 function providerName(provider: LoginProvider) {
   return provider === "google" ? "Google" : "GitHub";
 }
@@ -172,10 +79,18 @@ export default function PasskeyManagementDialog({
   onOpenChange,
   provider,
   oauthBackendUrl,
-  fetchImpl = fetch,
-  startRegistrationImpl = startRegistration,
+  fetchImpl = globalThis.fetch,
+  startRegistrationImpl,
   navigate = (url) => window.location.assign(url),
 }: PasskeyManagementDialogProps) {
+  const managementGateway = useMemo(
+    () => new PasskeyManagementBffGateway(fetchImpl),
+    [fetchImpl]
+  );
+  const registrationAuthenticator = useMemo(
+    () => new WebAuthnRegistrationAuthenticator(startRegistrationImpl),
+    [startRegistrationImpl]
+  );
   const [passkeys, setPasskeys] = useState<ManagedPasskey[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [newLabel, setNewLabel] = useState("");
@@ -237,17 +152,9 @@ export default function PasskeyManagementDialog({
   useEffect(() => {
     if (!open || !begin("load")) return;
     let current = true;
-    void requestJson(fetchImpl, "/api/auth/passkeys")
-      .then((result) => {
-        if (!current || !isRecord(result) || !Array.isArray(result.passkeys)) {
-          if (current) throw new Error("Invalid passkey list");
-          return;
-        }
-        const parsed = result.passkeys.map(parsePasskey);
-        if (parsed.some((item) => item === null)) {
-          throw new Error("Invalid passkey list");
-        }
-        const next = parsed as ManagedPasskey[];
+    void loadManagedPasskeys(managementGateway)
+      .then((next) => {
+        if (!current) return;
         setPasskeys(next);
         setDrafts(
           Object.fromEntries(
@@ -265,7 +172,7 @@ export default function PasskeyManagementDialog({
       current = false;
       operationRef.current = null;
     };
-  }, [begin, fetchImpl, finish, handleError, open]);
+  }, [begin, finish, handleError, managementGateway, open]);
 
   useEffect(() => {
     if (!focusAfterRevokeRef.current) return;
@@ -286,11 +193,7 @@ export default function PasskeyManagementDialog({
 
   const addPasskey = async () => {
     const label = newLabel.trim();
-    const validationMessage = !isWellFormedUnicode(newLabel)
-      ? LABEL_INVALID
-      : Array.from(label).length > 100
-      ? LABEL_TOO_LONG
-      : null;
+    const validationMessage = validatePasskeyLabel(newLabel, false);
     if (validationMessage) {
       setError(null);
       setLabelError({
@@ -304,39 +207,11 @@ export default function PasskeyManagementDialog({
     }
     if (!begin("add")) return;
     try {
-      const ceremony = await requestJson(
-        fetchImpl,
-        "/api/auth/passkeys/registration/options",
-        { method: "POST" }
+      const enrolled = await enrollManagedPasskey(
+        managementGateway,
+        registrationAuthenticator,
+        label
       );
-      if (
-        !isRecord(ceremony) ||
-        typeof ceremony.ceremony_id !== "string" ||
-        !ceremony.ceremony_id ||
-        !isRecord(ceremony.options)
-      ) {
-        throw new Error("Invalid registration options");
-      }
-      const response: RegistrationResponseJSON = await startRegistrationImpl({
-        optionsJSON:
-          ceremony.options as unknown as PublicKeyCredentialCreationOptionsJSON,
-      });
-      const payload = await requestJson(
-        fetchImpl,
-        "/api/auth/passkeys/registration/verify",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            ceremony_id: ceremony.ceremony_id,
-            response,
-            ...(label ? { label } : {}),
-          }),
-        }
-      );
-      const enrolled = isRecord(payload) ? parsePasskey(payload.passkey) : null;
-      if (!enrolled) {
-        throw new Error("Invalid registration response");
-      }
       setPasskeys((current) => [...current, enrolled]);
       setDrafts((current) => ({
         ...current,
@@ -354,13 +229,7 @@ export default function PasskeyManagementDialog({
     const key: Operation = `rename:${passkey.credential_id}`;
     const rawLabel = drafts[passkey.credential_id] || "";
     const label = rawLabel.trim();
-    const validationMessage = !isWellFormedUnicode(rawLabel)
-      ? LABEL_INVALID
-      : !label
-      ? LABEL_REQUIRED
-      : Array.from(label).length > 100
-      ? LABEL_TOO_LONG
-      : null;
+    const validationMessage = validatePasskeyLabel(rawLabel, true);
     if (validationMessage) {
       setError(null);
       setLabelError({
@@ -374,15 +243,11 @@ export default function PasskeyManagementDialog({
     }
     if (!begin(key)) return;
     try {
-      const payload = await requestJson(
-        fetchImpl,
-        `/api/auth/passkeys/${encodeURIComponent(passkey.credential_id)}`,
-        { method: "PATCH", body: JSON.stringify({ label }) }
+      const renamed = await renameManagedPasskey(
+        managementGateway,
+        passkey.credential_id,
+        label
       );
-      const renamed = isRecord(payload) ? parsePasskey(payload.passkey) : null;
-      if (!renamed || renamed.credential_id !== passkey.credential_id) {
-        throw new Error("Invalid rename response");
-      }
       setPasskeys((current) =>
         current.map((item) =>
           item.credential_id === renamed.credential_id ? renamed : item
@@ -403,14 +268,7 @@ export default function PasskeyManagementDialog({
     const key: Operation = `delete:${passkey.credential_id}`;
     if (!begin(key)) return;
     try {
-      const payload = await requestJson(
-        fetchImpl,
-        `/api/auth/passkeys/${encodeURIComponent(passkey.credential_id)}`,
-        { method: "DELETE" }
-      );
-      if (!isRecord(payload) || payload.ok !== true) {
-        throw new Error("Invalid revoke response");
-      }
+      await revokeManagedPasskey(managementGateway, passkey.credential_id);
       focusAfterRevokeRef.current = true;
       setPasskeys((current) =>
         current.filter((item) => item.credential_id !== passkey.credential_id)

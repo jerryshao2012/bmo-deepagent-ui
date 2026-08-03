@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Folder,
   FolderOpen,
@@ -13,22 +13,15 @@ import {
   FileCode,
   AlertCircle,
 } from "lucide-react";
-import { getConfig } from "@/lib/config";
-import { getBrowserSessionToken } from "@/lib/langgraph-client";
-import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
+import type { WikiTreeNode } from "@/features/wiki/application/wiki-gateway";
+import { createConfiguredWikiGateway } from "@/features/wiki/infrastructure/http-wiki-gateway";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { FileItem } from "@/app/types/types";
 import WikiGraphViewer from "@/app/components/WikiGraphViewer";
 
-export interface TreeNode {
-  name: string;
-  path: string;
-  type: "directory" | "file";
-  size?: number;
-  children?: TreeNode[];
-}
+export type TreeNode = WikiTreeNode;
 
 interface WikiTreeViewerProps {
   threadId: string;
@@ -58,6 +51,7 @@ export const WikiTreeViewer: React.FC<WikiTreeViewerProps> = ({
   onSelectFile,
   onFileCountChange,
 }) => {
+  const wikiGateway = useMemo(() => createConfiguredWikiGateway(), []);
   const [activeTab, setActiveTab] = useState<"tree" | "graph">("tree");
   const [treeData, setTreeData] = useState<TreeNode | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -72,31 +66,17 @@ export const WikiTreeViewer: React.FC<WikiTreeViewerProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const appConfig = getConfig();
-      const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
-      const token = getBrowserSessionToken();
-      const res = await authenticatedFetch(`${deploymentUrl}/threads/${threadId}/wiki/tree`, {
-        headers: token ? { "X-API-Key": token } : {},
-      });
-
-      if (!res.ok) {
-        if (res.status === 404) {
-          throw new Error("Wiki workspace not found. Please wait for document ingestion or trigger ingest.");
-        }
-        throw new Error(`Failed to fetch wiki tree (${res.status})`);
-      }
-
-      const data = await res.json();
+      const data = await wikiGateway.getTree(threadId);
       setTreeData(data.tree);
-      if (typeof data.file_count === "number" && onFileCountChange) {
-        onFileCountChange(data.file_count);
+      if (typeof data.fileCount === "number" && onFileCountChange) {
+        onFileCountChange(data.fileCount);
       }
     } catch (err: any) {
       setError(err.message || "Failed to load wiki directory tree.");
     } finally {
       setLoading(false);
     }
-  }, [threadId, onFileCountChange]);
+  }, [threadId, onFileCountChange, wikiGateway]);
 
   useEffect(() => {
     if (threadId) {
@@ -108,26 +88,9 @@ export const WikiTreeViewer: React.FC<WikiTreeViewerProps> = ({
     if (loadingFilePath) return;
     setLoadingFilePath(node.path);
     try {
-      const appConfig = getConfig();
-      const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
-      const token = getBrowserSessionToken();
-      const res = await authenticatedFetch(
-        `${deploymentUrl}/threads/${threadId}/wiki/file?path=${encodeURIComponent(
-          node.path
-        )}`,
-        {
-          headers: token ? { "X-API-Key": token } : {},
-        }
-      );
-
-      if (!res.ok) {
-        throw new Error(`Failed to fetch file content (${res.status})`);
-      }
-
-      const data = await res.json();
       onSelectFile({
         path: node.path,
-        content: data.content || "",
+        content: await wikiGateway.getFile(threadId, node.path),
       });
     } catch (err: any) {
       console.error("Error fetching file content:", err);

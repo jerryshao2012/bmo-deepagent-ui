@@ -1,9 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { getConfig } from "@/lib/config";
-import { getBrowserSessionToken } from "@/lib/langgraph-client";
-import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
+import { createConfiguredWikiGateway } from "@/features/wiki/infrastructure/http-wiki-gateway";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -148,23 +146,13 @@ export default function WikiGraphViewer({ threadId }: Props) {
   useEffect(() => {
     if (!threadId) return;
     let active = true;
-    const appConfig = getConfig();
-    const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
-    const token = getBrowserSessionToken();
+    const wikiGateway = createConfiguredWikiGateway();
 
     setLoading(true);
     setError(null);
     setData(null);
-    authenticatedFetch(`${deploymentUrl}/threads/${threadId}/wiki/graph`, {
-      headers: token ? { "X-API-Key": token } : {},
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error((body as any)?.detail ?? `HTTP ${res.status}`);
-        }
-        return res.json();
-      })
+    wikiGateway
+      .getGraph(threadId)
       .then((g: GraphData) => {
         if (!active) return;
         setData(g);

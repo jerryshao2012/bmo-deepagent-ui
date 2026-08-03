@@ -46,9 +46,27 @@ Environment access, adapter selection, and process lifecycle belong only in
 composition roots. Public URLs, payloads, cookies, SSE events, and persisted
 formats remain backward compatible during migration.
 
+## Implemented dependency map
+
+| Application port | Active adapter | Composition consumer |
+| --- | --- | --- |
+| `SessionProvider` | `BrowserSessionProvider` | authenticated HTTP and LangGraph clients |
+| `ApiTransport` | scoped fetch transport | custom FastAPI clients |
+| `ChatGateway` | `LangGraphChatGateway` | `useChat` state reconciliation |
+| `RunExecutor` | `LangGraphRunExecutor` | send, continue, resume, resolve, stop |
+| `ThreadRepository` | `LangGraphThreadRepository` | thread list and retention hooks |
+| `WikiGateway` | `HttpWikiGateway` | wiki tree, file, and graph views |
+| `SkillsGateway` | `HttpSkillsGateway` | skills compatibility facade |
+| `MarkdownSyncStore` | browser and backend stores | intro synchronization controller |
+
+Custom Node runtime responsibilities live under `runtime/`: bootstrap config,
+transport helpers, bounded state, filesystem persistence, and exported-image
+storage. `server.cjs` remains composition root.
+
 ## Enforcement
 
-Run `yarn test:architecture`. The checker rejects outward imports from inward
+Run `yarn test:architecture` and `yarn contract:check`. CI runs both checks,
+lint, and production build. Checker rejects outward imports from inward
 layers, cross-feature internal imports, and local dependency cycles. Every new
 feature slice must include application-level tests using fake ports plus adapter
 contract tests at its framework boundary.

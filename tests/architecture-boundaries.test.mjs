@@ -21,11 +21,17 @@ test("architecture checks and dependency rules are part of repository workflow",
   );
   assert.equal(
     packageJson.scripts["test:architecture"],
-    "node --test tests/architecture-boundaries.test.mjs && node scripts/check-architecture.mjs",
+    "node --test tests/architecture-boundaries.test.mjs tests/auth-slice-boundaries.test.mjs tests/chat-thread-boundaries.test.mjs tests/markdown-sync-architecture.test.mjs tests/platform-boundaries.test.mjs tests/wiki-skills-boundaries.test.mjs && node scripts/check-architecture.mjs",
   );
   await assert.doesNotReject(
     access(`${repoRoot}/docs/architecture/clean-architecture.md`),
   );
+  const workflow = await readFile(
+    `${repoRoot}/.github/workflows/architecture.yml`,
+    "utf8",
+  );
+  assert.match(workflow, /yarn test:architecture/);
+  assert.match(workflow, /yarn contract:check/);
 });
 
 const withFixture = async (files, callback) => {

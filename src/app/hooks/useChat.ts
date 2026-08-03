@@ -12,6 +12,8 @@ import type { UseStreamThread } from "@langchain/langgraph-sdk/react";
 import type { TodoItem } from "@/app/types/types";
 import { useClient } from "@/providers/ClientContext";
 import { useQueryState } from "nuqs";
+import { LangGraphChatGateway } from "@/features/chat/infrastructure/langgraph-chat-gateway";
+import { LangGraphRunExecutor } from "@/features/chat/infrastructure/langgraph-run-executor";
 
 export type StateType = {
   messages: Message[];
@@ -104,6 +106,10 @@ export function useChat({
 }) {
   const [threadId, setThreadId] = useQueryState("threadId");
   const client = useClient();
+  const chatGateway = useMemo(
+    () => new LangGraphChatGateway<StateType>(client),
+    [client]
+  );
   const [localChatStartMs, setLocalChatStartMs] = useState<number | null>(null);
   const [localChatElapsedSeconds, setLocalChatElapsedSeconds] = useState<
     number | null
@@ -163,6 +169,10 @@ export function useChat({
     onCreated: onHistoryRevalidateAction,
     experimental_thread: thread,
   });
+  const runExecutor = useMemo(
+    () => new LangGraphRunExecutor(stream),
+    [stream]
+  );
 
   useEffect(() => {
     const previousThreadId = previousThreadIdRef.current;
@@ -244,10 +254,7 @@ export function useChat({
 
     const syncFromServer = async () => {
       try {
-        const threadState = (await (client.threads as any).get(threadId)) as {
-          updated_at?: string;
-          values?: StateType;
-        };
+        const threadState = await chatGateway.getThreadSnapshot(threadId);
 
         if (isDisposed) {
           return;
@@ -255,8 +262,8 @@ export function useChat({
 
         const values = threadState?.values ?? ({} as Partial<StateType>);
         const serverMessages = values.messages ?? [];
-        const serverUpdatedAt = threadState?.updated_at
-          ? new Date(threadState.updated_at).getTime()
+        const serverUpdatedAt = threadState?.updatedAt
+          ? new Date(threadState.updatedAt).getTime()
           : Date.now();
 
         setServerSnapshot((previousSnapshot) => {
@@ -293,7 +300,7 @@ export function useChat({
       isDisposed = true;
       clearInterval(interval);
     };
-  }, [client, threadId, stream.isLoading, stream.messages.length]);
+  }, [chatGateway, threadId, stream.isLoading, stream.messages.length]);
 
   useEffect(() => {
     const pendingTurn = pendingTurnRef.current;
@@ -375,10 +382,10 @@ export function useChat({
           startedAt,
         },
       }));
-      stream.submit(
+      runExecutor.submit(
         { messages: [newMessage], ...stateUpdates },
         {
-          optimisticValues: (prev) => ({
+          optimisticValues: (prev: StateType) => ({
             messages: [...(prev.messages ?? []), newMessage],
             // Clear todos optimistically when user sends a new message
             todos: [],
@@ -389,7 +396,7 @@ export function useChat({
       // Update thread list immediately when sending a message
       onHistoryRevalidateAction?.();
     },
-    [stream, activeAssistant?.config, onHistoryRevalidateAction]
+    [stream.messages.length, runExecutor, activeAssistant?.config, onHistoryRevalidateAction]
   );
 
   const runSingleStep = useCallback(
@@ -401,7 +408,7 @@ export function useChat({
     ) => {
       setStreamError(null);
       if (checkpoint) {
-        stream.submit(undefined, {
+        runExecutor.submit(undefined, {
           ...(optimisticMessages
             ? { optimisticValues: { messages: optimisticMessages } }
             : {}),
@@ -412,19 +419,19 @@ export function useChat({
             : { interruptBefore: ["tools"] }),
         });
       } else {
-        stream.submit(
+        runExecutor.submit(
           { messages },
           { config: activeAssistant?.config, interruptBefore: ["tools"] }
         );
       }
     },
-    [stream, activeAssistant?.config]
+    [runExecutor, activeAssistant?.config]
   );
 
   const setFiles = useCallback(
     async (files: Record<string, unknown>) => {
       if (!threadId) return;
-      await client.threads.updateState(threadId, { values: { files } });
+      await chatGateway.updateFiles(threadId, files);
 
       const nextLockedFiles: Record<string, string> = {};
       for (const [fileName, content] of Object.entries(files)) {
@@ -442,16 +449,16 @@ export function useChat({
       };
       setLocalFiles(files);
     },
-    [client, threadId, localFiles]
+    [chatGateway, threadId, localFiles]
   );
 
   const continueStream = useCallback(
     (hasTaskToolCall?: boolean) => {
       setStreamError(null);
-      stream.submit(undefined, {
+      runExecutor.submit(undefined, {
         // Optimistically clear todos when continuing the stream so stale
         // task list from a previous turn doesn't remain visible.
-        optimisticValues: (prev) => ({
+        optimisticValues: (prev: StateType) => ({
           ...prev,
           todos: [],
         }),
@@ -466,24 +473,24 @@ export function useChat({
       // Update thread list when continuing stream
       onHistoryRevalidateAction?.();
     },
-    [stream, activeAssistant?.config, onHistoryRevalidateAction]
+    [runExecutor, activeAssistant?.config, onHistoryRevalidateAction]
   );
 
   const markCurrentThreadAsResolved = useCallback(() => {
     setStreamError(null);
-    stream.submit(null, { command: { goto: "__end__", update: null } });
+    runExecutor.submit(null, { command: { goto: "__end__", update: null } });
     // Update thread list when marking thread as resolved
     onHistoryRevalidateAction?.();
-  }, [stream, onHistoryRevalidateAction]);
+  }, [runExecutor, onHistoryRevalidateAction]);
 
   const resumeInterrupt = useCallback(
     (value: any) => {
       setStreamError(null);
-      stream.submit(null, { command: { resume: value } });
+      runExecutor.submit(null, { command: { resume: value } });
       // Update thread list when resuming from interrupt
       onHistoryRevalidateAction?.();
     },
-    [stream, onHistoryRevalidateAction]
+    [runExecutor, onHistoryRevalidateAction]
   );
 
   const clearStreamError = useCallback(() => {
@@ -491,8 +498,8 @@ export function useChat({
   }, []);
 
   const stopStream = useCallback(() => {
-    stream.stop();
-  }, [stream]);
+    runExecutor.stop();
+  }, [runExecutor]);
 
   const shouldPreferServerSnapshot =
     !!serverSnapshot &&

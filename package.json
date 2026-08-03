@@ -16,6 +16,7 @@
     "test:thread-retention": "node --test tests/thread-retention.test.mjs",
     "test:markdown-images": "tsx --test tests/markdown-images.test.ts",
     "test:architecture": "node --test tests/architecture-boundaries.test.mjs && node scripts/check-architecture.mjs",
+    "test:chat-architecture": "node --test tests/chat-thread-boundaries.test.mjs",
     "test:platform": "node --test tests/platform-boundaries.test.mjs && node --import tsx --test --test-isolation=none tests/api-transport.test.ts tests/authenticated-fetch.test.ts",
     "contract:generate": "openapi-typescript contracts/backend-api.openapi.json -o src/generated/backend-api.ts",
     "contract:check": "openapi-typescript contracts/backend-api.openapi.json -o src/generated/backend-api.ts --check",

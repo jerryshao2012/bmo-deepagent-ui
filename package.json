@@ -16,6 +16,9 @@
     "test:thread-retention": "node --test tests/thread-retention.test.mjs",
     "test:markdown-images": "tsx --test tests/markdown-images.test.ts",
     "test:architecture": "node --test tests/architecture-boundaries.test.mjs && node scripts/check-architecture.mjs",
+    "test:platform": "node --test tests/platform-boundaries.test.mjs && node --import tsx --test --test-isolation=none tests/api-transport.test.ts tests/authenticated-fetch.test.ts",
+    "contract:generate": "openapi-typescript contracts/backend-api.openapi.json -o src/generated/backend-api.ts",
+    "contract:check": "openapi-typescript contracts/backend-api.openapi.json -o src/generated/backend-api.ts --check",
     "analyze:har": "node scripts/analyze-har.mjs",
     "postinstall": "mkdir -p public/pdfjs && cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdfjs/"
   },
@@ -91,6 +94,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4",
     "jsdom": "^30.0.1",
+    "openapi-typescript": "^7.13.0",
     "postcss": "^8.5.6",
     "prettier": "^2.8.8",
     "prettier-plugin-tailwindcss": "^0.3.0",

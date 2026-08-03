@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
+import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -74,7 +75,7 @@ export const WikiTreeViewer: React.FC<WikiTreeViewerProps> = ({
       const appConfig = getConfig();
       const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
       const token = getBrowserSessionToken();
-      const res = await fetch(`${deploymentUrl}/threads/${threadId}/wiki/tree`, {
+      const res = await authenticatedFetch(`${deploymentUrl}/threads/${threadId}/wiki/tree`, {
         headers: token ? { "X-API-Key": token } : {},
       });
 
@@ -110,7 +111,7 @@ export const WikiTreeViewer: React.FC<WikiTreeViewerProps> = ({
       const appConfig = getConfig();
       const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
       const token = getBrowserSessionToken();
-      const res = await fetch(
+      const res = await authenticatedFetch(
         `${deploymentUrl}/threads/${threadId}/wiki/file?path=${encodeURIComponent(
           node.path
         )}`,

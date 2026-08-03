@@ -1,27 +1,13 @@
-export function getBrowserSessionToken(): string {
-  if (typeof document === "undefined") {
-    return "";
-  }
+import { browserSessionProvider } from "@/features/auth/infrastructure/browser-session-provider";
+import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
 
-  const cookie = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith("session_token="));
-
-  return cookie ? decodeURIComponent(cookie.split("=")[1] ?? "") : "";
-}
+export const getBrowserSessionToken = () => browserSessionProvider.getToken();
 
 /**
  * Clear the stale session_token cookie and redirect to the login page.
  */
 export function handleAuthRedirect(): void {
-  if (typeof window === "undefined") return;
-
-  document.cookie = "session_token=; path=/; max-age=0";
-
-  if (window.location.pathname.startsWith("/login")) return;
-
-  console.warn("Session expired (401). Redirecting to login page…");
-  window.location.href = "/login?error=session_invalid";
+  browserSessionProvider.handleInvalidSession();
 }
 
 /**
@@ -32,23 +18,7 @@ export function handleAuthRedirect(): void {
  * Returns `true` when the session was successfully refreshed.
  */
 export async function refreshSession(deploymentUrl: string): Promise<boolean> {
-  const token = getBrowserSessionToken();
-  if (!token) return false;
-
-  try {
-    const cleanUrl = deploymentUrl.replace(/\/+$/, "");
-    // Use the original (un-wrapped) fetch to avoid recursion.
-    const response = await _originalFetch(`${cleanUrl}/auth/session/refresh`, {
-      method: "POST",
-      headers: {
-        "X-API-Key": token,
-        "Content-Type": "application/json",
-      },
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
+  return browserSessionProvider.refresh(deploymentUrl);
 }
 
 /**
@@ -72,73 +42,6 @@ export function startProactiveSessionRefresh(
   return () => clearInterval(id);
 }
 
-// ── Global fetch interceptor ──────────────────────────────────────────────
-
-// Keep a reference to the native fetch so refreshSession() can bypass the
-// interceptor and avoid infinite recursion.  Assigned inside
-// installGlobalAuthInterceptor (client-side only).
-let _originalFetch: typeof fetch;
-
-let _authInterceptorInstalled = false;
-let _refreshInFlight: Promise<boolean> | null = null;
-
-/**
- * Install a global `fetch` interceptor that handles 401 responses by:
- *  1. Attempting to refresh the session via /auth/session/refresh.
- *  2. If the refresh succeeds → transparently retry the original request.
- *  3. If the refresh fails → redirect to the login page.
- *
- * Call this **once** during app bootstrap (e.g. in ClientProvider).
- * It is safe to call multiple times – subsequent calls are no-ops.
- */
-export function installGlobalAuthInterceptor(): void {
-  if (typeof window === "undefined" || _authInterceptorInstalled) return;
-  _authInterceptorInstalled = true;
-
-  // _originalFetch was already captured at module level, but make sure
-  // it points to the real (un-wrapped) fetch.
-  _originalFetch = window.fetch.bind(window);
-
-  window.fetch = async (...args: Parameters<typeof fetch>) => {
-    const response = await _originalFetch(...args);
-
-    if (response.status !== 401) {
-      return response;
-    }
-
-    // ── 401 handling ────────────────────────────────────────────────
-    // Skip auth endpoints (login/logout/callback) — they should propagate 401.
-    const url = typeof args[0] === "string" ? args[0] : (args[0] as Request).url;
-    if (url?.includes("/auth/login") || url?.includes("/auth/callback") || url?.includes("/auth/logout")) {
-      return response;
-    }
-
-    // De-duplicate: only one refresh attempt at a time.
-    if (!_refreshInFlight) {
-      // Derive deployment URL from the failing request's origin.
-      const requestUrl = new URL(url, window.location.origin);
-      const deploymentUrl = `${requestUrl.protocol}//${requestUrl.host}`;
-
-      _refreshInFlight = refreshSession(deploymentUrl).finally(() => {
-        _refreshInFlight = null;
-      });
-    }
-
-    const refreshed = await _refreshInFlight;
-
-    if (refreshed) {
-      // Session was refreshed — retry the original request with the
-      // same token (the server extended it, the cookie value is unchanged).
-      console.info("Session refreshed — retrying request…");
-      return _originalFetch(...args);
-    }
-
-    // Refresh failed — session is truly dead.
-    setTimeout(() => handleAuthRedirect(), 50);
-    return response;
-  };
-}
-
 export function createLangGraphClientConfig({
   deploymentUrl,
   apiKey,
@@ -156,6 +59,7 @@ export function createLangGraphClientConfig({
   return {
     apiUrl: deploymentUrl,
     defaultHeaders,
+    callerOptions: { fetch: authenticatedFetch },
   };
 }
 
@@ -173,7 +77,7 @@ export async function logoutFromLangGraph(deploymentUrl: string): Promise<void> 
 
   try {
     const cleanDeploymentUrl = deploymentUrl.replace(/\/+$/, "");
-    const response = await fetch(`${cleanDeploymentUrl}/auth/logout`, {
+    const response = await authenticatedFetch(`${cleanDeploymentUrl}/auth/logout`, {
       method: "POST",
       headers: {
         "X-API-Key": token,

@@ -1,5 +1,6 @@
 import { getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
+import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
 
 const CANONICAL_DOCUMENT_RE = /^(?:raw\/)?(.+\.(?:pdf|docx|pptx|xlsx))(?:\.(?:md|txt))?$/i;
 
@@ -88,7 +89,7 @@ export async function fetchDocumentArrayBuffer(
   const url = `${deploymentUrl}/documents/view/${encodeURIComponent(
     filename
   )}?${params.toString()}`;
-  const res = await fetch(url, {
+  const res = await authenticatedFetch(url, {
     headers: token ? { "X-API-Key": token } : {},
   });
   if (!res.ok) {
@@ -113,7 +114,7 @@ export async function fetchDocumentExtract(
   const url = `${deploymentUrl}/documents/extract/${encodeURIComponent(
     filename
   )}?${params.toString()}`;
-  const res = await fetch(url, {
+  const res = await authenticatedFetch(url, {
     headers: token ? { "X-API-Key": token } : {},
   });
   if (!res.ok) {
@@ -157,7 +158,7 @@ export async function downloadDocument(
     filename
   )}?${params.toString()}`;
 
-  const res = await fetch(url, {
+  const res = await authenticatedFetch(url, {
     headers: token ? { "X-API-Key": token } : {},
   });
   if (!res.ok) {
@@ -175,4 +176,3 @@ export async function downloadDocument(
   document.body.removeChild(a);
   URL.revokeObjectURL(blobUrl);
 }
-

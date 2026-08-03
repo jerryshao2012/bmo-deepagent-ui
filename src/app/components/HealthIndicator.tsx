@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { getConfig } from "@/lib/config";
+import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
 
 interface HealthStatus {
   isHealthy: boolean;
@@ -37,7 +38,7 @@ export function HealthIndicator() {
         : `${config.deploymentUrl}/health`;
 
       try {
-        const response = await fetch(healthUrl, {
+        const response = await authenticatedFetch(healthUrl, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",

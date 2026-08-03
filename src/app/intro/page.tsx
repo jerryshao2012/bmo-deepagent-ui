@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
+import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
 import { clearRememberedLogin } from "@/lib/remembered-login";
 import {
   buildSyncedImageMarkdown,
@@ -174,7 +175,7 @@ function IntroPageContent() {
           const pendingContent: string = pendingBackendContentRef.current;
           const token = getBrowserSessionToken();
           const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
-          const res = await fetch(
+          const res = await authenticatedFetch(
             `${cleanUrl}/chat_threads/${threadId}/state`,
             {
               method: "POST",
@@ -223,7 +224,7 @@ function IntroPageContent() {
       try {
         const token = getBrowserSessionToken();
         const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
-        const res = await fetch(`${cleanUrl}/chat_threads/${threadId}/state`, {
+        const res = await authenticatedFetch(`${cleanUrl}/chat_threads/${threadId}/state`, {
           headers: {
             "Content-Type": "application/json",
             "X-API-Key": token || "",

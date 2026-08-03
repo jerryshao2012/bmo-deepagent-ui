@@ -32,6 +32,7 @@ import { buildSkillDraftPrompt } from "@/app/utils/buildSkillDraftPrompt";
 import { useClient } from "@/providers/ClientContext";
 import { getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
+import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
 import { ChatMessage } from "@/app/components/ChatMessage";
 import type {
   TodoItem,
@@ -227,7 +228,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     const appConfig = getConfig();
     const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
     const token = getBrowserSessionToken();
-    fetch(`${deploymentUrl}/threads/${currentThreadId}/wiki/tree`, {
+    authenticatedFetch(`${deploymentUrl}/threads/${currentThreadId}/wiki/tree`, {
       headers: token ? { "X-API-Key": token } : {},
     })
       .then((res) => (res.ok ? res.json() : null))
@@ -266,7 +267,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
 
     (async () => {
       try {
-        const response = await fetch(
+        const response = await authenticatedFetch(
           `${deploymentUrl}/threads/${threadId}/wiki/progress`,
           { headers: { "X-API-Key": token }, signal: controller.signal }
         );
@@ -361,7 +362,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
     const token = getBrowserSessionToken();
 
-    fetch(`${deploymentUrl}/threads/${currentThreadId}/wiki/status`, {
+    authenticatedFetch(`${deploymentUrl}/threads/${currentThreadId}/wiki/status`, {
       headers: { "X-API-Key": token },
     })
       .then((r) => (r.ok ? r.json() : null))
@@ -448,7 +449,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         const deploymentUrl = appConfig?.deploymentUrl || "";
         const token = getBrowserSessionToken();
 
-        const response = await fetch(
+        const response = await authenticatedFetch(
           `${deploymentUrl.replace(
             /\/+$/,
             ""
@@ -572,7 +573,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       const deploymentUrl = appConfig?.deploymentUrl || "";
       const token = getBrowserSessionToken();
 
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${deploymentUrl.replace(/\/+$/, "")}/documents/upload`,
         {
           method: "POST",
@@ -665,7 +666,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       const deploymentUrl = appConfig?.deploymentUrl || "";
       const token = getBrowserSessionToken();
 
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${deploymentUrl.replace(/\/+$/, "")}/documents/${encodeURIComponent(
           filename
         )}?folder=threads/${currentThreadId}`,

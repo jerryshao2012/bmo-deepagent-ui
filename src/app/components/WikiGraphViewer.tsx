@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
+import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -154,7 +155,7 @@ export default function WikiGraphViewer({ threadId }: Props) {
     setLoading(true);
     setError(null);
     setData(null);
-    fetch(`${deploymentUrl}/threads/${threadId}/wiki/graph`, {
+    authenticatedFetch(`${deploymentUrl}/threads/${threadId}/wiki/graph`, {
       headers: token ? { "X-API-Key": token } : {},
     })
       .then(async (res) => {

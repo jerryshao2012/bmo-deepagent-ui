@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { StandaloneConfig, getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
+import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
 import { fetchAvailableSkills, uploadSkill, deleteSkill, SkillItem } from "@/lib/skills";
 
 async function scanFileSystemEntry(entry: any, path: string = ""): Promise<{ file: File; path: string }[]> {
@@ -382,7 +383,7 @@ export function ConfigDialog({
     try {
       const token = getBrowserSessionToken();
       const cleanUrl = url.replace(/\/+$/, "");
-      const response = await fetch(`${cleanUrl}/storage/info`, {
+      const response = await authenticatedFetch(`${cleanUrl}/storage/info`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",

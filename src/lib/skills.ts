@@ -1,5 +1,6 @@
 import { getBrowserSessionToken } from "./langgraph-client";
 import { getConfig } from "./config";
+import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
 
 export interface SkillItem {
   id: string;
@@ -24,7 +25,7 @@ export async function fetchAvailableSkills(
   try {
     const token = getBrowserSessionToken();
     const cleanUrl = url.replace(/\/+$/, "");
-    const response = await fetch(`${cleanUrl}/skills`, {
+    const response = await authenticatedFetch(`${cleanUrl}/skills`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -86,7 +87,7 @@ export async function uploadSkill(
     formData.append("file", input);
   }
 
-  const response = await fetch(`${cleanUrl}/skills/upload`, {
+  const response = await authenticatedFetch(`${cleanUrl}/skills/upload`, {
     method: "POST",
     headers: {
       "X-API-Key": token,
@@ -121,7 +122,7 @@ export async function deleteSkill(
   const token = getBrowserSessionToken();
   const cleanUrl = url.replace(/\/+$/, "");
 
-  const response = await fetch(`${cleanUrl}/skills/${encodeURIComponent(skillId)}`, {
+  const response = await authenticatedFetch(`${cleanUrl}/skills/${encodeURIComponent(skillId)}`, {
     method: "DELETE",
     headers: {
       "X-API-Key": token,

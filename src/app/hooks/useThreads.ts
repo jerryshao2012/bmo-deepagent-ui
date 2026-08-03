@@ -4,6 +4,7 @@ import type { Thread } from "@langchain/langgraph-sdk";
 import { Client } from "@langchain/langgraph-sdk";
 import { getConfig } from "@/lib/config";
 import { createLangGraphClientConfig, getBrowserSessionToken } from "@/lib/langgraph-client";
+import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
 
 export interface ThreadItem {
   id: string;
@@ -262,7 +263,7 @@ export async function deleteThread(threadId: string): Promise<void> {
   // 1. Clean up local wiki workspace and uploaded documents on the server.
   try {
     const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
-    const response = await fetch(`${cleanUrl}/threads/${threadId}/wiki`, {
+    const response = await authenticatedFetch(`${cleanUrl}/threads/${threadId}/wiki`, {
       method: "DELETE",
       headers: {
         "X-API-Key": token,
@@ -406,7 +407,7 @@ export async function cleanupOldThreads(days: number = 7): Promise<void> {
             // Clean up the wiki and documents first!
             try {
               const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
-              const response = await fetch(`${cleanUrl}/threads/${thread.thread_id}/wiki`, {
+              const response = await authenticatedFetch(`${cleanUrl}/threads/${thread.thread_id}/wiki`, {
                 method: "DELETE",
                 headers: {
                   "X-API-Key": token,

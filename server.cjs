@@ -1,10 +1,13 @@
 const { createServer } = require("http");
 const next = require("next");
 const { WebSocketServer } = require("ws");
+const { runtimeConfig } = require("./runtime/bootstrap.cjs");
+const { broadcastJson, sendJson } = require("./runtime/transport.cjs");
+const { LruCache } = require("./runtime/state.cjs");
+const { createMarkdownPersistence } = require("./runtime/persistence.cjs");
+const { createMermaidImageStore } = require("./runtime/images.cjs");
 
-const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOST || "0.0.0.0";
-const port = process.env.PORT || 3000;
+const { dev, hostname, port } = runtimeConfig();
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 

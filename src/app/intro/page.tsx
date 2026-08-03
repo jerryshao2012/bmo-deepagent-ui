@@ -6,9 +6,8 @@ import { MarkdownContent } from "@/app/components/MarkdownContent";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { getConfig } from "@/lib/config";
-import { getBrowserSessionToken } from "@/lib/langgraph-client";
-import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
+import { BrowserMarkdownSyncStore } from "@/features/markdown-sync/infrastructure/browser-markdown-sync-store";
+import { createConfiguredBackendMarkdownSyncStore } from "@/features/markdown-sync/infrastructure/backend-markdown-sync-store";
 import { clearRememberedLogin } from "@/lib/remembered-login";
 import {
   buildSyncedImageMarkdown,
@@ -39,6 +38,8 @@ import {
   LogOut,
   Loader2,
 } from "lucide-react";
+
+const browserMarkdownStore = new BrowserMarkdownSyncStore();
 
 function IntroPageContent() {
   const searchParams = useSearchParams();
@@ -71,12 +72,7 @@ function IntroPageContent() {
     localStorage.removeItem("last_thread_id");
     clearRememberedLogin();
 
-    // Clear all markdown thread data
-    Object.keys(localStorage).forEach((key) => {
-      if (key.startsWith("markdown_thread_")) {
-        localStorage.removeItem(key);
-      }
-    });
+    browserMarkdownStore.clearAll();
 
     toast.success("Session cookies cleared. Please refresh the page.");
   };
@@ -111,11 +107,7 @@ function IntroPageContent() {
       contentVersionRef.current += 1;
       sharedTextRef.current = content;
       setSharedText(content);
-      if (content) {
-        localStorage.setItem(`markdown_thread_${threadId}`, content);
-      } else {
-        localStorage.removeItem(`markdown_thread_${threadId}`);
-      }
+      void browserMarkdownStore.save(threadId, content);
     },
     [threadId]
   );
@@ -141,10 +133,9 @@ function IntroPageContent() {
       pendingWebSocketContentRef.current = null;
       pendingBackendContentRef.current = null;
       pendingFallbackUpdateRef.current = null;
-      const cached = localStorage.getItem(`markdown_thread_${threadId}`);
-      if (cached) {
-        applyContent(cached);
-      }
+      void browserMarkdownStore.load(threadId).then((cached) => {
+        if (cached && activeThreadIdRef.current === threadId) applyContent(cached);
+      });
     }
   }, [threadId, applyContent]);
 
@@ -157,8 +148,8 @@ function IntroPageContent() {
   const syncContentToBackend = useCallback(
     async (content: string) => {
       if (!threadId) return;
-      const config = getConfig();
-      if (!config) return;
+      const backendStore = createConfiguredBackendMarkdownSyncStore();
+      if (!backendStore) return;
       if (
         content === lastBackendSyncRef.current &&
         pendingBackendContentRef.current === null
@@ -173,23 +164,8 @@ function IntroPageContent() {
       try {
         while (pendingBackendContentRef.current !== null) {
           const pendingContent: string = pendingBackendContentRef.current;
-          const token = getBrowserSessionToken();
-          const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
-          const res = await authenticatedFetch(
-            `${cleanUrl}/chat_threads/${threadId}/state`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-API-Key": token || "",
-              },
-              body: JSON.stringify({
-                values: { markdown_content: pendingContent },
-              }),
-            }
-          );
+          await backendStore.save(threadId, pendingContent);
           if (activeThreadIdRef.current !== threadId) return;
-          if (!res.ok) break;
 
           lastBackendSyncRef.current = pendingContent;
           if (pendingBackendContentRef.current === pendingContent) {
@@ -218,28 +194,17 @@ function IntroPageContent() {
         return;
       }
 
-      const config = getConfig();
-      if (!config) return;
+      const backendStore = createConfiguredBackendMarkdownSyncStore();
+      if (!backendStore) return;
       const requestVersion = contentVersionRef.current;
       try {
-        const token = getBrowserSessionToken();
-        const cleanUrl = config.deploymentUrl.replace(/\/+$/, "");
-        const res = await authenticatedFetch(`${cleanUrl}/chat_threads/${threadId}/state`, {
-          headers: {
-            "Content-Type": "application/json",
-            "X-API-Key": token || "",
-          },
-        });
-        if (!res.ok) return;
-        const data = await res.json();
+        const remoteContent = (await backendStore.load(threadId)) ?? "";
         if (
           requestVersion !== contentVersionRef.current ||
           pendingBackendContentRef.current !== null
         ) {
           return;
         }
-        const remoteContent: string =
-          data?.values?.markdown_content ?? "";
         const localContent = sharedTextRef.current;
         if (
           remoteContent &&
@@ -476,14 +441,13 @@ function IntroPageContent() {
       return;
     }
 
-    ws.onopen = () => {
+    ws.onopen = async () => {
       console.log("WebSocket connected for thread:", threadId);
       setSocket(ws);
       setWsStatus("connected");
 
       // Retrieve local offline content from localStorage and initialize sync on the server
-      const localContent =
-        localStorage.getItem(`markdown_thread_${threadId}`) || "";
+      const localContent = (await browserMarkdownStore.load(threadId)) || "";
       ws?.send(JSON.stringify({ type: "init", content: localContent }));
     };
 

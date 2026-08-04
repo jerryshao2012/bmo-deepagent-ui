@@ -86,7 +86,9 @@ The FastAPI backend manages Google and GitHub OAuth with Authlib. See
 [OAuth authentication](documents/authentication/oauth-authentication.md) for login,
 callback, session, and security details. To enable OAuth:
 
-1. Follow [backend OAuth guide](https://github.com/jerryshao2012/deep-research/blob/main/README.md#-oauth-authentication) for backend configuration.
+1. Follow
+   [backend OAuth guide](https://github.com/jerryshao2012/deep-research/blob/main/documents/guides/authentication.md)
+   for backend configuration.
 2. Configure provider client IDs and secrets in backend environment.
 3. Add UI origin to backend `FRONTEND_URLS` so callbacks return users correctly.
 

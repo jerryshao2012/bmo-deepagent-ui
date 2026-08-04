@@ -190,6 +190,8 @@ DEPLOY_TMP_ROOT="${TMPDIR:-/tmp}"
 DEPLOY_WORK_DIR=$(mktemp -d "$DEPLOY_TMP_ROOT/bmo-deepagent-ui-deploy.XXXXXX")
 PACKAGE_ROOT="$DEPLOY_WORK_DIR/package"
 PACKAGE_PATH="$DEPLOY_WORK_DIR/app.zip"
+DEPLOYMENT_MARKER="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+HEALTH_RESPONSE_PATH="$DEPLOY_WORK_DIR/health-response.txt"
 trap 'rm -rf "$DEPLOY_WORK_DIR"' EXIT
 mkdir -p "$PACKAGE_ROOT/.next" "$PACKAGE_ROOT/public"
 
@@ -200,6 +202,8 @@ cp -R node_modules/ws "$PACKAGE_ROOT/node_modules/ws"
 cp -R .next/static "$PACKAGE_ROOT/.next/static"
 cp -R public/. "$PACKAGE_ROOT/public/"
 cp server.cjs "$PACKAGE_ROOT/server.cjs"
+cp -R runtime "$PACKAGE_ROOT/runtime"
+printf '%s\n' "$DEPLOYMENT_MARKER" > "$PACKAGE_ROOT/public/deployment-version.txt"
 find "$PACKAGE_ROOT" -maxdepth 1 -type f -name '.env*' -delete
 
 echo "🗜️ Creating standalone deployment package..."
@@ -228,20 +232,23 @@ fi
 
 echo "🩺 Verifying deployed site..."
 HTTP_STATUS=""
-for attempt in {1..12}; do
-  HTTP_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" \
+DEPLOYED_MARKER=""
+for attempt in {1..36}; do
+  HTTP_STATUS=$(curl -sS -o "$HEALTH_RESPONSE_PATH" -w "%{http_code}" \
     --connect-timeout 10 \
     --max-time 30 \
-    "$WEBAPP_URL/" || true)
-  case "$HTTP_STATUS" in
-    200|301|302|303|307|308)
-      echo "✅ Deployment completed successfully (HTTP $HTTP_STATUS)."
-      echo "🔗 Public URL: $WEBAPP_URL"
-      exit 0
-      ;;
-  esac
+    "$WEBAPP_URL/deployment-version.txt" || true)
+  if [ -f "$HEALTH_RESPONSE_PATH" ]; then
+    DEPLOYED_MARKER=$(<"$HEALTH_RESPONSE_PATH")
+  fi
+  if [ "$HTTP_STATUS" = "200" ] && \
+    [ "$DEPLOYED_MARKER" = "$DEPLOYMENT_MARKER" ]; then
+    echo "✅ Deployment completed successfully (HTTP $HTTP_STATUS)."
+    echo "🔗 Public URL: $WEBAPP_URL"
+    exit 0
+  fi
   fail_if_webapp_quota_exceeded || exit 1
-  echo "   Site returned HTTP ${HTTP_STATUS:-000}; retrying ($attempt/12)..."
+  echo "   New deployment not ready (HTTP ${HTTP_STATUS:-000}); retrying ($attempt/36)..."
   sleep 5
 done
 

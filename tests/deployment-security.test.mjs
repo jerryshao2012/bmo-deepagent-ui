@@ -143,6 +143,20 @@ test("App Service deployment uses a prebuilt standalone zip", async () => {
   assert.doesNotMatch(deployScript, /DOCKER_HUB_(?:USERNAME|PAT)/);
 });
 
+test("App Service package includes custom server runtime modules", async () => {
+  const deployScript = await source("deploy.sh");
+
+  assert.match(deployScript, /cp -R runtime "\$PACKAGE_ROOT\/runtime"/);
+});
+
+test("App Service health check verifies the new deployment marker", async () => {
+  const deployScript = await source("deploy.sh");
+
+  assert.match(deployScript, /DEPLOYMENT_MARKER=/);
+  assert.match(deployScript, /public\/deployment-version\.txt/);
+  assert.match(deployScript, /"\$DEPLOYED_MARKER" = "\$DEPLOYMENT_MARKER"/);
+});
+
 test("App Service deployment preserves runtime and Key Vault settings", async () => {
   const deployScript = await source("deploy.sh");
 

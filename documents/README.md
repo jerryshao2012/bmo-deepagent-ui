@@ -10,6 +10,15 @@ section when reviewing earlier design decisions or implementation context.
 - [Clean architecture boundaries](architecture/clean-architecture.md) - dependency
   direction, feature ownership, composition roots, and enforcement.
 
+### Features
+
+- [Deep Research workflow](features/deep-research.md) - run research, follow tool
+  activity, and review generated results and files.
+- [LangSmith trace inspection](features/langsmith-integration.md) - inspect graph
+  execution, timing, tool/model calls, inputs, and outputs in LangSmith Studio.
+- [Agent skills](features/skills.md) - configure, discover, select, apply, and
+  review agent skills.
+
 ### Authentication
 
 - [OAuth authentication](authentication/oauth-authentication.md) - provider login,

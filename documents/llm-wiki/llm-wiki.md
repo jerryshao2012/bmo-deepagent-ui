@@ -11,14 +11,14 @@ Return to [documentation index](../README.md).
 
 ## Architecture and responsibility boundaries
 
-| Layer                     | Responsibility                                                                                                                                                                                                 |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser UI                | Create or register thread, preserve graph metadata, submit multipart files, update `doc_folder`, display upload/ingest errors, follow progress, and refresh source list plus wiki tree/file views.              |
-| LangGraph thread client   | Create new thread or idempotently register existing one, store `graph_id` metadata, and persist `doc_folder` in thread state or on first run when immediate state update is unavailable.                        |
-| Document API              | Authenticate upload/list/delete operations, constrain paths and sizes, save original files under documents root, report save results, and schedule automatic wiki ingest for exact thread-folder uploads.      |
-| Background wiki ingestion | Register per-thread progress, stage supported source content, build or update derived workspace, expose status/SSE progress, honor cancellation checkpoints, and finish with ready, error, or cancelled state. |
-| Thread workspace          | Keep original sources and backend-managed derived wiki separate. Provide safe tree and text-file inspection without exposing arbitrary filesystem paths.                                                       |
-| Query model               | Retrieve grounded evidence, generate answer, decide whether result has durable value, and optionally write query page. Runtime regex-extracts citation markers; only code line ranges and supported derived-code mappings receive source validation.              |
+| Layer                     | Responsibility                                                                                                                                                                                                                                       |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser UI                | Create or register thread, preserve graph metadata, submit multipart files, update `doc_folder`, display upload/ingest errors, follow progress, and refresh source list plus wiki tree/file views.                                                   |
+| LangGraph thread client   | Create new thread or idempotently register existing one, store `graph_id` metadata, and persist `doc_folder` in thread state or on first run when immediate state update is unavailable.                                                             |
+| Document API              | Authenticate upload/list/delete operations, constrain paths and sizes, save original files under documents root, report save results, and schedule automatic wiki ingest for exact thread-folder uploads.                                            |
+| Background wiki ingestion | Register per-thread progress, stage supported source content, build or update derived workspace, expose status/SSE progress, honor cancellation checkpoints, and finish with ready, error, or cancelled state.                                       |
+| Thread workspace          | Keep original sources and backend-managed derived wiki separate. Provide safe tree and text-file inspection without exposing arbitrary filesystem paths.                                                                                             |
+| Query model               | Retrieve grounded evidence, generate answer, decide whether result has durable value, and optionally write query page. Runtime regex-extracts citation markers; only code line ranges and supported derived-code mappings receive source validation. |
 
 ### Thread isolation and context use
 
@@ -98,11 +98,15 @@ sequenceDiagram
     end
 ```
 
+![LLM Wiki workspace tree open beside its generated index](../assets/screenshots/llm-wiki-index.png)
+
+_Workspace tree exposes generated Wiki files for inspection without replacing original source evidence._
+
 ### Authentication headers
 
-| Surface | Static key | OAuth application session | Selection behavior |
-| ------- | ---------- | ------------------------- | ------------------ |
-| Document API | `X-API-Key: <static-key>` only | `X-API-Key: <session-token>` or `Authorization: Bearer <session-token>` | Static-key configuration uses `UPLOAD_API_KEY`, then `LANGCHAIN_API_KEY`, then process-local generated fallback. |
+| Surface         | Static key                                                        | OAuth application session                                               | Selection behavior                                                                                                                         |
+| --------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Document API    | `X-API-Key: <static-key>` only                                    | `X-API-Key: <session-token>` or `Authorization: Bearer <session-token>` | Static-key configuration uses `UPLOAD_API_KEY`, then `LANGCHAIN_API_KEY`, then process-local generated fallback.                           |
 | Thread Wiki API | `X-API-Key: <static-key>` or `Authorization: Bearer <static-key>` | `X-API-Key: <session-token>` or `Authorization: Bearer <session-token>` | `X-API-Key` wins when both headers exist. Configured key selection uses `LANGCHAIN_API_KEY`, then `UPLOAD_API_KEY`; no generated fallback. |
 
 Document API also gives any nonempty `X-API-Key` header precedence over Bearer
@@ -142,16 +146,16 @@ files=<source-file-2>
 
 Successful upload returns HTTP 201 with:
 
-| Field | Meaning |
-| ----- | ------- |
-| `folder` | Normalized relative folder. |
-| `count` | Number of saved files. |
-| `saved` | Per-file `filename`, application-relative `path` such as `docs/threads/<thread-id>/<filename>`, and byte `size`. |
-| `total_uploaded_bytes` | Sum of saved file sizes for request. |
-| `free_space_bytes` | Remaining bytes on backing filesystem, or `-1` if unavailable. |
-| `free_space_human` | Human-readable rendering of free-space result. |
-| `wiki_ingest_started` | Whether endpoint scheduled automatic ingest because folder exactly matched thread pattern. |
-| `wiki_ingest_thread_id` | Thread ID when ingest was scheduled; otherwise `null`. |
+| Field                   | Meaning                                                                                                          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `folder`                | Normalized relative folder.                                                                                      |
+| `count`                 | Number of saved files.                                                                                           |
+| `saved`                 | Per-file `filename`, application-relative `path` such as `docs/threads/<thread-id>/<filename>`, and byte `size`. |
+| `total_uploaded_bytes`  | Sum of saved file sizes for request.                                                                             |
+| `free_space_bytes`      | Remaining bytes on backing filesystem, or `-1` if unavailable.                                                   |
+| `free_space_human`      | Human-readable rendering of free-space result.                                                                   |
+| `wiki_ingest_started`   | Whether endpoint scheduled automatic ingest because folder exactly matched thread pattern.                       |
+| `wiki_ingest_thread_id` | Thread ID when ingest was scheduled; otherwise `null`.                                                           |
 
 `wiki_ingest_started: true` confirms scheduling, not successful completion.
 Open `/wiki/progress` promptly for live state. UI checks `/wiki/status` once when
@@ -216,6 +220,10 @@ sequenceDiagram
     end
 ```
 
+![Grounded LLM Wiki answer linked to corresponding PDF page](../assets/screenshots/llm-wiki-document-citation.png)
+
+_Citation links let readers compare grounded answer with relevant original document page._
+
 Request body:
 
 ```json
@@ -227,11 +235,11 @@ Request body:
 
 Response fields:
 
-| Field | Meaning |
-| ----- | ------- |
-| `answer` | Generated answer, including grounding markers used for citation extraction. |
+| Field           | Meaning                                                                                                                                                                                                                                                         |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `answer`        | Generated answer, including grounding markers used for citation extraction.                                                                                                                                                                                     |
 | `sources_cited` | Regex-extracted citation markers with source kind and applicable raw path, page, locator, URL, or line range. Code line ranges and supported derived-code mappings are source-validated; other markers are not generally checked for existence or reachability. |
-| `filed_path` | `/wiki/query/<slug>.md` when durable filing completes; otherwise `null`. |
+| `filed_path`    | `/wiki/query/<slug>.md` when durable filing completes; otherwise `null`.                                                                                                                                                                                        |
 
 Filing needs both model durable-value decision and `file_results: true`.
 Disabling filing does not disable answer generation or citations. Filing timeout
@@ -245,6 +253,10 @@ references, raw paths, pages, and locators without general existence or URL
 reachability checks. It validates code line ranges against source files, maps
 supported derived-code citations back to originals, and drops invalid ranges.
 
+![Grounded financial answer shown beside supporting annual-report evidence](../assets/screenshots/llm-wiki-grounded-query.png)
+
+_Grounded query output remains connected to original report used as evidence._
+
 Research-agent path is separate from HTTP sequence. Explicit `llm_wiki_query`
 tool derives thread from state `doc_folder`, checks local wiki content, and calls
 `run_query(..., file_results=False)` directly in backend process. It does not
@@ -256,25 +268,25 @@ into every research-agent prompt.
 
 ### Documents
 
-| Method and path | Input | Result and wiki consequence |
-| --------------- | ----- | --------------------------- |
-| `POST /documents/upload` | Multipart repeated `files`; `folder=threads/<thread-id>` | HTTP 201 save report; exact thread folder schedules automatic ingest. |
-| `GET /documents/list?folder=threads/<thread-id>` | Thread folder query | Sorted `items` of direct files/folders with `folder` and `count`. |
-| `DELETE /documents/{filename}?folder=threads/<thread-id>` | Basename path plus thread folder query | Deletes one source; background hook cancels conflicting ingest, removes source-derived references, and starts reconciliation. |
-| `DELETE /documents/folder/{folder}` | One-segment folder path only | Deletes direct files and preserves nested directories. Route parameter does not capture `/`, so it cannot target nested `threads/<thread-id>` or trigger thread-folder reconciliation. |
+| Method and path                                           | Input                                                    | Result and wiki consequence                                                                                                                                                            |
+| --------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /documents/upload`                                  | Multipart repeated `files`; `folder=threads/<thread-id>` | HTTP 201 save report; exact thread folder schedules automatic ingest.                                                                                                                  |
+| `GET /documents/list?folder=threads/<thread-id>`          | Thread folder query                                      | Sorted `items` of direct files/folders with `folder` and `count`.                                                                                                                      |
+| `DELETE /documents/{filename}?folder=threads/<thread-id>` | Basename path plus thread folder query                   | Deletes one source; background hook cancels conflicting ingest, removes source-derived references, and starts reconciliation.                                                          |
+| `DELETE /documents/folder/{folder}`                       | One-segment folder path only                             | Deletes direct files and preserves nested directories. Route parameter does not capture `/`, so it cannot target nested `threads/<thread-id>` or trigger thread-folder reconciliation. |
 
 ### LLM Wiki
 
-| Method and path | Input | Result |
-| --------------- | ----- | ------ |
-| `POST /threads/<thread-id>/wiki/ingest` | Optional JSON `topic`, `note` | Starts background ingest; cancels and replaces active ingest for same thread. |
-| `GET /threads/<thread-id>/wiki/status` | None | Current phase, progress, detail, counts, error, timestamps, activity, and `wiki_ready`. |
-| `GET /threads/<thread-id>/wiki/progress` | None | SSE `progress`, `heartbeat`, and `end`; after registry cleanup, `end` can contain derived ready/idle instead of original terminal failure/cancel state. |
-| `POST /threads/<thread-id>/wiki/ingest/cancel` | None | Requests cancellation and reports `cancelled`; worker stops at next checkpoint. |
-| `GET /threads/<thread-id>/wiki/tree` | None | Workspace tree and `file_count`; 404 before workspace exists. |
-| `GET /threads/<thread-id>/wiki/file?path=<relative-path>` | Safe relative path | Text content and file metadata; `.pkl` and `index/*` content is hidden. |
-| `POST /threads/<thread-id>/wiki/query` | JSON `question`, optional `file_results` | Grounded `answer`, `sources_cited`, and nullable `filed_path`; 404 when source directory is missing, 409 when it exists but wiki is unready. |
-| `DELETE /threads/<thread-id>/wiki` | None | Cancels ingest, recursively deletes uploaded thread sources and derived wiki, and clears thread cache. |
+| Method and path                                           | Input                                    | Result                                                                                                                                                  |
+| --------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /threads/<thread-id>/wiki/ingest`                   | Optional JSON `topic`, `note`            | Starts background ingest; cancels and replaces active ingest for same thread.                                                                           |
+| `GET /threads/<thread-id>/wiki/status`                    | None                                     | Current phase, progress, detail, counts, error, timestamps, activity, and `wiki_ready`.                                                                 |
+| `GET /threads/<thread-id>/wiki/progress`                  | None                                     | SSE `progress`, `heartbeat`, and `end`; after registry cleanup, `end` can contain derived ready/idle instead of original terminal failure/cancel state. |
+| `POST /threads/<thread-id>/wiki/ingest/cancel`            | None                                     | Requests cancellation and reports `cancelled`; worker stops at next checkpoint.                                                                         |
+| `GET /threads/<thread-id>/wiki/tree`                      | None                                     | Workspace tree and `file_count`; 404 before workspace exists.                                                                                           |
+| `GET /threads/<thread-id>/wiki/file?path=<relative-path>` | Safe relative path                       | Text content and file metadata; `.pkl` and `index/*` content is hidden.                                                                                 |
+| `POST /threads/<thread-id>/wiki/query`                    | JSON `question`, optional `file_results` | Grounded `answer`, `sources_cited`, and nullable `filed_path`; 404 when source directory is missing, 409 when it exists but wiki is unready.            |
+| `DELETE /threads/<thread-id>/wiki`                        | None                                     | Cancels ingest, recursively deletes uploaded thread sources and derived wiki, and clears thread cache.                                                  |
 
 Complete backend contracts remain in maintained
 [Document upload API guide](https://github.com/jerryshao2012/deep-research/blob/main/documents/api/upload.md)

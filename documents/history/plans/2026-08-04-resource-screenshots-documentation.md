@@ -142,7 +142,7 @@ printf '%s\0' \
   ':(exclude)documents/README.md' \
   ':(exclude)documents/llm-wiki/llm-wiki.md' \
   > /tmp/bmo-resource-screenshot-protected-excludes.pathspecs
-test "$(tr '\0' '\n' < /tmp/bmo-resource-screenshot-protected-excludes.pathspecs | wc -l | awk '{print $1}')" -eq 23
+test "$(perl -0ne 'END { print $. }' /tmp/bmo-resource-screenshot-protected-excludes.pathspecs)" -eq 23
 ```
 
 Expected: current unrelated-untracked list is empty, then empty protected baseline
@@ -196,7 +196,7 @@ Run:
 
 ```bash
 set -euo pipefail
-test "$(tr '\0' '\n' < /tmp/bmo-resource-screenshot-protected-excludes.pathspecs | wc -l | awk '{print $1}')" -eq 23
+test "$(perl -0ne 'END { print $. }' /tmp/bmo-resource-screenshot-protected-excludes.pathspecs)" -eq 23
 git diff --cached --binary -- resources | shasum -a 256 | grep -F '9f1cddc46a09edf39d9663d91af3986ca9e1076d793e66869be3e841669cb2df'
 xargs -0 git diff --cached --binary -- . < /tmp/bmo-resource-screenshot-protected-excludes.pathspecs | shasum -a 256 | diff -u /tmp/bmo-resource-screenshot-protected-cached.sha256 -
 xargs -0 git diff --binary -- . < /tmp/bmo-resource-screenshot-protected-excludes.pathspecs | shasum -a 256 | diff -u /tmp/bmo-resource-screenshot-protected-worktree.sha256 -

@@ -1,5 +1,9 @@
 # Oracle AMD VM Deployment Implementation Plan
 
+> Historical record: this plan preserves repository state and deployment decisions
+> from July 27, 2026. See [current documentation index](../../README.md) for active
+> guidance.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add tested `deploy-oracle.sh` that deploys existing AMD64 Docker Hub image to already-provisioned Oracle AMD micro VM.
@@ -22,6 +26,7 @@
 ### Task 1: Add black-box deployment contract
 
 **Files:**
+
 - Create: `tests/deploy-oracle.test.mjs`
 - Test: `tests/deploy-oracle.test.mjs`
 
@@ -107,7 +112,7 @@ const withFakeCommands = async (curlStatus, callback) => {
 } >> "$FAKE_COMMAND_LOG"
 for remote_command in "$@"; do :; done
 HOME="$FAKE_REMOTE_HOME" bash -c "$remote_command"
-`,
+`
   );
   await writeExecutable(
     path.join(directory, "scp"),
@@ -117,7 +122,7 @@ HOME="$FAKE_REMOTE_HOME" bash -c "$remote_command"
   printf ' <%s>' "$@"
   printf '\\n'
 } >> "$FAKE_COMMAND_LOG"
-`,
+`
   );
   await writeExecutable(
     path.join(directory, "curl"),
@@ -128,7 +133,7 @@ HOME="$FAKE_REMOTE_HOME" bash -c "$remote_command"
   printf '\\n'
 } >> "$FAKE_COMMAND_LOG"
 printf '${curlStatus}'
-`,
+`
   );
   await writeExecutable(
     path.join(directory, "docker"),
@@ -144,7 +149,7 @@ case "$1 $2" in
   "run -d") printf 'test-container-id\\n' ;;
 esac
 exit 0
-`,
+`
   );
   for (const command of ["chmod", "mkdir"]) {
     await writeExecutable(
@@ -156,7 +161,7 @@ exit 0
   printf '\\n'
 } >> "$FAKE_COMMAND_LOG"
 exit 0
-`,
+`
     );
   }
   await writeExecutable(path.join(directory, "sleep"), "#!/bin/bash\nexit 0\n");
@@ -175,39 +180,45 @@ exit 0
 };
 
 test("deploys existing AMD64 image with secure runtime and persistent data", async () => {
-  await withFakeCommands("200", async ({
-    commandPath,
-    envPath,
-    keyPath,
-    logPath,
-    remoteHome,
-  }) => {
-    const result = run([], {
-      PATH: commandPath,
-      FAKE_COMMAND_LOG: logPath,
-      FAKE_REMOTE_HOME: remoteHome,
-      ORACLE_HOST: "203.0.113.10",
-      ORACLE_SSH_KEY: keyPath,
-      ORACLE_ENV_FILE: envPath,
-      DOCKER_HUB_USERNAME: "example",
-      ORACLE_PUBLIC_URL: "https://ui.example.test/app?x=one&y=two",
-    });
-    const log = await readFile(logPath, "utf8");
+  await withFakeCommands(
+    "200",
+    async ({ commandPath, envPath, keyPath, logPath, remoteHome }) => {
+      const result = run([], {
+        PATH: commandPath,
+        FAKE_COMMAND_LOG: logPath,
+        FAKE_REMOTE_HOME: remoteHome,
+        ORACLE_HOST: "203.0.113.10",
+        ORACLE_SSH_KEY: keyPath,
+        ORACLE_ENV_FILE: envPath,
+        DOCKER_HUB_USERNAME: "example",
+        ORACLE_PUBLIC_URL: "https://ui.example.test/app?x=one&y=two",
+      });
+      const log = await readFile(logPath, "utf8");
 
-    assert.equal(result.status, 0, result.stderr + result.stdout);
-    assert.match(log, /docker\.io\/example\/deepagent-ui:latest/);
-    assert.match(log, /chmod <0700>/);
-    assert.match(log, /chmod <0600>/);
-    assert.match(log, /docker <pull> <docker\.io\/example\/deepagent-ui:latest>/);
-    assert.match(log, /<--restart> <unless-stopped>/);
-    assert.match(log, /<-p> <80:3000>/);
-    assert.match(log, /<AUTH_URL=https:\/\/ui\.example\.test\/app\?x=one&y=two>/);
-    assert.match(log, /<NEXTAUTH_URL=https:\/\/ui\.example\.test\/app\?x=one&y=two>/);
-    assert.match(log, /<AUTH_TRUST_HOST=true>/);
-    assert.match(log, /\/app\/data\/markdown_threads/);
-    assert.match(log, /scp[\s\S]*\.env\.docker/);
-    assert.match(log, /curl[\s\S]*https:\/\/ui\.example\.test/);
-  });
+      assert.equal(result.status, 0, result.stderr + result.stdout);
+      assert.match(log, /docker\.io\/example\/deepagent-ui:latest/);
+      assert.match(log, /chmod <0700>/);
+      assert.match(log, /chmod <0600>/);
+      assert.match(
+        log,
+        /docker <pull> <docker\.io\/example\/deepagent-ui:latest>/
+      );
+      assert.match(log, /<--restart> <unless-stopped>/);
+      assert.match(log, /<-p> <80:3000>/);
+      assert.match(
+        log,
+        /<AUTH_URL=https:\/\/ui\.example\.test\/app\?x=one&y=two>/
+      );
+      assert.match(
+        log,
+        /<NEXTAUTH_URL=https:\/\/ui\.example\.test\/app\?x=one&y=two>/
+      );
+      assert.match(log, /<AUTH_TRUST_HOST=true>/);
+      assert.match(log, /\/app\/data\/markdown_threads/);
+      assert.match(log, /scp[\s\S]*\.env\.docker/);
+      assert.match(log, /curl[\s\S]*https:\/\/ui\.example\.test/);
+    }
+  );
 });
 ```
 
@@ -217,28 +228,28 @@ Append:
 
 ```javascript
 test("failed health verification requests logs and exits nonzero", async () => {
-  await withFakeCommands("500", async ({
-    commandPath,
-    envPath,
-    keyPath,
-    logPath,
-    remoteHome,
-  }) => {
-    const result = run([], {
-      PATH: commandPath,
-      FAKE_COMMAND_LOG: logPath,
-      FAKE_REMOTE_HOME: remoteHome,
-      ORACLE_HOST: "203.0.113.10",
-      ORACLE_SSH_KEY: keyPath,
-      ORACLE_ENV_FILE: envPath,
-      DOCKER_HUB_USERNAME: "example",
-    });
-    const log = await readFile(logPath, "utf8");
+  await withFakeCommands(
+    "500",
+    async ({ commandPath, envPath, keyPath, logPath, remoteHome }) => {
+      const result = run([], {
+        PATH: commandPath,
+        FAKE_COMMAND_LOG: logPath,
+        FAKE_REMOTE_HOME: remoteHome,
+        ORACLE_HOST: "203.0.113.10",
+        ORACLE_SSH_KEY: keyPath,
+        ORACLE_ENV_FILE: envPath,
+        DOCKER_HUB_USERNAME: "example",
+      });
+      const log = await readFile(logPath, "utf8");
 
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr + result.stdout, /health verification failed/i);
-    assert.match(log, /docker <logs> <--tail> <100>/);
-  });
+      assert.notEqual(result.status, 0);
+      assert.match(
+        result.stderr + result.stdout,
+        /health verification failed/i
+      );
+      assert.match(log, /docker <logs> <--tail> <100>/);
+    }
+  );
 });
 ```
 
@@ -262,6 +273,7 @@ git commit -m "test: define Oracle VM deployment contract"
 ### Task 2: Implement Oracle AMD deployment
 
 **Files:**
+
 - Create: `deploy-oracle.sh`
 - Test: `tests/deploy-oracle.test.mjs`
 
@@ -559,6 +571,7 @@ git commit -m "feat: deploy UI to Oracle AMD VM"
 ### Task 3: Verify deployment integration
 
 **Files:**
+
 - Verify: `deploy-oracle.sh`
 - Verify: `tests/deploy-oracle.test.mjs`
 - Verify: `tests/deployment-security.test.mjs`

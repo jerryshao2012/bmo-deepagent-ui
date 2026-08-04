@@ -29,14 +29,14 @@ Move active guides into the matching topic folder. Move dated implementation
 plans and design specifications into `documents/history/`. Preserve dates in
 historical filenames so chronology remains visible.
 
-| Current path | Final path |
-| --- | --- |
-| `documents/architecture/clean-architecture.md` | `documents/architecture/clean-architecture.md` |
-| `documents/passkey-authentication.md` | `documents/authentication/passkey-authentication.md` |
-| `documents/vercel-deployment.md` | `documents/deployment/vercel.md` |
-| `documents/superpowers/plans/2026-07-27-oracle-amd-deployment.md` | `documents/history/plans/2026-07-27-oracle-amd-deployment.md` |
-| `documents/superpowers/plans/2026-08-03-passkey-authentication-documentation.md` | `documents/history/plans/2026-08-03-passkey-authentication-documentation.md` |
-| `documents/superpowers/specs/2026-07-27-oracle-amd-deployment-design.md` | `documents/history/specifications/2026-07-27-oracle-amd-deployment-design.md` |
+| Current path                                                                            | Final path                                                                                   |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `documents/architecture/clean-architecture.md`                                          | `documents/architecture/clean-architecture.md`                                               |
+| `documents/passkey-authentication.md`                                                   | `documents/authentication/passkey-authentication.md`                                         |
+| `documents/vercel-deployment.md`                                                        | `documents/deployment/vercel.md`                                                             |
+| `documents/superpowers/plans/2026-07-27-oracle-amd-deployment.md`                       | `documents/history/plans/2026-07-27-oracle-amd-deployment.md`                                |
+| `documents/superpowers/plans/2026-08-03-passkey-authentication-documentation.md`        | `documents/history/plans/2026-08-03-passkey-authentication-documentation.md`                 |
+| `documents/superpowers/specs/2026-07-27-oracle-amd-deployment-design.md`                | `documents/history/specifications/2026-07-27-oracle-amd-deployment-design.md`                |
 | `documents/superpowers/specs/2026-08-03-passkey-authentication-documentation-design.md` | `documents/history/specifications/2026-08-03-passkey-authentication-documentation-design.md` |
 
 Old locations will not retain compatibility stubs. Update repository-owned links

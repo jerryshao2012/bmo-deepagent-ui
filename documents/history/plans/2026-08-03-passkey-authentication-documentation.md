@@ -1,5 +1,9 @@
 # Passkey Authentication Documentation Implementation Plan
 
+> Historical record: source paths and commands reflect repository state when this
+> plan was written. See [current passkey guide](../../authentication/passkey-authentication.md)
+> and [documentation index](../../README.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a cross-stack passkey guide with accurate Mermaid sequence diagrams and link it from frontend and backend setup documentation.
@@ -15,6 +19,7 @@ User constraint: edit current `main` worktrees only; do not commit or alter stag
 ### Task 0: Record repository preflight
 
 **Files:**
+
 - Inspect: UI and backend Git worktrees
 
 - [ ] **Step 1: Capture immutable baseline before guide or README writes**
@@ -24,7 +29,8 @@ Record `git branch --show-current`, `git rev-parse HEAD`, `git status --short`, 
 ### Task 1: Add cross-stack passkey guide
 
 **Files:**
-- Create: `docs/passkey-authentication.md`
+
+- Create: [`../../authentication/passkey-authentication.md`](../../authentication/passkey-authentication.md)
 - Reference: `src/lib/passkey-client.ts`
 - Reference: `src/lib/server/passkey-bff.ts`
 - Reference: `src/app/components/LoginProviders.tsx`
@@ -56,12 +62,15 @@ Cover five-minute challenge TTL and one-time claim; 24-hour durable sessions sto
 ### Task 2: Link guide from setup documentation
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `/Users/jerryshao/Documents/projects/IBM/ai/deep-research/README.md`
 
 - [ ] **Step 1: Update UI README links**
 
-Fix backend repository link and add direct link to `docs/passkey-authentication.md` after UI BFF configuration.
+Fix backend repository link and add direct link to
+[`../../authentication/passkey-authentication.md`](../../authentication/passkey-authentication.md)
+after UI BFF configuration.
 
 - [ ] **Step 2: Update backend README link**
 
@@ -70,7 +79,8 @@ Add a concise stable GitHub link from `Passkeys with SQLite on Azure Container A
 ### Task 3: Validate documentation
 
 **Files:**
-- Verify: `docs/passkey-authentication.md`
+
+- Verify: [`../../authentication/passkey-authentication.md`](../../authentication/passkey-authentication.md)
 - Verify: `README.md`
 - Verify: `/Users/jerryshao/Documents/projects/IBM/ai/deep-research/README.md`
 

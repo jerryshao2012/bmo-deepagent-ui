@@ -1,5 +1,8 @@
 # Passkey Authentication Documentation Design
 
+> Historical record: this design preserves documentation decisions from August 3, 2026. See [current passkey guide](../../authentication/passkey-authentication.md)
+> and [documentation index](../../README.md).
+
 ## Goal
 
 Document implemented passkey architecture with readable Mermaid sequence diagrams
@@ -8,9 +11,9 @@ auth storage, OAuth recovery, and WebAuthn authenticators.
 
 ## Documentation structure
 
-Create `docs/passkey-authentication.md` in UI repository as cross-stack source of
-truth. Link it from UI README passkey setup and backend README passkey deployment
-section. Keep existing OAuth diagrams unchanged.
+Use [current passkey guide](../../authentication/passkey-authentication.md) in UI
+repository as cross-stack source of truth. Link it from UI README passkey setup and
+backend README passkey deployment section. Keep existing OAuth diagrams unchanged.
 
 Guide contains three focused `sequenceDiagram` blocks:
 

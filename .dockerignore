@@ -11,7 +11,7 @@ node_modules/
 .deepeval/
 .mcp.json
 .vscode/
-.docs/
+documents/
 *.tsbuildinfo
 env*.sh
 build*.sh

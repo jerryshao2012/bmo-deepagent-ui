@@ -1,5 +1,7 @@
 # Oracle AMD VM Deployment Design
 
+> Historical record: this design preserves deployment decisions from July 27, 2026. See [current documentation index](../../README.md) for active guidance.
+
 ## Goal
 
 Deploy existing `linux/amd64` Deep Agent UI container image to Oracle Cloud

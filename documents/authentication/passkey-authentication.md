@@ -5,15 +5,17 @@ remains the enrollment and recovery path. Browser WebAuthn calls stay in UI;
 Next.js route handlers form trusted BFF; FastAPI verifies ceremonies and stores
 durable account, credential, challenge, and session records.
 
+Return to [documentation index](../README.md).
+
 ## Architecture and trust boundaries
 
-| Layer | Responsibility |
-| --- | --- |
-| Browser UI | Feature-detect WebAuthn, keep Google/GitHub fallback visible, start ceremonies, and handle cancellation without treating it as an account failure. |
-| Next.js BFF | Validate bounded payloads, add configured origin and proxy credentials, forward session cookie for protected operations, and keep backend session token out of authentication response body. |
-| FastAPI | Authenticate trusted BFF, enforce origin/RP/session/rate policies, generate options, verify WebAuthn responses, and return generic ceremony errors. |
-| Durable auth store | Persist accounts, credential public material, one-time challenges, counters, and SHA-256 session-token hashes. SQLite, PostgreSQL, and Cosmos DB adapters share this contract. |
-| Authenticator | Create and use private credentials after local user verification. Private keys and biometric data never leave authenticator. |
+| Layer              | Responsibility                                                                                                                                                                               |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser UI         | Feature-detect WebAuthn, keep Google/GitHub fallback visible, start ceremonies, and handle cancellation without treating it as an account failure.                                           |
+| Next.js BFF        | Validate bounded payloads, add configured origin and proxy credentials, forward session cookie for protected operations, and keep backend session token out of authentication response body. |
+| FastAPI            | Authenticate trusted BFF, enforce origin/RP/session/rate policies, generate options, verify WebAuthn responses, and return generic ceremony errors.                                          |
+| Durable auth store | Persist accounts, credential public material, one-time challenges, counters, and SHA-256 session-token hashes. SQLite, PostgreSQL, and Cosmos DB adapters share this contract.               |
+| Authenticator      | Create and use private credentials after local user verification. Private keys and biometric data never leave authenticator.                                                                 |
 
 Browser calls only same-origin `/api/auth/passkeys/*` routes. Every BFF request
 to backend supplies configured `X-Passkey-Origin`, proxy ID, and proxy secret.
@@ -186,15 +188,15 @@ session returns `403 {"code":"reauth_required","provider":"google|github"}`.
 
 ## Endpoints
 
-| UI BFF route | Backend route | Session required |
-| --- | --- | --- |
-| `POST /api/auth/passkeys/registration/options` | `POST /auth/passkeys/registration/options` | Yes, recent |
-| `POST /api/auth/passkeys/registration/verify` | `POST /auth/passkeys/registration/verify` | Yes, recent |
-| `POST /api/auth/passkeys/authentication/options` | `POST /auth/passkeys/authentication/options` | No |
-| `POST /api/auth/passkeys/authentication/verify` | `POST /auth/passkeys/authentication/verify` | No; issues session |
-| `GET /api/auth/passkeys` | `GET /auth/passkeys` | Yes, recent |
-| `PATCH /api/auth/passkeys/{credentialId}` | `PATCH /auth/passkeys/{credential_id}` | Yes, recent |
-| `DELETE /api/auth/passkeys/{credentialId}` | `DELETE /auth/passkeys/{credential_id}` | Yes, recent |
+| UI BFF route                                     | Backend route                                | Session required   |
+| ------------------------------------------------ | -------------------------------------------- | ------------------ |
+| `POST /api/auth/passkeys/registration/options`   | `POST /auth/passkeys/registration/options`   | Yes, recent        |
+| `POST /api/auth/passkeys/registration/verify`    | `POST /auth/passkeys/registration/verify`    | Yes, recent        |
+| `POST /api/auth/passkeys/authentication/options` | `POST /auth/passkeys/authentication/options` | No                 |
+| `POST /api/auth/passkeys/authentication/verify`  | `POST /auth/passkeys/authentication/verify`  | No; issues session |
+| `GET /api/auth/passkeys`                         | `GET /auth/passkeys`                         | Yes, recent        |
+| `PATCH /api/auth/passkeys/{credentialId}`        | `PATCH /auth/passkeys/{credential_id}`       | Yes, recent        |
+| `DELETE /api/auth/passkeys/{credentialId}`       | `DELETE /auth/passkeys/{credential_id}`      | Yes, recent        |
 
 Backend passkey endpoints trust only BFF requests carrying matching proxy ID,
 proxy secret, and configured origin. Browser payloads are limited to 64 KiB.

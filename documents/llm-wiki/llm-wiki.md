@@ -4,8 +4,8 @@ LLM Wiki turns documents attached to one research thread into an isolated,
 filesystem-backed knowledge workspace. Browser UI registers thread, uploads
 sources through document API, records source folder in LangGraph state, follows
 background ingestion, and exposes derived workspace for inspection. Query route
-then asks model to answer against original sources, validates citations, and may
-file durable answer back into wiki.
+then asks model to answer against original sources, extracts structured citation
+markers, validates code line ranges, and may file durable answer back into wiki.
 
 Return to [documentation index](../README.md).
 
@@ -18,7 +18,7 @@ Return to [documentation index](../README.md).
 | Document API              | Authenticate upload/list/delete operations, constrain paths and sizes, save original files under documents root, report save results, and schedule automatic wiki ingest for exact thread-folder uploads.      |
 | Background wiki ingestion | Register per-thread progress, stage supported source content, build or update derived workspace, expose status/SSE progress, honor cancellation checkpoints, and finish with ready, error, or cancelled state. |
 | Thread workspace          | Keep original sources and backend-managed derived wiki separate. Provide safe tree and text-file inspection without exposing arbitrary filesystem paths.                                                       |
-| Query model               | Retrieve grounded evidence, generate answer, decide whether result has durable value, and optionally write query page. Citation extraction accepts only validated original-source locations.                  |
+| Query model               | Retrieve grounded evidence, generate answer, decide whether result has durable value, and optionally write query page. Runtime regex-extracts citation markers; only code line ranges and supported derived-code mappings receive source validation.              |
 
 ### Thread isolation and context use
 
@@ -72,7 +72,7 @@ sequenceDiagram
     DOC->>ING: Schedule automatic ingest<br/>exact threads/<thread-id> folder only
     DOC-->>UI: 201 folder + count + saved + byte/free-space fields<br/>wiki_ingest_started + wiki_ingest_thread_id
     UI->>LG: Update state<br/>doc_folder=docs/threads/<thread-id>
-    Note over UI,LG: If state update precedes first run, UI carries doc_folder into first message
+    Note over UI,LG: If state update fails before first run, UI carries doc_folder into first message
     ING->>WS: Stage source text and build derived wiki
     UI->>ING: GET /threads/<thread-id>/wiki/progress
     alt SSE stream available
@@ -93,8 +93,8 @@ sequenceDiagram
 
 | Surface | Static key | OAuth application session | Selection behavior |
 | ------- | ---------- | ------------------------- | ------------------ |
-| Document API | `X-API-Key: <static-key>` only | `X-API-Key: <session-token>` or `Authorization: Bearer <session-token>` | Static-key configuration prefers upload key, then LangGraph key, then process-local generated fallback. |
-| Thread Wiki API | `X-API-Key: <static-key>` or `Authorization: Bearer <static-key>` | `X-API-Key: <session-token>` or `Authorization: Bearer <session-token>` | `X-API-Key` wins when both headers exist. Configured key preference is LangGraph key, then upload key; no generated fallback. |
+| Document API | `X-API-Key: <static-key>` only | `X-API-Key: <session-token>` or `Authorization: Bearer <session-token>` | Static-key configuration uses `UPLOAD_API_KEY`, then `LANGCHAIN_API_KEY`, then process-local generated fallback. |
+| Thread Wiki API | `X-API-Key: <static-key>` or `Authorization: Bearer <static-key>` | `X-API-Key: <session-token>` or `Authorization: Bearer <session-token>` | `X-API-Key` wins when both headers exist. Configured key selection uses `LANGCHAIN_API_KEY`, then `UPLOAD_API_KEY`; no generated fallback. |
 
 Browser integration currently sends application session token through
 `X-API-Key` and uses authenticated request wrapper. On 401, wrapper coordinates
@@ -133,7 +133,7 @@ Successful upload returns HTTP 201 with:
 | ----- | ------- |
 | `folder` | Normalized relative folder. |
 | `count` | Number of saved files. |
-| `saved` | Per-file `filename`, documents-root-relative `path`, and byte `size`. |
+| `saved` | Per-file `filename`, application-relative `path` such as `docs/threads/<thread-id>/<filename>`, and byte `size`. |
 | `total_uploaded_bytes` | Sum of saved file sizes for request. |
 | `free_space_bytes` | Remaining bytes on backing filesystem, or `-1` if unavailable. |
 | `free_space_human` | Human-readable rendering of free-space result. |
@@ -151,40 +151,41 @@ avoid overlooking partial state or replacing same-name files.
 
 ## 2. Query ready wiki
 
-Query is separate authenticated operation. Caller should first require
-`wiki_ready: true`; server independently enforces same readiness and returns 409
-otherwise. `file_results` defaults to `true` when omitted.
+For direct HTTP API caller, query is separate authenticated operation. Caller
+should first require `wiki_ready: true`; server independently enforces same
+readiness and returns 409 otherwise. `file_results` defaults to `true` when
+omitted.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor U as User
-    participant UI as Browser UI or research agent
+    participant CALL as HTTP API caller
     participant API as Thread Wiki API
     participant WS as Thread workspace
     participant QM as Query model
 
-    U->>UI: Ask question about uploaded sources
-    UI->>API: GET /threads/<thread-id>/wiki/status
-    API-->>UI: wiki_ready + phase + progress + error
+    U->>CALL: Ask question about uploaded sources
+    CALL->>API: GET /threads/<thread-id>/wiki/status
+    API-->>CALL: wiki_ready + phase + progress + error
     alt wiki_ready is false
-        UI->>API: POST /threads/<thread-id>/wiki/query if attempted
-        API-->>UI: 409 Wiki is not ready
+        CALL->>API: POST /threads/<thread-id>/wiki/query if attempted
+        API-->>CALL: 409 Wiki is not ready
     else wiki_ready is true
-        UI->>API: POST /threads/<thread-id>/wiki/query<br/>{question, file_results (default true)}
+        CALL->>API: POST /threads/<thread-id>/wiki/query<br/>{question, file_results (default true)}
         API->>WS: Load ready wiki and original raw source area
         API->>QM: Run grounded retrieval and answer generation
         QM->>WS: Read original document pages or original code lines
         WS-->>QM: Grounding evidence
         QM-->>API: Answer + source markers + durable-value decision
-        API->>API: Validate and structure original-source citations<br/>resolve derived navigation references to originals
+        API->>API: Regex-extract citation markers<br/>validate code line ranges and supported derived-code mappings
         opt Durable result and file_results is true
             API->>QM: Create durable query page
             QM->>WS: Write /wiki/query/<question-slug>.md<br/>then refresh index
             WS-->>API: Filed path
         end
-        API-->>UI: answer + sources_cited + filed_path (nullable)
-        UI-->>U: Render grounded answer and citations
+        API-->>CALL: answer + sources_cited + filed_path (nullable)
+        CALL-->>U: Render grounded answer and citations
     end
 ```
 
@@ -202,7 +203,7 @@ Response fields:
 | Field | Meaning |
 | ----- | ------- |
 | `answer` | Generated answer, including grounding markers used for citation extraction. |
-| `sources_cited` | Validated citations with source kind and applicable raw path, page, locator, URL, or line range. |
+| `sources_cited` | Regex-extracted citation markers with source kind and applicable raw path, page, locator, URL, or line range. Code line ranges and supported derived-code mappings are source-validated; other markers are not generally checked for existence or reachability. |
 | `filed_path` | `/wiki/query/<slug>.md` when durable filing completes; otherwise `null`. |
 
 Filing needs both model durable-value decision and `file_results: true`.
@@ -212,12 +213,17 @@ or skipped decision also leaves `filed_path` null.
 Original uploaded documents are evidence. Grounded document citations point to
 original raw pages; code citations point to validated original line ranges.
 Derived indexes, `/raw/_code/` navigation entries, and semantic chunks help
-retrieval but are not citation targets. Backend resolves supported derived code
-reference back to original source and omits invalid or stale line ranges.
+retrieval but are not citation targets. Runtime regex-extracts URLs, section
+references, raw paths, pages, and locators without general existence or URL
+reachability checks. It validates code line ranges against source files, maps
+supported derived-code citations back to originals, and drops invalid ranges.
 
-Research orchestration receives this result only after explicit
-`llm_wiki_query` tool invocation. Setting `doc_folder` or completing ingestion
-does not inject wiki into every research-agent prompt.
+Research-agent path is separate from HTTP sequence. Explicit `llm_wiki_query`
+tool derives thread from state `doc_folder`, checks local wiki content, and calls
+`run_query(..., file_results=False)` directly in backend process. It does not
+authenticate against or call `/wiki/status` or `/wiki/query`, and it never files
+query result. Setting `doc_folder` or completing ingestion does not inject wiki
+into every research-agent prompt.
 
 ## Focused endpoints
 
@@ -228,7 +234,7 @@ does not inject wiki into every research-agent prompt.
 | `POST /documents/upload` | Multipart repeated `files`; `folder=threads/<thread-id>` | HTTP 201 save report; exact thread folder schedules automatic ingest. |
 | `GET /documents/list?folder=threads/<thread-id>` | Thread folder query | Sorted `items` of direct files/folders with `folder` and `count`. |
 | `DELETE /documents/{filename}?folder=threads/<thread-id>` | Basename path plus thread folder query | Deletes one source; background hook cancels conflicting ingest, removes source-derived references, and starts reconciliation. |
-| `DELETE /documents/folder/{folder}` | Folder path | Deletes direct files only, preserves folder and nested directories, then starts thread-folder reconciliation when pattern matches. |
+| `DELETE /documents/folder/{folder}` | One-segment folder path only | Deletes direct files and preserves nested directories. Route parameter does not capture `/`, so it cannot target nested `threads/<thread-id>` or trigger thread-folder reconciliation. |
 
 ### LLM Wiki
 
@@ -260,8 +266,10 @@ and
   reconciled, and delete hook has no dedicated completion response. Inspect
   tree/query results after background work, or run manual ingest for observable
   progress; see backend wiki guide for reconciliation detail.
-- Folder-content deletion removes only direct files. Nested directories remain.
-  Use returned `deleted_count` and list folder afterward.
+- Folder-content deletion accepts only one path segment and removes only direct
+  files. It cannot target nested `threads/<thread-id>`. Delete thread sources
+  individually, or use thread-wiki deletion when both sources and derived wiki
+  should be removed.
 - Thread-wiki deletion is broader and destructive: both
   `docs/threads/<thread-id>/` and backend-managed derived workspace are removed.
   A later query needs fresh upload and ingest.
@@ -291,4 +299,6 @@ and
   upload, document delete, ingest, cancel, query, and thread-wiki delete. Read
   operations such as list, status, progress, tree, and file remain available.
   `file_results: false` does not bypass query restriction because route itself
-  is blocked in read-only mode.
+  is blocked in read-only mode. LangGraph thread creation/registration, thread
+  metadata update, and state update also return 503; browser upload flow may
+  therefore stop before it reaches Document API.

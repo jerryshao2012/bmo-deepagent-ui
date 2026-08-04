@@ -258,9 +258,12 @@ Raw provider OAuth tokens and raw app session tokens are not persisted.
 - Backend OAuth state/session cookie is separate from frontend `session_token`.
   Its `Secure` flag follows passkey-origin configuration: it is true only when
   passkeys are enabled and every configured `PASSKEY_ORIGINS` value uses HTTPS,
-  and remains false when passkeys are disabled, including in production. Block
-  plain HTTP at edge, redirect or reject before application, and preserve TLS
-  through trusted proxy boundary; do not rely on cookie flag alone.
+  and remains false when passkeys are disabled, including in production. Use
+  HSTS/browser-side HTTPS upgrade and expose no public plaintext HTTP listener,
+  or reject plaintext connections before HTTP request reaches application. HTTP
+  redirect alone does not protect confidentiality because browser can send
+  non-Secure cookie with initial request. Preserve TLS through trusted proxy
+  boundary; do not rely on cookie flag alone.
 - Store provider secrets, signing secret, and database credentials in managed
   secret service. Plan signing-secret rotation together with invalidating
   in-flight OAuth state; plan auth-store changes without silently losing active

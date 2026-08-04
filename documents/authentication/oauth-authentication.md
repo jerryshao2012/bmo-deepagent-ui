@@ -13,7 +13,7 @@ Return to [documentation index](../README.md).
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Browser UI                    | Offer Google/GitHub choice, begin login against FastAPI, consume only frontend redirects, and send current application session token on protected requests.                                                     |
 | Next.js login-success route   | Read token from `/login/success`, set 24-hour `session_token` cookie, and redirect only to `/chat` or exact allowlisted passkey-management destination.                                                          |
-| FastAPI OAuth routes          | Select allowed frontend, construct exact provider callback, own provider exchange and state checks, resolve immutable identity, create/validate/refresh/revoke application sessions, and sanitize responses.    |
+| FastAPI OAuth routes          | Select allowed frontend, construct exact provider callback, own provider exchange and state checks, resolve immutable identity, create/validate/refresh/revoke application sessions, and sanitize session-validation responses. |
 | Google or GitHub              | Authenticate user, validate registered callback, and return provider authorization response. Provider state and provider tokens are not application sessions.                                                  |
 | Durable auth store            | Upsert provider account and sanitized profile, persist only SHA-256 application-token hashes, enforce expiry, and share session state through SQLite, PostgreSQL, or Cosmos DB adapter.                         |
 
@@ -87,14 +87,17 @@ sequenceDiagram
     autonumber
     participant UI as Browser client
     participant AF as Authenticated fetch coordinator
+    participant CP as ClientProvider timer
     participant API as FastAPI
     participant DB as Durable auth store
 
-    UI->>API: Protected request<br/>X-API-Key or Bearer session_token
+    UI->>AF: Protected request<br/>X-API-Key or Bearer session_token
+    AF->>API: Send protected request
     API->>DB: Hash token with SHA-256 and validate session
     alt valid session
         DB-->>API: Sanitized account context
-        API-->>UI: Protected response
+        API-->>AF: Protected response
+        AF-->>UI: Return response
     else missing, unknown, or expired session
         API-->>AF: 401 Unauthorized
         AF->>AF: Reuse one in-flight refresh per backend origin
@@ -104,11 +107,23 @@ sequenceDiagram
             DB-->>API: Sanitized account context
             API-->>AF: 200 valid
             AF->>API: Retry original protected request once
-            API-->>UI: Retried response
-        else refresh fails
+            API-->>AF: Retried response
+            AF-->>UI: Return retried response
+        else 401-triggered refresh fails
             API-->>AF: 401 Unauthorized
             AF->>AF: Clear browser cookie
             AF-->>UI: Route to /login?error=session_invalid
+        end
+    end
+    loop Every 20 minutes while ClientProvider is mounted
+        CP->>API: POST /auth/session/refresh<br/>X-API-Key: session_token
+        alt live session refreshed
+            API->>DB: Extend live backend session
+            DB-->>API: Sanitized account context
+            API-->>CP: 200 valid
+        else proactive refresh fails
+            API--xCP: Non-success or network failure
+            CP->>CP: Log and wait for next interval
         end
     end
     UI->>API: GET /auth/session/validate<br/>X-API-Key or Bearer session_token
@@ -127,10 +142,13 @@ from request. Neither operation changes original authentication time.
 
 Current browser refresh client keeps same raw token and does not renew cookie's
 original `Max-Age`; browser cookie can therefore expire after 24 hours even when
-backend record was extended. Authenticated fetch retries only after a 401,
-coordinates one refresh promise per request origin, excludes auth endpoints
-from recursive refresh, and retries original request once after successful
-refresh. Failed refresh clears cookie and routes to login.
+backend record was extended. While mounted, `ClientProvider` starts a 20-minute
+timer that calls refresh; proactive failure only logs and waits for next
+interval. Separately, authenticated fetch retries after a protected request
+returns 401, coordinates one refresh promise per request origin, excludes auth
+endpoints from recursive refresh, and retries original request once after
+successful refresh. Only failed 401-triggered refresh clears cookie and routes
+to login.
 
 Backend accepts app session token in `X-API-Key` or exact
 `Authorization: Bearer <session-token>` form for validation, refresh, logout,
@@ -237,6 +255,12 @@ Raw provider OAuth tokens and raw app session tokens are not persisted.
   deliberately browser-visible (`HttpOnly=false`) because client refresh and
   direct API requests read it. This increases XSS impact; enforce strong CSP,
   avoid unsafe script injection, audit dependencies, and never log token.
+- Backend OAuth state/session cookie is separate from frontend `session_token`.
+  Its `Secure` flag follows passkey-origin configuration: it is true only when
+  passkeys are enabled and every configured `PASSKEY_ORIGINS` value uses HTTPS,
+  and remains false when passkeys are disabled, including in production. Block
+  plain HTTP at edge, redirect or reject before application, and preserve TLS
+  through trusted proxy boundary; do not rely on cookie flag alone.
 - Store provider secrets, signing secret, and database credentials in managed
   secret service. Plan signing-secret rotation together with invalidating
   in-flight OAuth state; plan auth-store changes without silently losing active

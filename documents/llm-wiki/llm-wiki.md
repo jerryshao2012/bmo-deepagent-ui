@@ -74,19 +74,28 @@ sequenceDiagram
     UI->>LG: Update state<br/>doc_folder=docs/threads/<thread-id>
     Note over UI,LG: If state update fails before first run, UI carries doc_folder into first message
     ING->>WS: Stage source text and build derived wiki
+    UI->>DOC: GET /documents/list?folder=threads/<thread-id>
+    DOC-->>UI: Refreshed source list after upload
     UI->>ING: GET /threads/<thread-id>/wiki/progress
-    alt SSE stream available
-        ING-->>UI: progress events, heartbeat events, then terminal end
-    else Stream unavailable or client reconnects
+    ING-->>UI: Live progress and heartbeat events<br/>terminal end if observed before cleanup
+    Note over UI,ING: SSE failure stops ingest display, no status polling starts
+    opt Thread loads or changes
         UI->>ING: GET /threads/<thread-id>/wiki/status
         ING-->>UI: phase + progress + error + is_active + wiki_ready
+        opt is_active is true
+            UI->>ING: GET /threads/<thread-id>/wiki/progress
+        end
     end
     ING->>WS: Mark derived workspace ready after index refresh
-    UI->>DOC: GET /documents/list?folder=threads/<thread-id>
-    UI->>ING: GET /threads/<thread-id>/wiki/tree
-    UI->>ING: GET /threads/<thread-id>/wiki/file?path=<relative-path>
-    DOC-->>UI: Refreshed source list
-    ING-->>UI: Refreshed tree and selected file content
+    Note over UI,ING: Terminal event does not trigger tree or file refetch
+    opt Wiki viewer mounts or user requests refresh
+        UI->>ING: GET /threads/<thread-id>/wiki/tree
+        ING-->>UI: Current tree
+    end
+    opt User selects wiki file
+        UI->>ING: GET /threads/<thread-id>/wiki/file?path=<relative-path>
+        ING-->>UI: Selected file content
+    end
 ```
 
 ### Authentication headers
@@ -95,6 +104,10 @@ sequenceDiagram
 | ------- | ---------- | ------------------------- | ------------------ |
 | Document API | `X-API-Key: <static-key>` only | `X-API-Key: <session-token>` or `Authorization: Bearer <session-token>` | Static-key configuration uses `UPLOAD_API_KEY`, then `LANGCHAIN_API_KEY`, then process-local generated fallback. |
 | Thread Wiki API | `X-API-Key: <static-key>` or `Authorization: Bearer <static-key>` | `X-API-Key: <session-token>` or `Authorization: Bearer <session-token>` | `X-API-Key` wins when both headers exist. Configured key selection uses `LANGCHAIN_API_KEY`, then `UPLOAD_API_KEY`; no generated fallback. |
+
+Document API also gives any nonempty `X-API-Key` header precedence over Bearer
+session. Bearer is considered only when `X-API-Key` is absent. An invalid
+`X-API-Key` therefore shadows valid Bearer session and produces 401.
 
 Browser integration currently sends application session token through
 `X-API-Key` and uses authenticated request wrapper. On 401, wrapper coordinates
@@ -141,7 +154,17 @@ Successful upload returns HTTP 201 with:
 | `wiki_ingest_thread_id` | Thread ID when ingest was scheduled; otherwise `null`. |
 
 `wiki_ingest_started: true` confirms scheduling, not successful completion.
-Follow `/wiki/progress` or `/wiki/status` through terminal state.
+Open `/wiki/progress` promptly for live state. UI checks `/wiki/status` once when
+thread loads or changes and opens SSE only when status reports active ingest; it
+does not poll status after SSE failure.
+
+Terminal ingest error/cancel state is not durable through status API. Worker
+removes terminal entry from in-memory registry during cleanup. SSE can deliver
+terminal error/cancel event if it reads entry first, but can instead report
+derived `ready` or `idle` if cleanup wins. A later `/wiki/status` also derives
+`ready`/`idle` from workspace, with `error: null`. Preserve live failure event
+when received, inspect server logs, and decide retry from current `wiki_ready`
+and source/workspace state rather than expecting historical terminal error.
 
 Upload batch is not transactional. Route writes files sequentially and starts
 auto-ingest only after all saves finish. If later filename, size, or write fails,
@@ -154,7 +177,9 @@ avoid overlooking partial state or replacing same-name files.
 For direct HTTP API caller, query is separate authenticated operation. Caller
 should first require `wiki_ready: true`; server independently enforces same
 readiness and returns 409 otherwise. `file_results` defaults to `true` when
-omitted.
+omitted. Query first resolves `docs/threads/<thread-id>`: missing source
+directory returns 404. Existing source directory with empty or unready wiki
+returns 409.
 
 ```mermaid
 sequenceDiagram
@@ -168,7 +193,10 @@ sequenceDiagram
     U->>CALL: Ask question about uploaded sources
     CALL->>API: GET /threads/<thread-id>/wiki/status
     API-->>CALL: wiki_ready + phase + progress + error
-    alt wiki_ready is false
+    alt Source directory is missing
+        CALL->>API: POST /threads/<thread-id>/wiki/query if attempted
+        API-->>CALL: 404 Upload documents first
+    else Source directory exists but wiki_ready is false
         CALL->>API: POST /threads/<thread-id>/wiki/query if attempted
         API-->>CALL: 409 Wiki is not ready
     else wiki_ready is true
@@ -242,11 +270,11 @@ into every research-agent prompt.
 | --------------- | ----- | ------ |
 | `POST /threads/<thread-id>/wiki/ingest` | Optional JSON `topic`, `note` | Starts background ingest; cancels and replaces active ingest for same thread. |
 | `GET /threads/<thread-id>/wiki/status` | None | Current phase, progress, detail, counts, error, timestamps, activity, and `wiki_ready`. |
-| `GET /threads/<thread-id>/wiki/progress` | None | SSE `progress`, `heartbeat`, and terminal `end` events. |
+| `GET /threads/<thread-id>/wiki/progress` | None | SSE `progress`, `heartbeat`, and `end`; after registry cleanup, `end` can contain derived ready/idle instead of original terminal failure/cancel state. |
 | `POST /threads/<thread-id>/wiki/ingest/cancel` | None | Requests cancellation and reports `cancelled`; worker stops at next checkpoint. |
 | `GET /threads/<thread-id>/wiki/tree` | None | Workspace tree and `file_count`; 404 before workspace exists. |
 | `GET /threads/<thread-id>/wiki/file?path=<relative-path>` | Safe relative path | Text content and file metadata; `.pkl` and `index/*` content is hidden. |
-| `POST /threads/<thread-id>/wiki/query` | JSON `question`, optional `file_results` | Grounded `answer`, `sources_cited`, and nullable `filed_path`; 409 until ready. |
+| `POST /threads/<thread-id>/wiki/query` | JSON `question`, optional `file_results` | Grounded `answer`, `sources_cited`, and nullable `filed_path`; 404 when source directory is missing, 409 when it exists but wiki is unready. |
 | `DELETE /threads/<thread-id>/wiki` | None | Cancels ingest, recursively deletes uploaded thread sources and derived wiki, and clears thread cache. |
 
 Complete backend contracts remain in maintained
@@ -257,7 +285,8 @@ and
 ## Cancellation, deletion, and retry
 
 - Cancel returns immediately; background worker observes request at next phase
-  checkpoint. Watch status or terminal SSE event for `cancelled`.
+  checkpoint. Preserve live SSE `cancelled` event if received; later status is
+  current ready/idle state, not durable cancellation history.
 - Manual ingest is retry operation. Posting new ingest cancels and replaces any
   active ingest for thread. After `error` or `cancelled`, correct source/config
   issue and post ingest again.
@@ -279,19 +308,26 @@ and
 - `401`: credential is missing, invalid, or expired. Upload accepts static key
   only in `X-API-Key`; OAuth session accepts either supported header. Wiki has no
   process-local generated-key fallback. Browser may refresh session once and
-  retry; persistent 401 requires sign-in or deployment key correction.
-- `404`: document folder/file, thread source directory, wiki workspace, or
-  requested wiki file does not exist. Confirm same `<thread-id>` across upload,
-  status, tree, file, and query. Status itself can return `idle` for unseen ID;
-  tree/file return 404 until workspace exists.
-- `409`: query arrived before `_wiki_is_ready` detected populated wiki index.
-  Wait for `wiki_ready: true`; phase alone is not readiness contract.
+  retry; persistent 401 requires sign-in or deployment key correction. On
+  Document API, remove invalid `X-API-Key` before retrying valid Bearer session.
+- `404`: query cannot find `docs/threads/<thread-id>`; document folder/file,
+  wiki workspace, or requested wiki file may also be missing. Confirm same
+  `<thread-id>` across upload, status, tree, file, and query. Status itself can
+  return `idle` for unseen ID; tree/file return 404 until workspace exists.
+- `409`: query found source directory but `_wiki_is_ready` did not detect
+  populated wiki index. Wait for `wiki_ready: true`; phase alone is not
+  readiness contract.
+- `500` during Wiki authentication: neither `LANGCHAIN_API_KEY` nor
+  `UPLOAD_API_KEY` is configured and supplied credential is not valid OAuth
+  session. Backend reports `LANGCHAIN_API_KEY not set`; configure static key or
+  supply valid session.
 - `413`: request `Content-Length` or an individual file exceeds configured
   upload limit. Reduce request/file size or change backend limit deliberately.
 - `422`: required multipart `files` field or query `question` is absent/invalid.
-- Ingest stalled: keep SSE open for progress/heartbeat, then fetch status for
-  `detail`, `error`, `is_active`, and `wiki_ready`. Cancel and retry if work no
-  longer advances.
+- Ingest stalled: inspect live SSE progress/heartbeat and server logs. UI does
+  not automatically poll after stream failure. Fetch current status manually;
+  after worker cleanup it may report ready/idle with null error. Cancel only
+  active work and retry based on current `wiki_ready` plus source/workspace state.
 - Query timeout currently returns normal query response with explanatory
   `answer`, empty `sources_cited`, and null `filed_path`; distinguish this from
   HTTP transport failure.

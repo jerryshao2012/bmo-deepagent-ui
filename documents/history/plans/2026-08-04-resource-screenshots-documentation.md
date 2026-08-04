@@ -109,7 +109,7 @@ Run:
 
 ```bash
 test -d documents/assets/screenshots
-test "$(find documents/assets/screenshots -maxdepth 1 -type f -name '*.png' | wc -l | tr -d ' ')" -eq 9
+test "$(find documents/assets/screenshots -maxdepth 1 -type f -name '*.png' | wc -l | awk '{print $1}')" -eq 9
 ```
 
 Expected before implementation: nonzero exit because directory does not exist or
@@ -447,7 +447,7 @@ Run:
 
 ```bash
 test -d documents/assets/screenshots
-test "$(find documents/assets/screenshots -maxdepth 1 -type f -name '*.png' | wc -l | tr -d ' ')" -eq 9
+test "$(find documents/assets/screenshots -maxdepth 1 -type f -name '*.png' | wc -l | awk '{print $1}')" -eq 9
 rg --files resources -g '*.png'
 rg -n '\]\([^)]*resources/' documents/README.md documents/features documents/llm-wiki/llm-wiki.md --glob '*.md'
 ```

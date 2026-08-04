@@ -41,9 +41,9 @@ _Searchable catalog helps choose a capability without leaving current thread._
 3. Review or edit the draft, then send it as a normal chat request. Selection does
    not submit automatically.
 
-![Chat request prepared to invoke a selected skill](../assets/screenshots/skills-application-request.png)
+![Submitted chat request invoking a selected skill followed by tool activity](../assets/screenshots/skills-application-request.png)
 
-_Selecting a skill prepares explicit invocation text while preserving current thread context._
+_After you review and send the draft, skill-guided work starts in the current conversation._
 
 ## Review result
 

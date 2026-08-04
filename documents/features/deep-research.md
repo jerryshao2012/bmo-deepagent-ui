@@ -12,8 +12,8 @@ model setup.
 1. Enter a focused question or research task in the message composer.
 2. Press `Enter` or select Send. Use `Shift+Enter` when the request needs another
    line.
-3. Wait for the agent response. While a run is active, the composer is locked and
-   the Send control becomes Stop.
+3. Wait for the agent response. While this UI is loading the current streamed run,
+   the composer is locked and the Send control becomes Stop.
 
 ## Follow task execution
 

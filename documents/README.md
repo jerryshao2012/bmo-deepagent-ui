@@ -12,8 +12,15 @@ section when reviewing earlier design decisions or implementation context.
 
 ### Authentication
 
+- [OAuth authentication](authentication/oauth-authentication.md) - provider login,
+  callbacks, session lifecycle, configuration, and security boundaries.
 - [Passkey authentication](authentication/passkey-authentication.md) - WebAuthn
   trust boundaries, enrollment, sign-in, management, endpoints, and persistence.
+
+### LLM Wiki
+
+- [LLM Wiki](llm-wiki/llm-wiki.md) - document upload, ingestion, inspection,
+  grounded query, citations, and cleanup.
 
 ### Deployment
 
@@ -37,6 +44,7 @@ written. Commands and paths may no longer represent current repository state.
 - [Passkey authentication documentation implementation plan](history/plans/2026-08-03-passkey-authentication-documentation.md)
 - [Documentation organization implementation plan](history/plans/2026-08-03-documentation-organization.md)
 - [Cloud deployment guides implementation plan](history/plans/2026-08-04-cloud-deployment-guides.md)
+- [OAuth and LLM Wiki documentation implementation plan](history/plans/2026-08-04-oauth-llm-wiki-documentation.md)
 
 ### Specifications
 
@@ -44,6 +52,7 @@ written. Commands and paths may no longer represent current repository state.
 - [Passkey authentication documentation design](history/specifications/2026-08-03-passkey-authentication-documentation-design.md)
 - [Documentation organization design](history/specifications/2026-08-03-documentation-organization-design.md)
 - [Cloud deployment guides design](history/specifications/2026-08-03-cloud-deployment-guides-design.md)
+- [OAuth and LLM Wiki documentation design](history/specifications/2026-08-04-oauth-llm-wiki-documentation-design.md)
 
 ## Maintenance
 

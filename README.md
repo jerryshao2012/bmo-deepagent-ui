@@ -11,6 +11,7 @@ files, document viewers, authentication, and configurable backend connections.
 - Browse, preview, and download files produced by agents.
 - Run agents step by step in Debug Mode.
 - Authenticate with Google, GitHub, or optional passkeys.
+- Upload thread-scoped documents and run grounded LLM Wiki queries.
 - Deploy with repository scripts or Vercel.
 
 ## Prerequisites
@@ -81,11 +82,13 @@ environment files and secrets out of version control.
 
 ### OAuth
 
-The FastAPI backend manages Google and GitHub OAuth with Authlib. To enable OAuth:
+The FastAPI backend manages Google and GitHub OAuth with Authlib. See
+[OAuth authentication](documents/authentication/oauth-authentication.md) for login,
+callback, session, and security details. To enable OAuth:
 
-1. Follow [backend OAuth guide](https://github.com/jerryshao2012/deep-research/blob/main/README.md#-oauth-authentication).
+1. Follow [backend OAuth guide](https://github.com/jerryshao2012/deep-research/blob/main/README.md#-oauth-authentication) for backend configuration.
 2. Configure provider client IDs and secrets in backend environment.
-3. Set backend `FRONTEND_URL` to UI origin so callbacks return users correctly.
+3. Add UI origin to backend `FRONTEND_URLS` so callbacks return users correctly.
 
 ### Passkeys
 
@@ -140,6 +143,9 @@ Typical local values:
 Use chat interface to start runs and update connection settings. Debug Mode executes
 run step by step and allows selected steps to be repeated; disable it for continuous
 end-to-end execution.
+
+Use [LLM Wiki](documents/llm-wiki/llm-wiki.md) to upload documents to a thread,
+follow ingestion, inspect workspace, and ask grounded questions with citations.
 
 Generated files appear while agent runs:
 

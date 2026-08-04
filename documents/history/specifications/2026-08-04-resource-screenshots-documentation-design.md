@@ -2,134 +2,124 @@
 
 ## Goal
 
-Move nine existing product screenshots from `resources/` into repository-owned
-documentation assets, sanitize visible personal and trace identifiers, and embed
-each image in focused user guidance. Keep screenshots contextual, accessible,
-and maintainable instead of creating a standalone gallery.
+Publish nine existing product screenshots directly from `resources/`, unchanged
+and under their current filenames, then embed each image once in focused user
+guidance. Keep screenshots contextual and maintainable instead of creating a
+standalone gallery or a second asset set.
 
 ## Documentation structure
 
-Create `documents/assets/screenshots/` for sanitized PNG assets and
-`documents/features/` for concise feature guides. Add three active guides:
+Keep all nine PNGs under `resources/`. Create three concise feature guides:
 
-1. `documents/features/deep-research.md` explains the completed research flow,
-   tool activity, generated report, and state-file access.
-2. `documents/features/langsmith-integration.md` explains how a research run is
-   inspected as a LangSmith graph and trace.
+1. `documents/features/deep-research.md` explains completed research flow, tool
+   activity, generated report, and state-file access.
+2. `documents/features/langsmith-integration.md` explains inspection of a
+   research run as a LangSmith graph and trace.
 3. `documents/features/skills.md` explains skill configuration, discovery,
    invocation, and result review.
 
-Add the three LLM Wiki screenshots to the existing
-`documents/llm-wiki/llm-wiki.md` beside the workflow each image demonstrates.
-Add a Features section to `documents/README.md` linking the three new guides.
-Do not duplicate the new screenshots in root `README.md` or create a screenshot
-gallery.
+Embed three LLM Wiki screenshots in the existing
+`documents/llm-wiki/llm-wiki.md` beside the workflows they demonstrate. Add a
+Features section to `documents/README.md` linking the three new guides. Do not
+duplicate these screenshots in root `README.md` or create a screenshot gallery.
+Existing externally hosted screenshots in root `README.md` remain out of scope.
 
-## Asset mapping
+## Direct resource mapping
 
-Move each source to a descriptive, URL-safe destination after sanitization:
+Each existing resource is published from its current path and used exactly once
+in active documentation:
 
-| Source                                                            | Destination                                                    | Documentation use                                |
-| ----------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------ |
-| `resources/Deep_Research 2026-04-03 at 12 44 11 PM.png`           | `documents/assets/screenshots/deep-research-completed-run.png` | Completed Deep Research run and generated report |
-| `resources/LangSmith_Integration 2026-04-03 at 10 27 11 AM.png`   | `documents/assets/screenshots/langsmith-trace-inspection.png`  | LangSmith graph and trace inspection             |
-| `resources/LLM_Wiki_Index-20260723-qcgl.png`                      | `documents/assets/screenshots/llm-wiki-index.png`              | Wiki tree and index inspection                   |
-| `resources/LLM_Wiki_Query 2026-07-04 at 9 31 11 AM.png`           | `documents/assets/screenshots/llm-wiki-document-citation.png`  | Grounded answer linked to a cited PDF page       |
-| `resources/LLM_Wiki_Query 2026-07-27 at 12 18 11 PM.png`          | `documents/assets/screenshots/llm-wiki-grounded-query.png`     | Grounded financial answer with source evidence   |
-| `resources/Skills - Configuration_Skills-20260723-pznq.png`       | `documents/assets/screenshots/skills-configuration.png`        | Skills configuration tab                         |
-| `resources/Skills - Available Skills-20260723-pztn.png`           | `documents/assets/screenshots/skills-catalog.png`              | Available-skills drawer                          |
-| `resources/Skills - Apply a Skill-20260723-qaar.png`              | `documents/assets/screenshots/skills-application-request.png`  | Skill invocation request                         |
-| `resources/Skills - Result of Applying a Skill-20260723-qaee.png` | `documents/assets/screenshots/skills-application-result.png`   | Generated skill result                           |
+| Existing resource path                                            | Active documentation use                                          |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `resources/Deep_Research 2026-04-03 at 12 44 11 PM.png`           | `documents/features/deep-research.md` completed run and report    |
+| `resources/LangSmith_Integration 2026-04-03 at 10 27 11 AM.png`   | `documents/features/langsmith-integration.md` graph and trace     |
+| `resources/LLM_Wiki_Index-20260723-qcgl.png`                      | `documents/llm-wiki/llm-wiki.md` Wiki tree and index              |
+| `resources/LLM_Wiki_Query 2026-07-04 at 9 31 11 AM.png`           | `documents/llm-wiki/llm-wiki.md` grounded answer and PDF citation |
+| `resources/LLM_Wiki_Query 2026-07-27 at 12 18 11 PM.png`          | `documents/llm-wiki/llm-wiki.md` grounded financial answer        |
+| `resources/Skills - Configuration_Skills-20260723-pznq.png`       | `documents/features/skills.md` skills configuration               |
+| `resources/Skills - Available Skills-20260723-pztn.png`           | `documents/features/skills.md` available-skills catalog           |
+| `resources/Skills - Apply a Skill-20260723-qaar.png`              | `documents/features/skills.md` skill invocation request           |
+| `resources/Skills - Result of Applying a Skill-20260723-qaee.png` | `documents/features/skills.md` returned skill result              |
 
-Before editing, record every source filename, pixel dimensions, and SHA-256 hash.
-Create sanitized destinations while originals remain available, then compare
-dimensions and visually verify fidelity and privacy. Remove the original
-`resources/` PNGs only after all nine replacements and references pass those
-checks. Preserve PNG format and original pixel dimensions.
+Do not generate, edit, copy, move, rename, or delete any screenshot. Preserve
+each source byte-for-byte, including PNG format, filename, dimensions, and hash.
+Do not create a secondary screenshot asset directory.
 
-## Sanitization and accessibility
+## Publication and accessibility
 
-Use image editing only for privacy sanitization:
+User explicitly approved publication of all nine screenshots as-is, including
+visible avatars and browser, LangSmith, and thread identifiers. Prior visual
+inspection found no visible API keys, tokens, or passwords. These approved
+avatars and identifiers are accepted content, not validation failures. If later
+inspection finds an actual secret, stop publication and report exact affected
+file; do not modify screenshot.
 
-- Replace every personal avatar in browser profile chrome and application-shell
-  chrome with a neutral, non-identifying circle in every screenshot.
-- Remove local thread IDs from browser address bars while preserving useful route
-  context such as `localhost:3000` and assistant selection.
-- Remove LangSmith organization and thread identifiers from browser chrome while
-  preserving the LangSmith domain and trace-view context.
-- Redact the LangSmith in-application `Thread <UUID>` trace identifier. Preserve
-  the surrounding trace controls and the fact that a thread is selected.
-- Preserve all other application content, citations, document names, controls,
-  layout, colors, and workflow evidence. Do not crop explanatory UI or alter
-  displayed results.
-- Visually inspect every edited image at readable scale. Reject an edit if it
-  changes non-sensitive application content or introduces artifacts.
+Every Markdown embed uses descriptive alt text, a one-sentence caption explaining
+why screenshot matters, and direct relative path from active guide. Because
+filenames contain spaces, every image destination is angle-bracketed. Both
+`documents/features/*.md` and `documents/llm-wiki/llm-wiki.md` use this form:
 
-Every Markdown embed uses a relative path from its guide, descriptive alt text
-that states the demonstrated action, and a one-sentence caption that explains
-why the screenshot matters. Captions must not repeat surrounding prose or rely
-on color alone.
+```markdown
+![Descriptive action](<../../resources/Existing Filename.png>)
+```
+
+Captions must not repeat surrounding prose or rely on color alone.
 
 ## Guide contents and placement
 
-The feature guides remain concise and task-oriented. Each guide includes purpose,
-prerequisites or configuration boundaries, workflow steps, the relevant image at
-the step it illustrates, and a short troubleshooting or interpretation section.
-Content must describe behavior confirmed by current repository code or existing
-maintained guides; do not infer setup details from screenshots alone.
+Feature guides remain concise and task-oriented. Each includes purpose,
+prerequisites or configuration boundaries, workflow steps, relevant screenshot
+at illustrated step, and short troubleshooting or interpretation section.
+Content describes behavior confirmed by current repository code or maintained
+guides; screenshots provide evidence but do not establish setup details alone.
 
-The LangSmith guide is limited to external LangSmith Studio graph and trace
-inspection. It must not imply that this UI automatically opens LangSmith,
-constructs trace links, or configures tracing unless current repository code or a
-maintained guide verifies that behavior.
+LangSmith guide is limited to external LangSmith Studio graph and trace
+inspection. It must not imply this UI automatically opens LangSmith, constructs
+trace links, or configures tracing unless current repository code or a maintained
+guide verifies that behavior.
 
 Place LLM Wiki images as follows:
 
-- `llm-wiki-index.png` near workspace tree and file inspection.
-- `llm-wiki-document-citation.png` near the query flow and citation behavior.
-- `llm-wiki-grounded-query.png` near the explanation of grounded answers and
+- `LLM_Wiki_Index-20260723-qcgl.png` near workspace tree and file inspection.
+- `LLM_Wiki_Query 2026-07-04 at 9 31 11 AM.png` near query flow and citation
+  behavior.
+- `LLM_Wiki_Query 2026-07-27 at 12 18 11 PM.png` near grounded answers and
   original-source evidence.
 
-Historical plans and specifications remain unchanged except for this new design
-record. Existing externally hosted screenshots in root `README.md` are outside
-scope.
+Historical plans and specifications remain unchanged except this revised design
+record.
 
-## Failure handling and maintenance
+## Failure handling and Git safety
 
-- If sanitization cannot preserve original content, retain the source image and
-  stop before removing it from `resources/`.
-- If any screenshot cannot be matched to verified product behavior, block task
-  completion, keep that source, and report the mismatch rather than omitting the
-  image or writing speculative instructions. Run success validation only after
-  all nine uses are verified.
-- The nine source PNGs are already staged. Capture a pre-change staged/worktree
-  snapshot, then adjust index entries for only the nine mapped source paths after
-  replacements pass validation. Confirm no old `resources/` screenshot path
-  remains in staged diff and compare all unrelated staged/worktree paths with the
-  snapshot. If path-limited index adjustment is not authorized, stop and report
-  that unsanitized staged originals could leak into a later commit.
-- Local image links must remain relative and resolve on GitHub and local Markdown
-  renderers.
-- Future screenshot replacements should keep stable destination names when they
-  demonstrate the same workflow, limiting documentation churn.
+- Missing or corrupt PNG blocks completion. Keep every existing resource in
+  place and report affected path.
+- Any actual secret visible in screenshot blocks completion. Approved avatars
+  and browser, LangSmith, or thread identifiers do not.
+- If screenshot cannot be matched to verified product behavior, block completion
+  and report mismatch instead of omitting image or writing speculative guidance.
+- Nine resource PNGs are already staged additions. Commit only those exact nine
+  paths with path-limited Git command, leaving every unrelated index and worktree
+  path untouched.
+- Capture protected staged, tracked-worktree, and untracked state before
+  implementation; compare it after each commit and final validation.
+- Keep all nine resource files staged until dedicated resource commit. Do not
+  alter their index entries except through exact path-limited commit.
 
 ## Validation
 
-- Confirm exactly nine PNG files exist under `documents/assets/screenshots/` and
-  none of the nine source PNGs remain under `resources/`.
-- Confirm all nine images are referenced once from active documentation and no
-  Markdown link still targets the old resource filenames.
-- Compare every destination with the pre-edit source manifest: dimensions must
-  match and source hashes must remain recorded for audit. Visually inspect every
-  sanitized image for legibility, expected redactions, and unintended edits while
-  originals still exist.
-- Inspect each defined redaction region for exposed browser-profile or
-  application-shell avatars, browser-address local/LangSmith identifiers, and the
-  LangSmith in-application thread UUID. Scan Markdown and other screenshot areas
-  for secrets without treating preserved non-sensitive application content as a
-  redaction failure.
-- Check every local Markdown and image link, format changed Markdown, run
-  `git diff --check`, and run `yarn lint`.
-- Review final diff to ensure application code, generated files, and unrelated
-  worktree/index changes remain untouched. The only permitted staged-state
-  changes are path-limited replacement of the nine mapped source screenshots.
+- Confirm exactly nine PNGs exist directly under `resources/`; compare current
+  dimensions and SHA-256 hashes with baseline manifest and require exact matches.
+- Confirm all nine filenames are referenced exactly once across four active
+  guides: three feature guides plus LLM Wiki guide. Exclude this design and its
+  implementation plan from reference counts.
+- Resolve every local Markdown and image link after stripping fenced examples
+  and optional angle brackets around destinations.
+- Confirm no secondary screenshot asset directory or copied screenshot exists.
+- Visually inspect all nine original resources at readable scale for
+  legibility, correct workflow placement, corruption, and actual secrets. Accept
+  user-approved avatars and identifiers.
+- Format changed Markdown, run `git diff --check`, run `yarn lint`, and inspect
+  implementation diff from recorded base HEAD.
+- Compare protected staged, tracked-worktree, and unrelated untracked state with
+  baseline. Application code, generated files, and unrelated changes remain
+  untouched.

@@ -2,44 +2,29 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Sanitize nine screenshots from `resources/`, move them into maintained documentation assets, and embed each image in accurate feature guidance.
+**Goal:** Publish nine existing `resources/` screenshots unchanged and embed each
+once in accurate, focused product guidance.
 
-**Architecture:** Treat screenshots as immutable source inputs until edited destinations pass privacy, dimension, and visual-fidelity checks. Store sanitized PNGs under `documents/assets/screenshots/`; keep task guidance in focused feature documents and add LLM Wiki images to its existing guide. Replace only the nine staged source paths in Git index and preserve every unrelated staged or working-tree change.
+**Architecture:** Keep PNGs at current `resources/` paths with current filenames
+and commit them through exact pathspecs. Reference them directly from three new
+feature guides and existing LLM Wiki guide, then link new guides from documentation
+index. Treat screenshots as immutable inputs and preserve every unrelated staged,
+tracked-worktree, and untracked path.
 
-**Tech Stack:** Markdown, PNG assets, `@imagegen`, Git path-limited index operations, Prettier, ESLint, macOS `sips`, `shasum`, `rg`, and `@verification-before-completion`.
+**Tech Stack:** Markdown, existing PNG assets, Git path-limited commits,
+Prettier, ESLint, macOS `sips`, Node.js, `shasum`, `rg`, and
+`@verification-before-completion`.
 
-**Execution constraint:** Work inline on the current dirty `main` worktree because
-the nine source PNGs exist only in its index and working tree. Override any
-`subagent-driven-development` or `executing-plans` instruction to create a branch,
-worktree, or clean checkout. Only the exact path-limited index and commit commands
-in this plan are authorized.
+**Execution constraint:** Work inline on current dirty `main` worktree. Nine PNGs
+already exist as staged additions. Do not create branch, worktree, or clean
+checkout, and do not alter unrelated index or worktree state. Screenshot
+operations are read-only until exact nine-path resource commit.
 
 ---
 
 ## File map
 
-**Create**
-
-- `documents/assets/screenshots/deep-research-completed-run.png` - sanitized completed research run.
-- `documents/assets/screenshots/langsmith-trace-inspection.png` - sanitized external LangSmith Studio trace.
-- `documents/assets/screenshots/llm-wiki-index.png` - sanitized Wiki tree and index.
-- `documents/assets/screenshots/llm-wiki-document-citation.png` - sanitized query-to-PDF citation example.
-- `documents/assets/screenshots/llm-wiki-grounded-query.png` - sanitized grounded financial query example.
-- `documents/assets/screenshots/skills-configuration.png` - sanitized configuration dialog.
-- `documents/assets/screenshots/skills-catalog.png` - sanitized available-skills drawer.
-- `documents/assets/screenshots/skills-application-request.png` - sanitized skill invocation.
-- `documents/assets/screenshots/skills-application-result.png` - sanitized skill output.
-- `documents/features/deep-research.md` - Deep Research user workflow.
-- `documents/features/langsmith-integration.md` - external LangSmith trace-inspection guide.
-- `documents/features/skills.md` - skill configuration and use workflow.
-
-**Modify**
-
-- `documents/llm-wiki/llm-wiki.md:41-100` - add Wiki index screenshot after upload/inspection flow.
-- `documents/llm-wiki/llm-wiki.md:175-254` - add citation and grounded-query screenshots to query guidance.
-- `documents/README.md:6-33` - add active Features section.
-
-**Remove after verification**
+**Keep unchanged and commit**
 
 - `resources/Deep_Research 2026-04-03 at 12 44 11 PM.png`
 - `resources/LangSmith_Integration 2026-04-03 at 10 27 11 AM.png`
@@ -51,7 +36,24 @@ in this plan are authorized.
 - `resources/Skills - Apply a Skill-20260723-qaar.png`
 - `resources/Skills - Result of Applying a Skill-20260723-qaee.png`
 
-### Task 1: Capture source and repository safeguards
+**Create**
+
+- `documents/features/deep-research.md` - Deep Research user workflow with one
+  direct resource embed.
+- `documents/features/langsmith-integration.md` - external LangSmith
+  trace-inspection guide with one direct resource embed.
+- `documents/features/skills.md` - skill configuration and use workflow with four
+  direct resource embeds.
+
+**Modify**
+
+- `documents/llm-wiki/llm-wiki.md:41-100` - add Wiki index screenshot after
+  upload and inspection flow.
+- `documents/llm-wiki/llm-wiki.md:175-254` - add citation and grounded-query
+  screenshots to query guidance.
+- `documents/README.md:6-33` - add active Features section.
+
+### Task 1: Capture source and repository safeguards (completed baseline)
 
 **Files:**
 
@@ -59,34 +61,32 @@ in this plan are authorized.
 - Read: Git index and working tree
 - Do not modify repository files
 
-- [ ] **Step 1: Record initial repository state**
+- [x] **Step 1: Record base HEAD and protected repository state**
 
-Run:
+Commands used:
 
 ```bash
 git rev-parse HEAD | tee /tmp/bmo-resource-screenshot-base-head.txt
 git status --short
-git diff --cached --name-status -- . ':(exclude)resources/*.png' ':(exclude)documents/assets/screenshots/**' ':(exclude)documents/features/**' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md'
-git diff --cached --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/assets/screenshots/**' ':(exclude)documents/features/**' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | tee /tmp/bmo-resource-screenshot-protected-cached.sha256
-git diff --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/assets/screenshots/**' ':(exclude)documents/features/**' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | tee /tmp/bmo-resource-screenshot-protected-worktree.sha256
-git ls-files --others --exclude-standard
+git diff --cached --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/features/deep-research.md' ':(exclude)documents/features/langsmith-integration.md' ':(exclude)documents/features/skills.md' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | tee /tmp/bmo-resource-screenshot-protected-cached.sha256
+git diff --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/features/deep-research.md' ':(exclude)documents/features/langsmith-integration.md' ':(exclude)documents/features/skills.md' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | tee /tmp/bmo-resource-screenshot-protected-worktree.sha256
+git ls-files --others --exclude-standard -z -- . ':(exclude)documents/features/deep-research.md' ':(exclude)documents/features/langsmith-integration.md' ':(exclude)documents/features/skills.md' | xargs -0 shasum -a 256 | sort | tee /tmp/bmo-resource-screenshot-protected-untracked.sha256
 ```
 
-Expected: base HEAD is recorded; all nine `resources/*.png` files appear as staged
-additions; path-excluded hashes capture unrelated cached and tracked worktree
-changes. For each unrelated untracked file listed, run
-`shasum -a 256 <exact-path>` and record its hash in task notes. Treat every
-unrelated path as protected. Do not use a whole-diff hash after intentional paths
-begin changing.
+Baseline result: base HEAD and protected hashes recorded; all nine resource PNGs
+appear as staged additions. Every unrelated path is protected. Re-run this step
+and stop if any `/tmp/bmo-resource-screenshot-*` baseline file is missing before
+implementation resumes.
 
-- [ ] **Step 2: Confirm exact source inventory**
+- [x] **Step 2: Record exact immutable source manifest**
 
-Run:
+Commands used:
 
 ```bash
 rg --files resources -g '*.png'
 sips -g pixelWidth -g pixelHeight resources/*.png
 shasum -a 256 resources/*.png
+git diff --cached --binary -- resources | shasum -a 256
 ```
 
 Expected source manifest:
@@ -103,156 +103,108 @@ Expected source manifest:
 | `Skills - Apply a Skill-20260723-qaar.png`              | 1906x869   | `09faf6406458c0f473cf026d931231cc458336ce2005f7a4b238f1b3bbb63005` |
 | `Skills - Result of Applying a Skill-20260723-qaee.png` | 1910x856   | `357342f23ea385ebe1b39f375fdbd0f281ab40e337f838cb2f6a25e23c5b838e` |
 
-- [ ] **Step 3: Establish the failing asset acceptance check**
+Expected staged binary hash:
+`9f1cddc46a09edf39d9663d91af3986ca9e1076d793e66869be3e841669cb2df`.
 
-Run:
+- [x] **Step 3: Establish failing active-document acceptance check**
+
+Command used:
 
 ```bash
-test -d documents/assets/screenshots
-test "$(find documents/assets/screenshots -maxdepth 1 -type f -name '*.png' | wc -l | awk '{print $1}')" -eq 9
+node -e 'const fs=require("fs");const docs=["documents/features/deep-research.md","documents/features/langsmith-integration.md","documents/features/skills.md","documents/llm-wiki/llm-wiki.md"];const names=["Deep_Research 2026-04-03 at 12 44 11 PM.png","LangSmith_Integration 2026-04-03 at 10 27 11 AM.png","LLM_Wiki_Index-20260723-qcgl.png","LLM_Wiki_Query 2026-07-04 at 9 31 11 AM.png","LLM_Wiki_Query 2026-07-27 at 12 18 11 PM.png","Skills - Configuration_Skills-20260723-pznq.png","Skills - Available Skills-20260723-pztn.png","Skills - Apply a Skill-20260723-qaar.png","Skills - Result of Applying a Skill-20260723-qaee.png"];const text=docs.filter(fs.existsSync).map(f=>fs.readFileSync(f,"utf8")).join("\n");const found=names.filter(n=>text.includes(n));console.log({found});if(found.length!==0)process.exit(1)'
 ```
 
-Expected before implementation: nonzero exit because directory does not exist or
-count is not `9`.
+Baseline result: exits `0` with `{ found: [] }`, proving active guides did not
+yet embed any of nine resources.
 
-### Task 2: Create and verify sanitized screenshot assets
+### Task 2: Verify existing screenshots for direct use
 
 **Files:**
 
-- Create: all nine `documents/assets/screenshots/*.png` files from file map
-- Read: all nine `resources/*.png` sources
+- Read: exact nine `resources/*.png` files from file map
+- Do not create or modify files
 
-- [ ] **Step 1: Edit each source with `@imagegen`**
-
-Inspect each source with `view_image`, then call `image_gen.imagegen` once per
-source with `referenced_image_paths: [<exact-source-path>]`; do not use
-`num_last_images_to_include`. Read exact artifact path returned by tool and copy
-that artifact to mapped workspace destination. Never infer a "latest" output or
-assume tool accepts destination argument. Use this base instruction for every
-edit:
-
-```text
-Privacy-redact this product screenshot only. Preserve original pixel dimensions,
-layout, text, controls, colors, and all non-sensitive application content exactly.
-Replace every identifiable personal avatar in browser profile chrome and
-application-shell chrome, regardless of screen location, with a neutral solid-gray
-circle of same size. Do not crop, reframe, restyle, sharpen, or regenerate any
-other region.
-```
-
-Append to Deep Research prompt:
-
-```text
-In browser address bar, remove only threadId value while preserving localhost:3000,
-assistantId=research, separators, and browser chrome. Do not add a replacement ID.
-```
-
-Append to LangSmith prompt:
-
-```text
-In browser address bar, remove organization ID, thread ID, and encoded render/base
-URL identifiers while preserving smith.langchain.com and recognizable trace-view
-route context. In application UI, replace value after Thread with [redacted] while
-preserving Thread label, dropdown, and surrounding controls.
-```
-
-Use this per-image redaction checklist before accepting output:
-
-- Deep Research: browser profile avatar, application-shell avatar, browser
-  `threadId` value.
-- LangSmith: browser profile avatar, bottom-left application avatar, browser
-  organization/thread/render identifiers, in-app `Thread <UUID>` value.
-- Three LLM Wiki images: every top-right application-shell avatar.
-- Four Skills images: every top-right application-shell avatar.
-
-- [ ] **Step 2: Verify destination count and dimensions while sources exist**
+- [ ] **Step 1: Verify exact inventory, PNG readability, dimensions, and hashes**
 
 Run:
 
 ```bash
-find documents/assets/screenshots -maxdepth 1 -type f -name '*.png' | wc -l
-sips -g pixelWidth -g pixelHeight documents/assets/screenshots/*.png
+node -e 'const fs=require("fs");const expected=["Deep_Research 2026-04-03 at 12 44 11 PM.png","LangSmith_Integration 2026-04-03 at 10 27 11 AM.png","LLM_Wiki_Index-20260723-qcgl.png","LLM_Wiki_Query 2026-07-04 at 9 31 11 AM.png","LLM_Wiki_Query 2026-07-27 at 12 18 11 PM.png","Skills - Configuration_Skills-20260723-pznq.png","Skills - Available Skills-20260723-pztn.png","Skills - Apply a Skill-20260723-qaar.png","Skills - Result of Applying a Skill-20260723-qaee.png"].sort();const actual=fs.readdirSync("resources").filter(f=>f.endsWith(".png")).sort();if(JSON.stringify(actual)!==JSON.stringify(expected)){console.error({expected,actual});process.exit(1)}console.log("exact nine resource PNGs present")'
+file resources/*.png
+sips -g pixelWidth -g pixelHeight resources/*.png
+shasum -a 256 resources/*.png
+git diff --cached --binary -- resources | shasum -a 256
 ```
 
-Expected: exactly `9`; each destination dimension equals mapped source manifest.
-If any dimension differs, reject that output and repeat its image edit. Do not
-resize with another tool because privacy edit must remain within `@imagegen` flow.
+Expected: exactly nine readable PNGs; dimensions and hashes match Task 1 manifest;
+staged binary hash is
+`9f1cddc46a09edf39d9663d91af3986ca9e1076d793e66869be3e841669cb2df`.
+Any missing, corrupt, dimension-changed, or hash-changed file blocks completion.
 
-- [ ] **Step 3: Visually compare every source and destination**
+- [ ] **Step 2: Inspect every original at readable scale**
 
-Open each source/destination pair with `view_image`. Check:
+Open each exact resource with `view_image` at original detail. Confirm image is
+legible, demonstrates mapped workflow, and contains no visible API key, bearer or
+session token, password, or other actual secret. Prior inspection found none.
 
-- avatars are neutral circles in every browser and application-shell region;
-- Deep Research browser `threadId` value is absent;
-- LangSmith browser identifiers and in-app Thread UUID are absent;
-- citations, document names, task output, skill names, controls, and layout match;
-- no generated artifacts, garbled text, cropping, or content changes appear.
+User approved publication as-is, including visible avatars and browser,
+LangSmith, and thread identifiers. Record those as accepted content. If actual
+secret is discovered, stop and report affected path; do not change screenshot.
 
-Expected: all nine pairs pass. Any mismatch blocks source removal.
+- [ ] **Step 3: Confirm direct-render suitability**
 
-- [ ] **Step 4: Scan accepted outputs for visible secrets**
+Check each image has expected application content, no decode error or corruption,
+and enough surrounding UI to support planned caption. Expected: all nine map to
+document use in design table. Behavior mismatch blocks completion; no asset or
+index operation occurs in this task.
 
-At high detail, inspect browser chrome, app chrome, message text, document viewers,
-and trace panels for API keys, bearer/session tokens, passwords, private client
-identifiers, email addresses, or any identifiers covered by redaction rules.
-
-Expected: no visible secret or covered identifier remains. Public document names,
-citations, and non-sensitive product text remain unchanged.
-
-- [ ] **Step 5: Record sanitized hashes**
-
-Run:
-
-```bash
-shasum -a 256 documents/assets/screenshots/*.png
-```
-
-Expected: nine destination hashes recorded in task notes; edited images differ
-from their source hashes.
-
-### Task 3: Replace staged source paths safely
+### Task 3: Commit exact nine existing resources
 
 **Files:**
 
-- Preserve in working tree: exact nine `resources/*.png` paths listed in file map
-- Unstage: exact nine `resources/*.png` paths listed in file map
-- Stage: exact nine `documents/assets/screenshots/*.png` paths listed in file map
+- Commit unchanged: exact nine `resources/*.png` paths from file map
+- Protect: every unrelated staged, tracked-worktree, and untracked path
 
-- [ ] **Step 1: Remove unsanitized additions from index while retaining sources**
-
-Run path-limited commands:
-
-```bash
-git restore --staged -- "resources/Deep_Research 2026-04-03 at 12 44 11 PM.png" "resources/LangSmith_Integration 2026-04-03 at 10 27 11 AM.png" "resources/LLM_Wiki_Index-20260723-qcgl.png" "resources/LLM_Wiki_Query 2026-07-04 at 9 31 11 AM.png" "resources/LLM_Wiki_Query 2026-07-27 at 12 18 11 PM.png" "resources/Skills - Configuration_Skills-20260723-pznq.png" "resources/Skills - Available Skills-20260723-pztn.png" "resources/Skills - Apply a Skill-20260723-qaar.png" "resources/Skills - Result of Applying a Skill-20260723-qaee.png"
-git add documents/assets/screenshots/deep-research-completed-run.png documents/assets/screenshots/langsmith-trace-inspection.png documents/assets/screenshots/llm-wiki-index.png documents/assets/screenshots/llm-wiki-document-citation.png documents/assets/screenshots/llm-wiki-grounded-query.png documents/assets/screenshots/skills-configuration.png documents/assets/screenshots/skills-catalog.png documents/assets/screenshots/skills-application-request.png documents/assets/screenshots/skills-application-result.png
-```
-
-Expected: old source paths absent from index but still present in working tree;
-nine sanitized destinations staged.
-
-- [ ] **Step 2: Verify path-limited index replacement and protected state**
+- [ ] **Step 1: Verify resource and protected-state hashes immediately before commit**
 
 Run:
 
 ```bash
-git diff --cached --name-status -- documents/assets/screenshots resources
-git status --short
-git diff --cached --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/assets/screenshots/**' ':(exclude)documents/features/**' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | diff -u /tmp/bmo-resource-screenshot-protected-cached.sha256 -
-git diff --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/assets/screenshots/**' ':(exclude)documents/features/**' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | diff -u /tmp/bmo-resource-screenshot-protected-worktree.sha256 -
+git diff --cached --binary -- resources | shasum -a 256
+git diff --cached --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/features/deep-research.md' ':(exclude)documents/features/langsmith-integration.md' ':(exclude)documents/features/skills.md' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | diff -u /tmp/bmo-resource-screenshot-protected-cached.sha256 -
+git diff --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/features/deep-research.md' ':(exclude)documents/features/langsmith-integration.md' ':(exclude)documents/features/skills.md' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | diff -u /tmp/bmo-resource-screenshot-protected-worktree.sha256 -
+git ls-files --others --exclude-standard -z -- . ':(exclude)documents/features/deep-research.md' ':(exclude)documents/features/langsmith-integration.md' ':(exclude)documents/features/skills.md' | xargs -0 shasum -a 256 | sort | diff -u /tmp/bmo-resource-screenshot-protected-untracked.sha256 -
 ```
 
-Expected: screenshot diff lists only nine staged destinations plus nine untracked
-working-tree sources. Both protected-state comparisons have no output and exit
-`0`. Re-check recorded unrelated untracked hashes. Stop if any protected path
-changed.
+Expected: resource hash matches Task 1 and all protected comparisons exit `0`.
+Stop before commit on any mismatch.
 
-- [ ] **Step 3: Commit sanitized assets only**
+- [ ] **Step 2: Commit only exact nine paths**
+
+Run:
 
 ```bash
-git commit --only -m "docs: add sanitized product screenshots" -- documents/assets/screenshots/deep-research-completed-run.png documents/assets/screenshots/langsmith-trace-inspection.png documents/assets/screenshots/llm-wiki-index.png documents/assets/screenshots/llm-wiki-document-citation.png documents/assets/screenshots/llm-wiki-grounded-query.png documents/assets/screenshots/skills-configuration.png documents/assets/screenshots/skills-catalog.png documents/assets/screenshots/skills-application-request.png documents/assets/screenshots/skills-application-result.png
+git commit --only -m "docs: add product screenshots" -- "resources/Deep_Research 2026-04-03 at 12 44 11 PM.png" "resources/LangSmith_Integration 2026-04-03 at 10 27 11 AM.png" "resources/LLM_Wiki_Index-20260723-qcgl.png" "resources/LLM_Wiki_Query 2026-07-04 at 9 31 11 AM.png" "resources/LLM_Wiki_Query 2026-07-27 at 12 18 11 PM.png" "resources/Skills - Configuration_Skills-20260723-pznq.png" "resources/Skills - Available Skills-20260723-pztn.png" "resources/Skills - Apply a Skill-20260723-qaar.png" "resources/Skills - Result of Applying a Skill-20260723-qaee.png"
 ```
 
-Expected: commit contains nine sanitized PNGs and no old `resources/` path.
+Expected: commit contains exactly nine unchanged resource PNGs. Unrelated staged
+entries remain staged.
+
+- [ ] **Step 3: Verify committed blobs and protected state**
+
+Run:
+
+```bash
+git show --stat --oneline HEAD
+git diff-tree --no-commit-id --name-only -r HEAD
+shasum -a 256 resources/*.png
+git diff --cached --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/features/deep-research.md' ':(exclude)documents/features/langsmith-integration.md' ':(exclude)documents/features/skills.md' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | diff -u /tmp/bmo-resource-screenshot-protected-cached.sha256 -
+git diff --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/features/deep-research.md' ':(exclude)documents/features/langsmith-integration.md' ':(exclude)documents/features/skills.md' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | diff -u /tmp/bmo-resource-screenshot-protected-worktree.sha256 -
+git ls-files --others --exclude-standard -z -- . ':(exclude)documents/features/deep-research.md' ':(exclude)documents/features/langsmith-integration.md' ':(exclude)documents/features/skills.md' | xargs -0 shasum -a 256 | sort | diff -u /tmp/bmo-resource-screenshot-protected-untracked.sha256 -
+```
+
+Expected: commit lists exact nine paths; current file hashes still match manifest;
+all protected comparisons exit `0`.
 
 ### Task 4: Add focused feature guides
 
@@ -262,9 +214,15 @@ Expected: commit contains nine sanitized PNGs and no old `resources/` path.
 - Create: `documents/features/langsmith-integration.md`
 - Create: `documents/features/skills.md`
 
-- [ ] **Step 1: Write Deep Research guide**
+- [ ] **Step 1: Ground Deep Research guide in current code**
 
-Use these sections in order:
+Use `context_search` for Deep Research request submission, task/tool activity,
+rendered results, and generated state-file access. Expand only relevant chunks
+from `README.md`, `src/app/components/ChatInterface.tsx`, and
+`src/app/components/TasksFilesSidebar.tsx`. Explain only confirmed behavior and
+do not infer backend setup from screenshot.
+
+Use sections in order and exact embed:
 
 ```markdown
 # Deep Research Workflow
@@ -275,7 +233,7 @@ Return to [documentation index](../README.md).
 
 ## Follow task execution
 
-![Completed Deep Research run showing tool activity and generated report](../assets/screenshots/deep-research-completed-run.png)
+![Completed Deep Research run showing tool activity and generated report](<../../resources/Deep_Research 2026-04-03 at 12 44 11 PM.png>)
 
 _Completed run keeps tool progress, rendered report, and generated state files in one workflow._
 
@@ -284,15 +242,16 @@ _Completed run keeps tool progress, rendered report, and generated state files i
 ## Troubleshooting
 ```
 
-Explain only visible/current behavior: submit request, observe task/tool activity,
-read rendered result, and open generated state files. Ground workflow in
-`README.md`, `src/app/components/ChatInterface.tsx`, and
-`src/app/components/TasksFilesSidebar.tsx`; use screenshot only as illustration.
-Do not infer backend setup from screenshot.
+- [ ] **Step 2: Ground LangSmith guide in maintained documentation**
 
-- [ ] **Step 2: Write LangSmith trace-inspection guide**
+Use `context_search` for LangSmith and tracing configuration in root `README.md`
+and maintained guides; expand only relevant chunks. State guide covers external
+LangSmith Studio inspection. Do not claim UI automatically opens LangSmith,
+constructs trace links, or configures tracing. Mention
+`NEXT_PUBLIC_LANGSMITH_API_KEY` only as local-development configuration from root
+README and repeat production secrets must not use `NEXT_PUBLIC_*`.
 
-Use these sections in order:
+Use sections in order and exact embed:
 
 ```markdown
 # Inspect a Deep Research Trace in LangSmith
@@ -303,7 +262,7 @@ Return to [documentation index](../README.md).
 
 ## Inspect graph execution
 
-![LangSmith Studio graph and trace panels for a completed research run](../assets/screenshots/langsmith-trace-inspection.png)
+![LangSmith Studio graph and trace panels for a completed research run](<../../resources/LangSmith_Integration 2026-04-03 at 10 27 11 AM.png>)
 
 _Trace view correlates graph nodes, timing, tool calls, model calls, inputs, and outputs._
 
@@ -312,40 +271,36 @@ _Trace view correlates graph nodes, timing, tool calls, model calls, inputs, and
 ## Security and troubleshooting
 ```
 
-State this is external LangSmith Studio inspection. Do not claim UI automatically
-opens LangSmith, constructs trace links, or configures tracing. Mention
-`NEXT_PUBLIC_LANGSMITH_API_KEY` only as local-development configuration from root
-README and repeat that production secrets must not use `NEXT_PUBLIC_*`.
+- [ ] **Step 3: Ground Skills guide in current code**
 
-- [ ] **Step 3: Write Skills guide**
+Use `context_search` for live skill-backend status, search, selected-skill prompt
+drafting, and returned output. Expand only relevant chunks from
+`src/app/components/ConfigDialog.tsx`, `src/app/components/SkillsDrawer.tsx`,
+`src/app/utils/buildSkillDraftPrompt.ts`, and
+`src/features/skills/infrastructure/http-skills-gateway.ts`. Explain confirmed
+behavior without claiming every backend supports upload or deletion.
 
-Use these image placements in workflow order:
+Use sections `Configure skills`, `Browse and select a skill`, `Apply a skill`,
+`Review the result`, and `Troubleshooting`. Place exact embeds and one-sentence
+captions in workflow order:
 
 ```markdown
-![Skills tab showing backend status and available agent skills](../assets/screenshots/skills-configuration.png)
+![Skills tab showing backend status and available agent skills](<../../resources/Skills - Configuration_Skills-20260723-pznq.png>)
 
 _Configuration distinguishes live backend skill data from an unavailable or disconnected backend._
 
-![Available Skills drawer with searchable capabilities](../assets/screenshots/skills-catalog.png)
+![Available Skills drawer with searchable capabilities](<../../resources/Skills - Available Skills-20260723-pztn.png>)
 
 _Searchable catalog helps choose a capability without leaving current thread._
 
-![Chat request prepared to invoke a selected skill](../assets/screenshots/skills-application-request.png)
+![Chat request prepared to invoke a selected skill](<../../resources/Skills - Apply a Skill-20260723-qaar.png>)
 
 _Selecting a skill prepares explicit invocation text while preserving current thread context._
 
-![Rendered result returned after applying the selected skill](../assets/screenshots/skills-application-result.png)
+![Rendered result returned after applying the selected skill](<../../resources/Skills - Result of Applying a Skill-20260723-qaee.png>)
 
 _Completed response shows skill output in same conversation where it was requested._
 ```
-
-Sections: `Configure skills`, `Browse and select a skill`, `Apply a skill`,
-`Review the result`, and `Troubleshooting`. Ground details in
-`src/app/components/ConfigDialog.tsx`, `src/app/components/SkillsDrawer.tsx`,
-`src/app/utils/buildSkillDraftPrompt.ts`, and
-`src/features/skills/infrastructure/http-skills-gateway.ts`. Explain live-backend
-status, search, selected-skill prompt drafting, and returned output without
-claiming every backend supports upload or deletion.
 
 - [ ] **Step 4: Format and check new guides**
 
@@ -354,18 +309,22 @@ Run:
 ```bash
 yarn prettier --write documents/features/deep-research.md documents/features/langsmith-integration.md documents/features/skills.md
 yarn prettier --check documents/features/deep-research.md documents/features/langsmith-integration.md documents/features/skills.md
+git diff --check -- documents/features/deep-research.md documents/features/langsmith-integration.md documents/features/skills.md
 ```
 
-Expected: Prettier reports all three guides match style.
+Expected: Prettier and whitespace checks exit `0`.
 
-- [ ] **Step 5: Commit feature guides**
+- [ ] **Step 5: Commit feature guides only**
+
+Run:
 
 ```bash
 git add documents/features/deep-research.md documents/features/langsmith-integration.md documents/features/skills.md
 git commit --only -m "docs: add illustrated feature guides" -- documents/features/deep-research.md documents/features/langsmith-integration.md documents/features/skills.md
 ```
 
-Expected: commit contains only three Markdown guides.
+Expected: commit contains only three feature guides; unrelated staged state is
+unchanged.
 
 ### Task 5: Embed LLM Wiki screenshots and update index
 
@@ -377,26 +336,27 @@ Expected: commit contains only three Markdown guides.
 
 - [ ] **Step 1: Add Wiki workspace screenshot**
 
-After upload/inspection sequence, add:
+After upload and inspection sequence, add exact embed and caption:
 
 ```markdown
-![LLM Wiki workspace tree open beside its generated index](../assets/screenshots/llm-wiki-index.png)
+<!-- prettier-ignore -->
+![LLM Wiki workspace tree open beside its generated index](<../../resources/LLM_Wiki_Index-20260723-qcgl.png>)
 
 _Workspace tree exposes generated Wiki files for inspection without replacing original source evidence._
 ```
 
 - [ ] **Step 2: Add query and citation screenshots**
 
-Near query sequence and citation explanation, add each once:
+Near query sequence and citation explanation, add each exact embed once:
 
 ```markdown
-![Grounded LLM Wiki answer linked to the corresponding PDF page](../assets/screenshots/llm-wiki-document-citation.png)
+![Grounded LLM Wiki answer linked to corresponding PDF page](<../../resources/LLM_Wiki_Query 2026-07-04 at 9 31 11 AM.png>)
 
-_Citation links let readers compare a grounded answer with the relevant original document page._
+_Citation links let readers compare grounded answer with relevant original document page._
 
-![Grounded financial answer shown beside supporting annual-report evidence](../assets/screenshots/llm-wiki-grounded-query.png)
+![Grounded financial answer shown beside supporting annual-report evidence](<../../resources/LLM_Wiki_Query 2026-07-27 at 12 18 11 PM.png>)
 
-_Grounded query output remains connected to the original report used as evidence._
+_Grounded query output remains connected to original report used as evidence._
 ```
 
 - [ ] **Step 3: Add Features section to documentation index**
@@ -414,76 +374,83 @@ Add after Architecture:
   review agent skills.
 ```
 
-- [ ] **Step 4: Format changed Markdown**
+- [ ] **Step 4: Format and check changed Markdown**
 
 Run:
 
 ```bash
 yarn prettier --write documents/README.md documents/llm-wiki/llm-wiki.md
 yarn prettier --check documents/README.md documents/llm-wiki/llm-wiki.md documents/features/*.md
+git diff --check -- documents/README.md documents/llm-wiki/llm-wiki.md
 ```
 
-Expected: all changed Markdown matches Prettier style.
+Expected: all formatting and whitespace checks exit `0`.
 
-- [ ] **Step 5: Commit contextual embeds and index**
+- [ ] **Step 5: Commit index and Wiki guide only**
+
+Run:
 
 ```bash
 git add documents/README.md documents/llm-wiki/llm-wiki.md
 git commit --only -m "docs: embed screenshots in active guides" -- documents/README.md documents/llm-wiki/llm-wiki.md
 ```
 
-Expected: commit contains only index and LLM Wiki guide changes.
+Expected: commit contains only documentation index and LLM Wiki guide changes;
+unrelated staged state remains unchanged.
 
-### Task 6: Run full privacy, link, and repository verification
+### Task 6: Run full resource, link, secret, and repository verification
 
 **Files:**
 
-- Verify: all changed Markdown and PNG assets
-- Protect: all unrelated staged and working-tree paths
+- Verify: exact nine `resources/*.png` and four active guides
+- Protect: every unrelated staged, tracked-worktree, and untracked path
 
-- [ ] **Step 1: Verify asset inventory and active-document path ownership**
-
-Run:
-
-```bash
-test -d documents/assets/screenshots
-test "$(find documents/assets/screenshots -maxdepth 1 -type f -name '*.png' | wc -l | awk '{print $1}')" -eq 9
-rg --files resources -g '*.png'
-rg -n '\]\([^)]*resources/' documents/README.md documents/features documents/llm-wiki/llm-wiki.md --glob '*.md'
-```
-
-Expected: destination assertions pass; source inventory still lists nine originals;
-active-document old-link scan returns no matches. Historical plan/spec mappings
-are intentionally excluded.
-
-- [ ] **Step 2: Verify every destination is referenced exactly once**
+- [ ] **Step 1: Assert exact resource inventory and absence of copied assets**
 
 Run:
 
 ```bash
-node -e 'const fs=require("fs");const files=["documents/features/deep-research.md","documents/features/langsmith-integration.md","documents/features/skills.md","documents/llm-wiki/llm-wiki.md"];const text=files.map(f=>fs.readFileSync(f,"utf8")).join("\n");const assets=fs.readdirSync("documents/assets/screenshots").filter(f=>f.endsWith(".png"));const bad=assets.filter(a=>(text.match(new RegExp(a.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"))||[]).length!==1);if(assets.length!==9||bad.length){console.error({count:assets.length,bad});process.exit(1)}console.log("9 active screenshot embeds reference each asset exactly once")'
+node -e 'const fs=require("fs"),path=require("path"),crypto=require("crypto");const expected={"Deep_Research 2026-04-03 at 12 44 11 PM.png":[1917,945,"f8c30c260e8fba34af5afa6d1eb18831b310eae5b5dc03a2d4c06a2e5ad4a3d2"],"LangSmith_Integration 2026-04-03 at 10 27 11 AM.png":[1915,947,"b1775cdbf26980cd4dfa9af951af2cf5cdae8940fc68d8e3ef351fafabe78edb"],"LLM_Wiki_Index-20260723-qcgl.png":[1922,862,"dcc7758e29eeb79ebf1104e14068078c90edc95adb736891b2080c4b4334e186"],"LLM_Wiki_Query 2026-07-04 at 9 31 11 AM.png":[1909,868,"1a7aee54240da18fe9a7b82d786631df85051abd55edad500737d1ee5dce6a44"],"LLM_Wiki_Query 2026-07-27 at 12 18 11 PM.png":[1918,930,"5caf2a88da414410f5b20d6a67884febb95ac0e969977243eaa3776aedf30aa9"],"Skills - Configuration_Skills-20260723-pznq.png":[1901,849,"ffac5f511dcafc0eddc3adf284d28e431d384d0fb585b714e0eef9549b087508"],"Skills - Available Skills-20260723-pztn.png":[1904,867,"81fa98450b75a53f04e9923c38ac661938fa046b9afa439f3ae589c3bf7881d0"],"Skills - Apply a Skill-20260723-qaar.png":[1906,869,"09faf6406458c0f473cf026d931231cc458336ce2005f7a4b238f1b3bbb63005"],"Skills - Result of Applying a Skill-20260723-qaee.png":[1910,856,"357342f23ea385ebe1b39f375fdbd0f281ab40e337f838cb2f6a25e23c5b838e"]};const names=Object.keys(expected).sort(),actual=fs.readdirSync("resources").filter(f=>f.endsWith(".png")).sort(),bad=[];if(JSON.stringify(actual)!==JSON.stringify(names))bad.push({inventory:{expected:names,actual}});for(const n of names){const p=path.join("resources",n),b=fs.readFileSync(p),w=b.readUInt32BE(16),h=b.readUInt32BE(20),hash=crypto.createHash("sha256").update(b).digest("hex"),want=expected[n];if(b.toString("ascii",1,4)!=="PNG"||w!==want[0]||h!==want[1]||hash!==want[2])bad.push({name:n,w,h,hash,want})}const oldDir=path.join("documents","assets","screenshots");if(fs.existsSync(oldDir))bad.push({unexpectedDirectory:oldDir});const sourceHashes=new Set(names.map(n=>expected[n][2])),copies=[];const walk=d=>{if(!fs.existsSync(d))return;for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(e.name.endsWith(".png")){const h=crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");if(sourceHashes.has(h))copies.push(p)}}};walk("documents");if(copies.length)bad.push({copies});if(bad.length){console.error(bad);process.exit(1)}console.log("exact nine unchanged resources present; no documentation copies")'
+sips -g pixelWidth -g pixelHeight resources/*.png
+shasum -a 256 resources/*.png
 ```
 
-Expected: `9 active screenshot embeds reference each asset exactly once`.
+Expected: exact nine filenames, no secondary asset directory, no byte-identical
+copies under `documents/`, and manifest dimensions and hashes unchanged.
 
-- [ ] **Step 3: Verify every relative Markdown link resolves**
+- [ ] **Step 2: Verify exact direct embeds and per-guide distribution**
 
 Run:
 
 ````bash
-node -e 'const fs=require("fs"),path=require("path");const md=["documents/README.md","documents/features/deep-research.md","documents/features/langsmith-integration.md","documents/features/skills.md","documents/llm-wiki/llm-wiki.md"];const bad=[];for(const f of md){const t=fs.readFileSync(f,"utf8").replace(/```[\s\S]*?```/g,"");for(const m of t.matchAll(/!?\[[^\]]*\]\(([^)]+)\)/g)){const u=m[1].split("#")[0];if(!u||/^(https?:|mailto:|#)/.test(u))continue;const p=path.resolve(path.dirname(f),u);if(!fs.existsSync(p))bad.push(`${f}: ${u}`)}}if(bad.length){console.error(bad.join("\n"));process.exit(1)}console.log("5 changed active Markdown files: local links resolve")'
+node -e 'const fs=require("fs");const expected={"documents/features/deep-research.md":["../../resources/Deep_Research 2026-04-03 at 12 44 11 PM.png"],"documents/features/langsmith-integration.md":["../../resources/LangSmith_Integration 2026-04-03 at 10 27 11 AM.png"],"documents/features/skills.md":["../../resources/Skills - Configuration_Skills-20260723-pznq.png","../../resources/Skills - Available Skills-20260723-pztn.png","../../resources/Skills - Apply a Skill-20260723-qaar.png","../../resources/Skills - Result of Applying a Skill-20260723-qaee.png"],"documents/llm-wiki/llm-wiki.md":["../../resources/LLM_Wiki_Index-20260723-qcgl.png","../../resources/LLM_Wiki_Query 2026-07-04 at 9 31 11 AM.png","../../resources/LLM_Wiki_Query 2026-07-27 at 12 18 11 PM.png"]};const bad=[],texts=[];for(const [f,want] of Object.entries(expected)){const t=fs.readFileSync(f,"utf8").replace(/```[\s\S]*?```/g,"");texts.push(t);const raw=[...t.matchAll(/!\[[^\]]*\]\((<[^>]+>|[^)\s]+)(?:\s+["\x27][^"\x27]*["\x27])?\)/g)].map(m=>m[1]).filter(u=>u.includes("../../resources/"));const angle=raw.every(u=>u.startsWith("<")&&u.endsWith(">")),got=raw.map(u=>u.slice(1,-1));if(!angle||JSON.stringify(got)!==JSON.stringify(want))bad.push({file:f,want,raw})}const all=texts.join("\n");for(const p of Object.values(expected).flat()){const n=p.slice("../../resources/".length),count=all.split(n).length-1;if(count!==1)bad.push({filename:n,count})}if(bad.length){console.error(bad);process.exit(1)}console.log("nine angle-bracketed direct embeds match 1+1+4+3 guide mapping and each filename appears once")'
 ````
 
-Expected: all local links in changed active documents resolve; fenced examples are
-excluded from link semantics.
+Expected: exact success message. Check enforces image syntax, angle brackets,
+direct paths, order, `1+1+4+3` distribution, and one global occurrence per
+filename. Historical plan and design are excluded.
 
-- [ ] **Step 4: Re-run visual privacy inspection**
+- [ ] **Step 3: Verify relative Markdown links, including angle-bracketed destinations**
 
-Open all nine destination PNGs with `view_image` at high detail. Confirm defined
-redaction regions contain no personal avatars or thread/organization IDs and all
-other application content remains legible and unchanged.
+Run:
 
-- [ ] **Step 5: Scan changed Markdown for secrets**
+````bash
+node -e 'const fs=require("fs"),path=require("path");const md=["documents/README.md","documents/features/deep-research.md","documents/features/langsmith-integration.md","documents/features/skills.md","documents/llm-wiki/llm-wiki.md"];const bad=[];for(const f of md){const t=fs.readFileSync(f,"utf8").replace(/```[\s\S]*?```/g,"");for(const m of t.matchAll(/!?\[[^\]]*\]\((<[^>]+>|[^)\s]+)(?:\s+["\x27][^"\x27]*["\x27])?\)/g)){let u=m[1];if(u.startsWith("<")&&u.endsWith(">"))u=u.slice(1,-1);u=u.split("#")[0];if(!u||/^(https?:|mailto:|#)/.test(u))continue;const p=path.resolve(path.dirname(f),u);if(!fs.existsSync(p))bad.push(`${f}: ${u}`)}}if(bad.length){console.error(bad.join("\n"));process.exit(1)}console.log("five active Markdown files: local links resolve")'
+````
+
+Expected: all local links resolve. Checker ignores fenced blocks and removes
+optional `<...>` around image destination before `path.resolve`.
+
+- [ ] **Step 4: Re-run visual inspection of original resources**
+
+Open all nine `resources/*.png` files with `view_image` at original detail.
+Confirm readable content and correct contextual placement; inspect for actual API
+keys, bearer or session tokens, passwords, or other actual secrets. Visible
+avatars and browser, LangSmith, and thread identifiers remain explicitly approved
+and do not fail validation. Missing/corrupt image or actual secret blocks
+completion.
+
+- [ ] **Step 5: Scan active Markdown for credential values**
 
 Run:
 
@@ -491,54 +458,45 @@ Run:
 rg -n '(sk-[A-Za-z0-9_-]{16,}|Bearer [A-Za-z0-9._-]{12,}|api[_-]?key[[:space:]]*[:=][[:space:]]*[^<[:space:]]+|session[_-]?token[[:space:]]*[:=][[:space:]]*[^<[:space:]]+)' documents/README.md documents/features documents/llm-wiki/llm-wiki.md --glob '*.md'
 ```
 
-Expected: no real credential values. Review any configuration-name match manually;
+Expected: no real credential value. Review configuration-name matches manually;
 placeholders and warnings are permitted, secrets are not.
 
-- [ ] **Step 6: Run repository checks across committed implementation**
+- [ ] **Step 6: Run formatting, diff, lint, and implementation-scope checks**
 
 Run:
 
 ```bash
+BASE_HEAD=$(sed -n '1p' /tmp/bmo-resource-screenshot-base-head.txt)
 git diff --check
-SCREENSHOT_BASE_HEAD=$(sed -n '1p' /tmp/bmo-resource-screenshot-base-head.txt)
-git diff --check "$SCREENSHOT_BASE_HEAD"..HEAD
+git diff --check "$BASE_HEAD"..HEAD
 yarn prettier --check documents/README.md documents/llm-wiki/llm-wiki.md documents/features/*.md documents/history/specifications/2026-08-04-resource-screenshots-documentation-design.md documents/history/plans/2026-08-04-resource-screenshots-documentation.md
 yarn lint
+git diff --name-status "$BASE_HEAD"..HEAD
 ```
 
-Expected: all commands exit `0`.
+Expected: diff checks, Prettier, and lint exit `0`. Name-status review contains
+revised design/plan records from their path-limited approval commit, then exact
+nine resources, three feature guides, documentation index, and LLM Wiki guide.
+No application code or generated file appears.
 
-- [ ] **Step 7: Remove validated originals**
-
-Only after Steps 1-6 pass, remove exact source paths with no glob and no recursive
-removal:
-
-```bash
-rm -f "resources/Deep_Research 2026-04-03 at 12 44 11 PM.png" "resources/LangSmith_Integration 2026-04-03 at 10 27 11 AM.png" "resources/LLM_Wiki_Index-20260723-qcgl.png" "resources/LLM_Wiki_Query 2026-07-04 at 9 31 11 AM.png" "resources/LLM_Wiki_Query 2026-07-27 at 12 18 11 PM.png" "resources/Skills - Configuration_Skills-20260723-pznq.png" "resources/Skills - Available Skills-20260723-pztn.png" "resources/Skills - Apply a Skill-20260723-qaar.png" "resources/Skills - Result of Applying a Skill-20260723-qaee.png"
-```
-
-Expected: exactly nine originals removed after sanitized assets are committed,
-referenced, privacy-checked, and link-checked.
-
-- [ ] **Step 8: Confirm source removal and protected repository state**
+- [ ] **Step 7: Compare final protected repository state**
 
 Run:
 
 ```bash
+git diff --cached --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/features/deep-research.md' ':(exclude)documents/features/langsmith-integration.md' ':(exclude)documents/features/skills.md' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | diff -u /tmp/bmo-resource-screenshot-protected-cached.sha256 -
+git diff --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/features/deep-research.md' ':(exclude)documents/features/langsmith-integration.md' ':(exclude)documents/features/skills.md' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | diff -u /tmp/bmo-resource-screenshot-protected-worktree.sha256 -
+git ls-files --others --exclude-standard -z -- . ':(exclude)documents/features/deep-research.md' ':(exclude)documents/features/langsmith-integration.md' ':(exclude)documents/features/skills.md' | xargs -0 shasum -a 256 | sort | diff -u /tmp/bmo-resource-screenshot-protected-untracked.sha256 -
 git status --short
-git diff --cached --name-status
 git log -4 --oneline
-test -z "$(rg --files resources -g '*.png')"
-git diff --cached --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/assets/screenshots/**' ':(exclude)documents/features/**' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | diff -u /tmp/bmo-resource-screenshot-protected-cached.sha256 -
-git diff --binary -- . ':(exclude)resources/*.png' ':(exclude)documents/assets/screenshots/**' ':(exclude)documents/features/**' ':(exclude)documents/README.md' ':(exclude)documents/llm-wiki/llm-wiki.md' | shasum -a 256 | diff -u /tmp/bmo-resource-screenshot-protected-worktree.sha256 -
 ```
 
-Expected: source `resources/*.png` paths absent; implementation commits contain
-only intended screenshot/docs paths; both protected-state comparisons exit `0`;
-every recorded unrelated untracked hash still matches Task 1 snapshot.
+Expected: all protected comparisons exit `0`; unrelated staged and worktree state
+matches baseline; recent commits are path-limited as specified.
 
-- [ ] **Step 9: Apply `@verification-before-completion`**
+- [ ] **Step 8: Apply `@verification-before-completion`**
 
-Review fresh outputs from Tasks 2 and 6 before claiming completion. Report exact
-commits, changed guides, nine-asset count, privacy checks, lint result, and any
-remaining unrelated worktree state.
+Review fresh Task 6 output before claiming completion. Report exact commits,
+four active guides, exact nine-resource count, unchanged hashes and dimensions,
+direct-link check, secret inspection, lint result, and remaining unrelated
+worktree state.

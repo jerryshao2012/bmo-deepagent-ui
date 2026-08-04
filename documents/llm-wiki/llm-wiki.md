@@ -175,11 +175,10 @@ avoid overlooking partial state or replacing same-name files.
 ## 2. Query ready wiki
 
 For direct HTTP API caller, query is separate authenticated operation. Caller
-should first require `wiki_ready: true`; server independently enforces same
-readiness and returns 409 otherwise. `file_results` defaults to `true` when
-omitted. Query first resolves `docs/threads/<thread-id>`: missing source
-directory returns 404. Existing source directory with empty or unready wiki
-returns 409.
+should first require `wiki_ready: true`. Server first resolves
+`docs/threads/<thread-id>`; missing source directory returns 404. Only when
+source directory exists does server check wiki readiness; empty or unready wiki
+returns 409. `file_results` defaults to `true` when omitted.
 
 ```mermaid
 sequenceDiagram

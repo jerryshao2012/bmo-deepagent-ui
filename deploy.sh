@@ -179,6 +179,10 @@ else
 fi
 
 echo "📦 Installing dependencies and building production bundle..."
+if [ -d node_modules ]; then
+  echo "🧹 Removing stale installed dependencies..."
+  rm -rf -- node_modules
+fi
 yarn install --immutable
 yarn build
 

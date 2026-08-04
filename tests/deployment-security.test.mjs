@@ -109,6 +109,14 @@ test("local container build uses a clean staged context", async () => {
   assert.match(dockerignore, /^\.mcp\.json$/m);
 });
 
+test("local container build provisions enough builder memory", async () => {
+  const buildScript = await source("build.sh");
+
+  assert.match(buildScript, /MIN_CONTAINER_BUILDER_MEMORY_BYTES=8589934592/);
+  assert.match(buildScript, /container builder status --format json/);
+  assert.match(buildScript, /container builder start --memory 8G/);
+});
+
 test("App Service deployment uses a prebuilt standalone zip", async () => {
   const deployScript = await source("deploy.sh");
 
@@ -161,6 +169,15 @@ test("App Service deployment fails fast when Azure reports exhausted quota", asy
   assert.match(deployScript, /\$webapp_usage_state" = "Exceeded"/);
   assert.match(deployScript, /App Service F1 quota is exceeded/);
   assert.ok(quotaCheck >= 0 && quotaCheck < build);
+});
+
+test("App Service deployment starts from clean installed dependencies", async () => {
+  const deployScript = await source("deploy.sh");
+  const cleanDependencies = deployScript.indexOf("rm -rf -- node_modules");
+  const installDependencies = deployScript.indexOf("yarn install --immutable");
+
+  assert.ok(cleanDependencies >= 0);
+  assert.ok(cleanDependencies < installDependencies);
 });
 
 test("App Service deployment owns startup polling so quota changes fail fast", async () => {

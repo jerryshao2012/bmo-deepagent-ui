@@ -52,7 +52,7 @@ sequenceDiagram
     API->>DB: Create random 24-hour app session<br/>persist SHA-256 token hash
     DB-->>API: Raw app session_token
     API-->>NX: /login/success?token=...<br/>optional exact allowlisted return_path
-    NX->>NX: Set 24-hour session_token cookie<br/>SameSite=Lax; Secure in production
+    NX->>NX: Set 24-hour session_token cookie<br/>SameSite=Lax, Secure in production
     alt exact passkey-management return path
         NX-->>UI: Redirect to /chat?manage=passkeys
     else absent or unrecognized return path
@@ -112,7 +112,7 @@ sequenceDiagram
         end
     end
     UI->>API: GET /auth/session/validate<br/>X-API-Key or Bearer session_token
-    API->>DB: Validate; slide backend expiry when less than 1 hour remains
+    API->>DB: Validate and slide backend expiry<br/>when less than 1 hour remains
     DB-->>UI: valid + sanitized user and metadata
     UI->>API: POST /auth/logout<br/>X-API-Key or Bearer session_token
     API->>DB: Revoke matching token hash

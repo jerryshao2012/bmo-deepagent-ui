@@ -303,7 +303,7 @@ export interface paths {
         };
         /**
          * List Documents
-         * @description List all files in a specified folder within documents directory.
+         * @description List all files in a specified folder within docs directory.
          */
         get: operations["list_documents_documents_list_get"];
         put?: never;
@@ -325,7 +325,7 @@ export interface paths {
         put?: never;
         /**
          * Upload Documents
-         * @description Upload documents to a specified folder within documents directory.
+         * @description Upload documents to a specified folder within docs directory.
          */
         post: operations["upload_documents_documents_upload_post"];
         delete?: never;

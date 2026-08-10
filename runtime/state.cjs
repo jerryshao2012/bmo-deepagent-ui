@@ -21,4 +21,53 @@ class LruCache {
   }
 }
 
-module.exports = { LruCache };
+function isValidMarkdownId(markdownId) {
+  return typeof markdownId === "string" && /^\d{6}$/.test(markdownId);
+}
+
+function resolveInitialMarkdown(serverContent, clientContent, serverExists) {
+  const persisted = typeof serverContent === "string" ? serverContent : "";
+  const cached = typeof clientContent === "string" ? clientContent : "";
+  const hasServerState =
+    typeof serverExists === "boolean"
+      ? serverExists
+      : typeof serverContent === "string" && persisted.trim() !== "";
+  const seededFromClient = !hasServerState && cached.trim() !== "";
+
+  return {
+    content: seededFromClient ? cached : persisted,
+    seededFromClient,
+  };
+}
+
+function resolveServerMarkdown(
+  cacheContent,
+  pendingContent,
+  diskContent,
+  diskExists = false
+) {
+  if (typeof cacheContent === "string") {
+    return { content: cacheContent, exists: true, readable: true };
+  }
+  if (typeof pendingContent === "string") {
+    return { content: pendingContent, exists: true, readable: true };
+  }
+  if (diskExists) {
+    if (typeof diskContent !== "string") {
+      return { content: "", exists: true, readable: false };
+    }
+    return {
+      content: diskContent,
+      exists: true,
+      readable: true,
+    };
+  }
+  return { content: "", exists: false, readable: true };
+}
+
+module.exports = {
+  LruCache,
+  isValidMarkdownId,
+  resolveInitialMarkdown,
+  resolveServerMarkdown,
+};

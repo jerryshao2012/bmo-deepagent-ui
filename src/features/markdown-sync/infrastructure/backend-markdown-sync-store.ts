@@ -14,7 +14,8 @@ export class BackendMarkdownSyncStore implements MarkdownSyncStore {
     const response = await authenticatedFetch(this.url(markdownId), {
       headers: this.headers(),
     });
-    if (!response.ok) return null;
+    if (!response.ok)
+      throw new Error(`Markdown sync load failed (${response.status})`);
     const data = await response.json();
     return data?.values?.markdown_content ?? "";
   }

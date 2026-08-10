@@ -78,6 +78,26 @@ Never expose production secrets through `NEXT_PUBLIC_*` variables. Container
 deployments can start from [`.env.docker.example`](.env.docker.example); keep real
 environment files and secrets out of version control.
 
+### Backend-independent Markdown preview
+
+Markdown text synchronization on `/` does not require a LangGraph backend.
+`yarn dev` and `yarn start` launch the custom `server.cjs` runtime, which serves
+the Next.js app, accepts same-origin WebSocket connections on `/api/ws`, and
+persists Markdown under `MARKDOWN_STORAGE_DIR` (default:
+`data/markdown_threads/`). Do not launch the app with `next dev` or `next start`
+directly when WebSocket synchronization is required.
+
+Browsers sharing the same six-digit `thread_id` synchronize through the custom
+server. If WebSocket setup fails, the editor uses the same-origin
+`/api/ws-fallback` SSE/POST bridge. Configure `MARKDOWN_STORAGE_DIR` as a
+writable, persistent path so content survives server restarts. This mode assumes
+one application server instance and uses last-write-wins conflict handling.
+
+When a LangGraph deployment URL is configured, cross-deployment Markdown
+mirroring remains best-effort. A missing or unreachable backend does not stop
+local WebSocket/SSE synchronization. Pasted or dropped synchronized images still
+use the backend image API and are not available in backend-free mode.
+
 ## Authentication
 
 ### OAuth

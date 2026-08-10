@@ -5,6 +5,17 @@ export interface MarkdownSyncState {
   lastSynced: string | null;
 }
 
+export const BACKEND_MIRROR_BASE_RETRY_MS = 4_000;
+export const BACKEND_MIRROR_MAX_RETRY_MS = 60_000;
+
+export function backendMirrorRetryDelay(consecutiveFailures: number): number {
+  const exponent = Math.max(0, Math.floor(consecutiveFailures) - 1);
+  return Math.min(
+    BACKEND_MIRROR_MAX_RETRY_MS,
+    BACKEND_MIRROR_BASE_RETRY_MS * 2 ** exponent
+  );
+}
+
 export function editMarkdown(
   state: MarkdownSyncState,
   content: string

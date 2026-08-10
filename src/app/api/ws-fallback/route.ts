@@ -10,25 +10,71 @@ export const runtime = "nodejs"; // nodejs runtime to maintain in-memory state
 // module-local state.
 
 type SSEController = ReadableStreamDefaultController<Uint8Array>;
+type ThreadState = { content: string; exists: boolean; readable: boolean };
+const MARKDOWN_ID_RE = /^\d{6}$/;
+
+function invalidThreadIdResponse(): Response {
+  return new Response(JSON.stringify({ error: "Invalid threadId" }), {
+    status: 400,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function invalidContentResponse(): Response {
+  return new Response(JSON.stringify({ error: "Invalid content" }), {
+    status: 400,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function invalidRequestResponse(): Response {
+  return new Response(JSON.stringify({ error: "Invalid request" }), {
+    status: 400,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function storageReadErrorResponse(): Response {
+  return new Response(JSON.stringify({ error: "Unable to load thread" }), {
+    status: 500,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 declare global {
   var __sseThreadStore: Map<string, string> | undefined;
-  var __sseSubscribers: Map<string, Set<{ controller: SSEController }>> | undefined;
+  var __sseSubscribers:
+    | Map<string, Set<{ controller: SSEController }>>
+    | undefined;
   var __sseNotify:
     | ((threadId: string, content: string, immediate?: boolean) => void)
     | undefined;
+  var __sseLoad: ((threadId: string) => ThreadState) | undefined;
 }
 
 const threadStore: Map<string, string> =
   globalThis.__sseThreadStore ?? new Map<string, string>();
 
-const subscribers: Map<string, Set<{ controller: SSEController }>> =
-  globalThis.__sseSubscribers ?? new Map<string, Set<{ controller: SSEController }>>();
+const subscribers: Map<
+  string,
+  Set<{ controller: SSEController }>
+> = globalThis.__sseSubscribers ??
+new Map<string, Set<{ controller: SSEController }>>();
 
 // Ensure the global references point to the same Maps so server.cjs can
 // access subscribers added by this route.
 if (!globalThis.__sseThreadStore) globalThis.__sseThreadStore = threadStore;
 if (!globalThis.__sseSubscribers) globalThis.__sseSubscribers = subscribers;
+
+function readThreadState(threadId: string): ThreadState {
+  const serverState = globalThis.__sseLoad?.(threadId);
+  if (serverState) return serverState;
+  return {
+    content: threadStore.get(threadId) ?? "",
+    exists: threadStore.has(threadId),
+    readable: true,
+  };
+}
 
 // ── Subscriber helpers ───────────────────────────────────────────────────
 
@@ -38,7 +84,9 @@ function addSubscriber(threadId: string, controller: SSEController): void {
   }
   subscribers.get(threadId)!.add({ controller });
   console.log(
-    `[WS Fallback] Subscriber added to thread ${threadId}. Total: ${subscribers.get(threadId)!.size}`
+    `[WS Fallback] Subscriber added to thread ${threadId}. Total: ${
+      subscribers.get(threadId)!.size
+    }`
   );
 }
 
@@ -77,7 +125,10 @@ function notifySubscribers(
   const subs = subscribers.get(threadId);
   if (!subs || subs.size === 0) return;
 
-  const message = `event: sync\ndata: ${JSON.stringify({ type: "sync", content })}\n\n`;
+  const message = `event: sync\ndata: ${JSON.stringify({
+    type: "sync",
+    content,
+  })}\n\n`;
   const encoded = new TextEncoder().encode(message);
 
   for (const sub of subs) {
@@ -115,16 +166,21 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const threadId = searchParams.get("threadId");
 
-  if (!threadId) {
-    return new Response("Missing threadId", { status: 400 });
+  if (!threadId || !MARKDOWN_ID_RE.test(threadId)) {
+    return invalidThreadIdResponse();
   }
 
   // ── Polling mode (cross-instance catch-up) ──────────────────────────
   if (searchParams.get("poll") === "1") {
-    const currentContent = threadStore.get(threadId) || "";
+    const state = readThreadState(threadId);
+    if (!state.readable) return storageReadErrorResponse();
 
     return new Response(
-      JSON.stringify({ type: "sync", content: currentContent }),
+      JSON.stringify({
+        type: "sync",
+        content: state.content,
+        authoritative: state.exists,
+      }),
       {
         headers: {
           "Content-Type": "application/json",
@@ -135,6 +191,9 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Persistent SSE stream mode ──────────────────────────────────────
+  const initialState = readThreadState(threadId);
+  if (!initialState.readable) return storageReadErrorResponse();
+
   const encoder = new TextEncoder();
   let cleanedUp = false;
 
@@ -152,12 +211,16 @@ export async function GET(req: NextRequest) {
       controller.enqueue(encoder.encode("retry: 5000\n\n"));
 
       // Send current content immediately
-      const content = threadStore.get(threadId) || "";
-      const syncMessage = `event: sync\ndata: ${JSON.stringify({ type: "sync", content, initial: true })}\n\n`;
+      const syncMessage = `event: sync\ndata: ${JSON.stringify({
+        type: "sync",
+        content: initialState.content,
+        initial: true,
+        authoritative: initialState.exists,
+      })}\n\n`;
       controller.enqueue(encoder.encode(syncMessage));
 
       console.log(
-        `[WS Fallback] GET thread ${threadId}, initial content size: ${content.length}`
+        `[WS Fallback] GET thread ${threadId}, initial content size: ${initialState.content.length}`
       );
 
       // Heartbeat every 15 seconds to prevent proxy / Vercel idle timeout
@@ -210,20 +273,34 @@ export async function GET(req: NextRequest) {
  * - immediate: boolean flag
  */
 export async function POST(req: NextRequest) {
+  let body: Record<string, unknown>;
   try {
-    const body = await req.json();
+    const parsedBody: unknown = await req.json();
+    if (
+      !parsedBody ||
+      typeof parsedBody !== "object" ||
+      Array.isArray(parsedBody)
+    ) {
+      return invalidRequestResponse();
+    }
+    body = parsedBody as Record<string, unknown>;
+  } catch {
+    return invalidRequestResponse();
+  }
+
+  try {
     const { threadId, content, type, immediate } = body;
 
-    if (!threadId) {
-      return new Response(JSON.stringify({ error: "Missing threadId" }), {
-        status: 400,
-      });
+    if (typeof threadId !== "string" || !MARKDOWN_ID_RE.test(threadId)) {
+      return invalidThreadIdResponse();
     }
 
     if (type === "update") {
+      if (typeof content !== "string") return invalidContentResponse();
+
       if (!content || content.trim() === "") {
-        // Delete empty content
-        threadStore.delete(threadId);
+        // Keep an in-memory tombstone so stale browser cache cannot reseed it.
+        threadStore.set(threadId, "");
         console.log(`[WS Fallback] Deleted thread: ${threadId}`);
       } else {
         // Store content

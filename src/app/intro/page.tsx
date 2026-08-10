@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { BrowserMarkdownSyncStore } from "@/features/markdown-sync/infrastructure/browser-markdown-sync-store";
 import { createConfiguredBackendMarkdownSyncStore } from "@/features/markdown-sync/infrastructure/backend-markdown-sync-store";
+import { backendMirrorRetryDelay } from "@/features/markdown-sync/application/sync-state-machine";
 import { clearRememberedLogin } from "@/lib/remembered-login";
 import {
   buildSyncedImageMarkdown,
@@ -91,6 +92,8 @@ function IntroPageContent() {
   const pendingWebSocketContentRef = useRef<string | null>(null);
   const pendingBackendContentRef = useRef<string | null>(null);
   const backendWriteInFlightRef = useRef(false);
+  const backendFailureCountRef = useRef(0);
+  const backendNextRetryAtRef = useRef(0);
   const pendingFallbackUpdateRef = useRef<{
     content: string;
     immediate: boolean;
@@ -132,6 +135,8 @@ function IntroPageContent() {
       contentVersionRef.current += 1;
       pendingWebSocketContentRef.current = null;
       pendingBackendContentRef.current = null;
+      backendFailureCountRef.current = 0;
+      backendNextRetryAtRef.current = 0;
       pendingFallbackUpdateRef.current = null;
       void browserMarkdownStore.load(threadId).then((cached) => {
         if (cached && activeThreadIdRef.current === threadId) applyContent(cached);
@@ -144,6 +149,17 @@ function IntroPageContent() {
   // Azure Container Apps + Vercel), the in-process WebSocket/SSE bridge
   // cannot reach across deployments.  We use the LangGraph backend's
   // thread state as a shared key-value store for markdown content.
+
+  const resetBackendMirrorBackoff = useCallback(() => {
+    backendFailureCountRef.current = 0;
+    backendNextRetryAtRef.current = 0;
+  }, []);
+
+  const deferBackendMirrorRetry = useCallback(() => {
+    backendFailureCountRef.current += 1;
+    backendNextRetryAtRef.current =
+      Date.now() + backendMirrorRetryDelay(backendFailureCountRef.current);
+  }, []);
 
   const syncContentToBackend = useCallback(
     async (content: string) => {
@@ -158,6 +174,7 @@ function IntroPageContent() {
       }
 
       pendingBackendContentRef.current = content;
+      if (Date.now() < backendNextRetryAtRef.current) return;
       if (backendWriteInFlightRef.current) return;
       backendWriteInFlightRef.current = true;
 
@@ -171,14 +188,16 @@ function IntroPageContent() {
           if (pendingBackendContentRef.current === pendingContent) {
             pendingBackendContentRef.current = null;
           }
+          resetBackendMirrorBackoff();
         }
       } catch {
-        // Silently ignore — cross-deploy sync is best-effort
+        // Preserve latest pending content and retry without disturbing local sync.
+        deferBackendMirrorRetry();
       } finally {
         backendWriteInFlightRef.current = false;
       }
     },
-    [threadId]
+    [threadId, deferBackendMirrorRetry, resetBackendMirrorBackoff]
   );
 
   const startCrossDeployPolling = useCallback(() => {
@@ -189,6 +208,8 @@ function IntroPageContent() {
     lastBackendSyncRef.current = null;
 
     crossDeployPollRef.current = window.setInterval(async () => {
+      if (Date.now() < backendNextRetryAtRef.current) return;
+
       if (pendingBackendContentRef.current !== null) {
         void syncContentToBackend(pendingBackendContentRef.current);
         return;
@@ -199,6 +220,7 @@ function IntroPageContent() {
       const requestVersion = contentVersionRef.current;
       try {
         const remoteContent = (await backendStore.load(threadId)) ?? "";
+        resetBackendMirrorBackoff();
         if (
           requestVersion !== contentVersionRef.current ||
           pendingBackendContentRef.current !== null
@@ -238,10 +260,16 @@ function IntroPageContent() {
           applyContent(remoteContent);
         }
       } catch {
-        // Silently ignore transient failures
+        deferBackendMirrorRetry();
       }
     }, 4000);
-  }, [threadId, syncContentToBackend, applyContent]);
+  }, [
+    threadId,
+    syncContentToBackend,
+    applyContent,
+    deferBackendMirrorRetry,
+    resetBackendMirrorBackoff,
+  ]);
 
   const sendFallbackUpdate = useCallback(
     async (val: string, immediate = false) => {
@@ -306,7 +334,12 @@ function IntroPageContent() {
       try {
         const data = JSON.parse(event.data);
         if (data.type === "sync") {
-          if (data.initial && !data.content && sharedTextRef.current) {
+          if (
+            data.initial &&
+            !data.authoritative &&
+            !data.content &&
+            sharedTextRef.current
+          ) {
             lastPollPushedRef.current = sharedTextRef.current;
             void sendFallbackUpdate(sharedTextRef.current, true).finally(() => {
               fallbackInitializedRef.current = true;

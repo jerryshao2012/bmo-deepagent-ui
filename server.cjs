@@ -3,7 +3,11 @@ const next = require("next");
 const { WebSocketServer } = require("ws");
 const { runtimeConfig } = require("./runtime/bootstrap.cjs");
 const { broadcastJson, sendJson } = require("./runtime/transport.cjs");
-const { LruCache } = require("./runtime/state.cjs");
+const {
+  isValidMarkdownId,
+  resolveInitialMarkdown,
+  resolveServerMarkdown,
+} = require("./runtime/state.cjs");
 const { createMarkdownPersistence } = require("./runtime/persistence.cjs");
 const { createMermaidImageStore } = require("./runtime/images.cjs");
 
@@ -105,7 +109,7 @@ app.prepare().then(() => {
   // Batch save mechanism - store pending updates and flush periodically
   const pendingSaves = new Map(); // Map<threadId, { content: string, lastUpdated: number }>
   const BATCH_SAVE_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
-  
+
   // Debounce timers for immediate flush (1-2 second delay)
   const debounceTimers = new Map(); // Map<threadId, NodeJS.Timeout>
   const DEBOUNCE_DELAY = 1500; // 1.5 seconds
@@ -116,12 +120,12 @@ app.prepare().then(() => {
       content,
       lastUpdated: Date.now(),
     });
-    
+
     // Clear existing debounce timer if any
     if (debounceTimers.has(threadId)) {
       clearTimeout(debounceTimers.get(threadId));
     }
-    
+
     // Set up debounced immediate flush
     const timer = setTimeout(() => {
       console.log(`[WS Debounce] Flushing thread ${threadId} after ${DEBOUNCE_DELAY}ms`);
@@ -130,21 +134,14 @@ app.prepare().then(() => {
         try {
           const filePath = getFilePath(threadId);
           const fileContent = pendingData.content;
-          
-          if (!fileContent || fileContent.trim() === "") {
-            if (fs.existsSync(filePath)) {
-              fs.unlinkSync(filePath);
-              console.log(
-                `[WS Debounce] Content removed. Deleted file for thread: ${threadId}`
-              );
-            }
-          } else {
-            fs.writeFileSync(filePath, fileContent, "utf8");
-            console.log(
-              `[WS Debounce] Content saved. Wrote file for thread: ${threadId}`
-            );
-          }
-          
+
+          // Empty files are persisted deletion tombstones. This prevents a
+          // stale browser cache from recreating content after server restart.
+          fs.writeFileSync(filePath, fileContent, "utf8");
+          console.log(
+            `[WS Debounce] Content saved. Wrote file for thread: ${threadId}`
+          );
+
           // Remove from pending saves since we just flushed it
           pendingSaves.delete(threadId);
         } catch (err) {
@@ -156,7 +153,7 @@ app.prepare().then(() => {
       }
       debounceTimers.delete(threadId);
     }, DEBOUNCE_DELAY);
-    
+
     debounceTimers.set(threadId, timer);
   }
 
@@ -174,19 +171,10 @@ app.prepare().then(() => {
         const filePath = getFilePath(threadId);
         const content = data.content;
 
-        if (!content || content.trim() === "") {
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-            console.log(
-              `[WS Batch] Content removed. Deleted file for thread: ${threadId}`
-            );
-          }
-        } else {
-          fs.writeFileSync(filePath, content, "utf8");
-          console.log(
-            `[WS Batch] Content saved. Wrote file for thread: ${threadId}`
-          );
-        }
+        fs.writeFileSync(filePath, content, "utf8");
+        console.log(
+          `[WS Batch] Content saved. Wrote file for thread: ${threadId}`
+        );
 
         // Remove from pending if it hasn't been updated since we started flushing
         const current = pendingSaves.get(threadId);
@@ -270,6 +258,44 @@ app.prepare().then(() => {
   const rooms = new Map(); // Map<threadId, Set<WebSocket>>
   const roomContent = new LRUCache(200); // Thread Cache (max 200 active threads)
 
+  // One authoritative read path for WebSocket initialization and HTTP
+  // fallback. Pending writes, including empty deletion tombstones, must win
+  // over disk until the debounce flush completes.
+  globalThis.__sseLoad = (threadId) => {
+    if (!isValidMarkdownId(threadId)) {
+      return { content: "", exists: false, readable: true };
+    }
+
+    const cachedContent = roomContent.has(threadId)
+      ? roomContent.get(threadId)
+      : undefined;
+    const pendingContent = pendingSaves.has(threadId)
+      ? pendingSaves.get(threadId).content
+      : undefined;
+    const shouldReadDisk =
+      cachedContent === undefined && pendingContent === undefined;
+    const diskExists = shouldReadDisk && fs.existsSync(getFilePath(threadId));
+    const diskContent = diskExists ? loadThreadContent(threadId) : undefined;
+    const state = resolveServerMarkdown(
+      cachedContent,
+      pendingContent,
+      diskContent,
+      diskExists
+    );
+
+    if (!state.readable) return state;
+
+    if (!state.exists) {
+      globalThis.__sseThreadStore.delete(threadId);
+      roomContent.delete(threadId);
+    } else {
+      globalThis.__sseThreadStore.set(threadId, state.content);
+      roomContent.set(threadId, state.content);
+    }
+
+    return state;
+  };
+
   let shuttingDown = false;
   function shutdown() {
     if (shuttingDown) return;
@@ -301,15 +327,10 @@ app.prepare().then(() => {
   // as from the WebSocket message handler so both transports stay in sync.
   globalThis.__sseNotify = (threadId, content, immediate = false) => {
     const normalizedContent = typeof content === "string" ? content : "";
-    if (normalizedContent.trim() === "") {
-      globalThis.__sseThreadStore.delete(threadId);
-      roomContent.delete(threadId);
-    } else {
-      globalThis.__sseThreadStore.set(threadId, normalizedContent);
-      roomContent.set(threadId, normalizedContent);
-    }
+    globalThis.__sseThreadStore.set(threadId, normalizedContent);
+    roomContent.set(threadId, normalizedContent);
 
-    if (immediate && normalizedContent.trim() !== "") {
+    if (immediate) {
       try {
         fs.writeFileSync(getFilePath(threadId), normalizedContent, "utf8");
         pendingSaves.delete(threadId);
@@ -385,8 +406,8 @@ app.prepare().then(() => {
     const parsedUrl = new URL(request.url, `http://${request.headers.host}`);
     const threadId = parsedUrl.searchParams.get("threadId");
 
-    if (!threadId) {
-      ws.close();
+    if (!isValidMarkdownId(threadId)) {
+      ws.close(1008, "Invalid threadId");
       return;
     }
 
@@ -400,30 +421,27 @@ app.prepare().then(() => {
         const data = JSON.parse(message);
 
         if (data.type === "init") {
-          // Resolve thread content from memory or disk
-          let currentContent = "";
-          if (roomContent.has(threadId)) {
-            currentContent = roomContent.get(threadId);
-          } else {
-            const diskContent = loadThreadContent(threadId);
-            if (diskContent !== null) {
-              currentContent = diskContent;
-              roomContent.set(threadId, diskContent);
-            }
+          const serverState = globalThis.__sseLoad(threadId);
+          if (!serverState.readable) {
+            ws.close(1011, "Unable to load thread");
+            return;
           }
 
-          // If client has offline changes (non-empty) that differ from what we have, let client win
-          if (
-            data.content &&
-            data.content.trim() !== "" &&
-            data.content !== currentContent
-          ) {
-            currentContent = data.content;
+          // Persisted server state is authoritative. Browser cache only seeds
+          // a thread that has never existed in memory or on disk.
+          const resolved = resolveInitialMarkdown(
+            serverState.content,
+            data.content,
+            serverState.exists
+          );
+          const currentContent = resolved.content;
+
+          if (resolved.seededFromClient) {
             roomContent.set(threadId, currentContent);
-            // Schedule for batch save instead of immediate save
+            globalThis.__sseThreadStore.set(threadId, currentContent);
             scheduleBatchSave(threadId, currentContent);
 
-            // Broadcast the update to any other connected clients in the same thread
+            // Bring already-connected clients into the newly seeded state.
             const clients = rooms.get(threadId);
             if (clients) {
               for (const client of clients) {
@@ -436,12 +454,6 @@ app.prepare().then(() => {
             }
           }
 
-          if (currentContent.trim() === "") {
-            globalThis.__sseThreadStore.delete(threadId);
-          } else {
-            globalThis.__sseThreadStore.set(threadId, currentContent);
-          }
-
           // Acknowledge by sending the resolved sync state to this connecting client
           ws.send(
             JSON.stringify({
@@ -452,7 +464,7 @@ app.prepare().then(() => {
           );
         }
 
-        if (data.type === "update") {
+        if (data.type === "update" && typeof data.content === "string") {
           // Update shared storage and push to both WebSocket and SSE clients.
           if (typeof globalThis.__sseNotify === "function") {
             globalThis.__sseNotify(

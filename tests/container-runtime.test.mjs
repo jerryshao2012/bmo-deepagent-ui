@@ -375,6 +375,49 @@ test("Apple build readiness creates an 8 GiB builder when missing", async () => 
   );
 });
 
+test("Apple build readiness rejects nonnumeric builder memory without mutation", async () => {
+  const { result, log } = await runHelper({
+    runtimes: ["container"],
+    builderJson: JSON.stringify([
+      {
+        configuration: { resources: { memoryInBytes: "plenty" } },
+        status: { state: "running" },
+      },
+    ]),
+    body: "select_container_cli && ensure_container_cli_build_ready",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /(?=.*Apple Container builder status)(?=.*(?:parse|invalid))/is
+  );
+  assert.equal(
+    log,
+    "container system status\ncontainer builder status --format json\n"
+  );
+  assert.doesNotMatch(log, /container builder (?:stop|delete|start)/);
+});
+
+test("Apple build readiness rejects invalid builder JSON without mutation", async () => {
+  const { result, log } = await runHelper({
+    runtimes: ["container"],
+    builderJson: "{not-json",
+    body: "select_container_cli && ensure_container_cli_build_ready",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /(?=.*Apple Container builder status)(?=.*(?:parse|invalid))/is
+  );
+  assert.equal(
+    log,
+    "container system status\ncontainer builder status --format json\n"
+  );
+  assert.doesNotMatch(log, /container builder (?:stop|delete|start)/);
+});
+
 test("Apple build readiness replaces an undersized running builder", async () => {
   const { result, log } = await runHelper({
     runtimes: ["container"],

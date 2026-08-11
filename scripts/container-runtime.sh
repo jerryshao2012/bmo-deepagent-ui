@@ -84,11 +84,43 @@ ensure_container_cli_build_ready() {
   # Apple Container's 2 GiB default builder is too small for those concurrent steps.
   local MIN_CONTAINER_BUILDER_MEMORY_BYTES=8589934592
   local BUILDER_STATUS_JSON
+  local BUILDER_DETAILS
   local BUILDER_MEMORY_BYTES
   local BUILDER_STATE
   if BUILDER_STATUS_JSON=$(command container builder status --format json 2>/dev/null); then
-    BUILDER_MEMORY_BYTES=$(printf '%s' "$BUILDER_STATUS_JSON" | node -e 'const [builder] = JSON.parse(require("fs").readFileSync(0, "utf8")); process.stdout.write(String(builder?.configuration?.resources?.memoryInBytes ?? 0));')
-    BUILDER_STATE=$(printf '%s' "$BUILDER_STATUS_JSON" | node -e 'const [builder] = JSON.parse(require("fs").readFileSync(0, "utf8")); process.stdout.write(builder?.status?.state ?? "missing");')
+    if BUILDER_DETAILS=$(printf '%s' "$BUILDER_STATUS_JSON" | node -e '
+const input = require("fs").readFileSync(0, "utf8");
+let builders;
+try {
+  builders = JSON.parse(input);
+} catch {
+  process.exit(1);
+}
+if (!Array.isArray(builders)) process.exit(1);
+const [builder] = builders;
+if (builder === undefined) {
+  process.stdout.write("0\tmissing");
+  process.exit(0);
+}
+const memory = builder?.configuration?.resources?.memoryInBytes;
+const state = builder?.status?.state;
+if (
+  !Number.isSafeInteger(memory) ||
+  memory < 0 ||
+  typeof state !== "string" ||
+  state.trim().length === 0 ||
+  /[\u0000-\u001f\u007f]/.test(state)
+) {
+  process.exit(1);
+}
+process.stdout.write(`${memory}\t${state}`);
+'); then
+      IFS=$'\t' read -r BUILDER_MEMORY_BYTES BUILDER_STATE <<< "$BUILDER_DETAILS"
+    else
+      local parse_status=$?
+      echo "Error: invalid Apple Container builder status; cannot confirm build readiness." >&2
+      return "$parse_status"
+    fi
   else
     BUILDER_MEMORY_BYTES=0
     BUILDER_STATE=missing

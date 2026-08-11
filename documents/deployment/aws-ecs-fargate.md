@@ -42,8 +42,10 @@ HTTP. ECS task receives a public IP. Service runs one task and has no persistent
 - Bash, Node.js, `curl`, `grep`, `sed`, and standard Unix tools.
 - One supported image-build CLI: Apple [`container`](https://github.com/apple/container),
   [Podman](https://docs.podman.io/en/latest/markdown/podman.1.html), or Docker. Automatic
-  selection priority is exactly Apple `container` → Podman → Docker. Set
-  `CONTAINER_CLI=container|podman|docker` to force a deterministic choice.
+  selection chooses first supported executable on `PATH` in exact priority Apple
+  `container` → Podman → Docker. Readiness check happens after selection and failure
+  does not fall back. Fix selected runtime or rerun with
+  `CONTAINER_CLI=podman|docker|container`; override forces a deterministic choice.
 - Selected runtime and host must support building a `linux/amd64` image. Apple
   `container` requires its supported macOS and hardware; Podman or Docker hosts do not
   require Apple silicon.
@@ -57,10 +59,15 @@ Apple documents current platform support and CLI behavior in
 [command reference](https://github.com/apple/container/blob/main/docs/command-reference.md).
 Podman documents its CLI in the [Podman manual](https://docs.podman.io/en/latest/markdown/podman.1.html)
 and build behavior in [`podman build`](https://docs.podman.io/en/stable/markdown/podman-build.1.html).
+Docker documents [Engine installation](https://docs.docker.com/engine/install/),
+[daemon startup](https://docs.docker.com/engine/daemon/start/), and
+[multi-platform builds](https://docs.docker.com/build/building/multi-platform/).
 
 Runtime readiness differs by selection:
 
-- Apple path starts its container system when needed.
+- Apple path requires Apple `container` already installed and initialized with required
+  or default kernel. Script only starts or restarts a stopped system with
+  `container system start --disable-kernel-install`; it does not install kernel.
 - Podman path checks `podman info`. Script never starts or manages a daemon, service,
   or Podman machine. On platforms that require a Podman machine, operator must start it.
 - Docker path checks `docker info`. Docker daemon must already be running; script does
@@ -147,7 +154,7 @@ Build script:
 3. checks for ECR repository and creates it when absent;
 4. checks selected runtime readiness;
 5. builds `Dockerfile-aws` for `linux/amd64`;
-6. logs selected runtime in to ECR with password over standard input;
+6. uses selected runtime to log in to ECR with password over standard input;
 7. pushes mutable `latest` tag.
 
 Adapter retains `--progress plain` for Apple `container` and Docker builds and omits it

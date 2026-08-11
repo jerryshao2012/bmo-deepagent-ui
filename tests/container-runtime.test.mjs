@@ -24,6 +24,10 @@ const runHelper = async ({
   containerStatus = 0,
   podmanInfoStatus = 0,
   dockerInfoStatus = 0,
+  containerStartStatus = 0,
+  buildStatus = 0,
+  loginStatus = 0,
+  pushStatus = 0,
 }) => {
   const tempRoot = await mkdtemp(
     path.join(tmpdir(), "container-runtime-test-")
@@ -33,6 +37,7 @@ const runHelper = async ({
     const binDir = path.join(tempRoot, "bin");
     const logPath = path.join(tempRoot, "runtime.log");
     const argumentLogPath = path.join(tempRoot, "runtime-arguments.log");
+    const stdinLogPath = path.join(tempRoot, "runtime-stdin.log");
     await mkdir(binDir);
 
     for (const runtime of runtimes) {
@@ -46,10 +51,19 @@ for argument in "$@"; do
   printf '<%s>\\n' "$argument" >> "$RUNTIME_ARGUMENT_LOG"
 done
 printf '%s\\n' '--' >> "$RUNTIME_ARGUMENT_LOG"
-case "\${0##*/}:$*" in
-  "container:system status") exit "$CONTAINER_STATUS" ;;
-  "podman:info") exit "$PODMAN_INFO_STATUS" ;;
-  "docker:info") exit "$DOCKER_INFO_STATUS" ;;
+case "\${0##*/}:$1:$2" in
+  "container:system:status") exit "$CONTAINER_STATUS" ;;
+  "container:system:start") exit "$CONTAINER_START_STATUS" ;;
+  "podman:info:"*) exit "$PODMAN_INFO_STATUS" ;;
+  "docker:info:"*) exit "$DOCKER_INFO_STATUS" ;;
+  container:build:*|podman:build:*|docker:build:*) exit "$BUILD_STATUS" ;;
+  "container:registry:login"|podman:login:*|docker:login:*)
+    login_stdin=
+    IFS= read -r login_stdin || :
+    printf '%s' "$login_stdin" >> "$RUNTIME_STDIN_LOG"
+    exit "$LOGIN_STATUS"
+    ;;
+  "container:image:push"|podman:push:*|docker:push:*) exit "$PUSH_STATUS" ;;
 esac
 exit 0
 `
@@ -62,9 +76,14 @@ exit 0
       PATH: binDir,
       RUNTIME_LOG: logPath,
       RUNTIME_ARGUMENT_LOG: argumentLogPath,
+      RUNTIME_STDIN_LOG: stdinLogPath,
       CONTAINER_STATUS: String(containerStatus),
       PODMAN_INFO_STATUS: String(podmanInfoStatus),
       DOCKER_INFO_STATUS: String(dockerInfoStatus),
+      CONTAINER_START_STATUS: String(containerStartStatus),
+      BUILD_STATUS: String(buildStatus),
+      LOGIN_STATUS: String(loginStatus),
+      PUSH_STATUS: String(pushStatus),
     };
     if (override !== overrideUnset) env.CONTAINER_CLI = override;
 
@@ -78,8 +97,9 @@ exit 0
     );
     const log = await readFile(logPath, "utf8").catch(() => "");
     const argumentLog = await readFile(argumentLogPath, "utf8").catch(() => "");
+    const stdinLog = await readFile(stdinLogPath, "utf8").catch(() => "");
 
-    return { result, log, argumentLog };
+    return { result, log, argumentLog, stdinLog };
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -286,12 +306,38 @@ const commandMappings = [
     login:
       "container registry login --username AWS --password-stdin registry.example",
     push: "container image push registry.example/app:latest",
+    arguments: [
+      [
+        "build",
+        "--progress",
+        "plain",
+        "--platform",
+        "linux/amd64",
+        "-t",
+        "app:latest",
+        ".",
+      ],
+      [
+        "registry",
+        "login",
+        "--username",
+        "AWS",
+        "--password-stdin",
+        "registry.example",
+      ],
+      ["image", "push", "registry.example/app:latest"],
+    ],
   },
   {
     runtime: "podman",
     build: "podman build --platform linux/amd64 -t app:latest .",
     login: "podman login --username AWS --password-stdin registry.example",
     push: "podman push registry.example/app:latest",
+    arguments: [
+      ["build", "--platform", "linux/amd64", "-t", "app:latest", "."],
+      ["login", "--username", "AWS", "--password-stdin", "registry.example"],
+      ["push", "registry.example/app:latest"],
+    ],
   },
   {
     runtime: "docker",
@@ -299,12 +345,42 @@ const commandMappings = [
       "docker build --progress plain --platform linux/amd64 -t app:latest .",
     login: "docker login --username AWS --password-stdin registry.example",
     push: "docker push registry.example/app:latest",
+    arguments: [
+      [
+        "build",
+        "--progress",
+        "plain",
+        "--platform",
+        "linux/amd64",
+        "-t",
+        "app:latest",
+        ".",
+      ],
+      ["login", "--username", "AWS", "--password-stdin", "registry.example"],
+      ["push", "registry.example/app:latest"],
+    ],
   },
 ];
 
-for (const { runtime, build, login, push } of commandMappings) {
+const formatArgumentLog = (runtime, invocations) =>
+  invocations
+    .map(
+      (arguments_) =>
+        `${runtime}\n${arguments_
+          .map((argument) => `<${argument}>\n`)
+          .join("")}--\n`
+    )
+    .join("");
+
+for (const {
+  runtime,
+  build,
+  login,
+  push,
+  arguments: arguments_,
+} of commandMappings) {
   test(`${runtime} receives exact mapped build, login, and push commands`, async () => {
-    const { result, log } = await runHelper({
+    const { result, log, argumentLog, stdinLog } = await runHelper({
       runtimes: [runtime],
       override: runtime,
       body:
@@ -317,6 +393,31 @@ for (const { runtime, build, login, push } of commandMappings) {
 
     assert.equal(result.status, 0, result.stderr);
     assert.equal(log, `${build}\n${login}\n${push}\n`);
+    assert.equal(argumentLog, formatArgumentLog(runtime, arguments_));
+    assert.equal(stdinLog, "secret");
+  });
+}
+
+for (const { runtime } of commandMappings) {
+  test(`${runtime} build preserves spaced and empty argument boundaries`, async () => {
+    const { result, argumentLog } = await runHelper({
+      runtimes: [runtime],
+      override: runtime,
+      body:
+        "select_container_cli && " +
+        'container_cli_build --progress plain --label "name=two words" "" .',
+    });
+    const expectedArguments = [
+      "build",
+      ...(runtime === "podman" ? [] : ["--progress", "plain"]),
+      "--label",
+      "name=two words",
+      "",
+      ".",
+    ];
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(argumentLog, formatArgumentLog(runtime, [expectedArguments]));
   });
 }
 
@@ -339,6 +440,63 @@ test("Podman build removes only the exact progress pair and preserves other argu
     "podman\n<build>\n<--label>\n<name=two words>\n<--progress=plain>\n<--progress>\n<fancy>\n<.>\n--\n"
   );
 });
+
+test("Apple container start returns its exact failure status", async () => {
+  const { result, log } = await runHelper({
+    runtimes: ["container"],
+    override: "container",
+    containerStatus: 1,
+    containerStartStatus: 37,
+    body: "select_container_cli && ensure_container_cli_ready && printf unexpected",
+  });
+
+  assert.equal(result.status, 37, result.stderr);
+  assert.equal(
+    result.stdout,
+    "Container system is not running. Starting it...\n"
+  );
+  assert.equal(
+    log,
+    "container system status\ncontainer system start --disable-kernel-install\n"
+  );
+});
+
+const failingAdapterCalls = [
+  {
+    name: "build",
+    statusOption: "buildStatus",
+    status: 41,
+    call: "container_cli_build .",
+  },
+  {
+    name: "login",
+    statusOption: "loginStatus",
+    status: 42,
+    call: "printf secret | container_cli_login registry.example",
+  },
+  {
+    name: "push",
+    statusOption: "pushStatus",
+    status: 43,
+    call: "container_cli_push registry.example/app:latest",
+  },
+];
+
+for (const { runtime } of commandMappings) {
+  for (const { name, statusOption, status, call } of failingAdapterCalls) {
+    test(`${runtime} ${name} returns its exact failure status`, async () => {
+      const { result } = await runHelper({
+        runtimes: [runtime],
+        override: runtime,
+        [statusOption]: status,
+        body: `select_container_cli && ${call} && printf unexpected`,
+      });
+
+      assert.equal(result.status, status, result.stderr);
+      assert.equal(result.stdout, "");
+    });
+  }
+}
 
 for (const helper of [
   "container_cli_build",

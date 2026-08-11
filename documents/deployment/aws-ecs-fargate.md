@@ -16,8 +16,9 @@ cost management, rollback, and cleanup.
 ## Architecture
 
 ```text
-Apple silicon Mac
-  └─ build-aws.sh ──> Amazon ECR :latest
+generic local build host
+  └─ build-aws.sh
+       └─ runtime priority: Apple container → Podman → Docker ──> Amazon ECR :latest
 
 operator
   └─ deploy-aws.sh
@@ -39,9 +40,13 @@ HTTP. ECS task receives a public IP. Service runs one task and has no persistent
 
 - AWS CLI authenticated to intended account and region.
 - Bash, Node.js, `curl`, `grep`, `sed`, and standard Unix tools.
-- For image build: Apple silicon Mac, supported macOS, and Apple's
-  [`container`](https://github.com/apple/container) CLI. Repository build script does
-  not use Docker CLI.
+- One supported image-build CLI: Apple [`container`](https://github.com/apple/container),
+  [Podman](https://docs.podman.io/en/latest/markdown/podman.1.html), or Docker. Automatic
+  selection priority is exactly Apple `container` → Podman → Docker. Set
+  `CONTAINER_CLI=container|podman|docker` to force a deterministic choice.
+- Selected runtime and host must support building a `linux/amd64` image. Apple
+  `container` requires its supported macOS and hardware; Podman or Docker hosts do not
+  require Apple silicon.
 - Repository-local ignored `.env.docker`, typically copied from
   [`.env.docker.example`](../../.env.docker.example).
 - Sibling backend repository with readable `../deep-research/env-aws.sh` exporting
@@ -50,6 +55,16 @@ HTTP. ECS task receives a public IP. Service runs one task and has no persistent
 Apple documents current platform support and CLI behavior in
 [`container` project](https://github.com/apple/container) and
 [command reference](https://github.com/apple/container/blob/main/docs/command-reference.md).
+Podman documents its CLI in the [Podman manual](https://docs.podman.io/en/latest/markdown/podman.1.html)
+and build behavior in [`podman build`](https://docs.podman.io/en/stable/markdown/podman-build.1.html).
+
+Runtime readiness differs by selection:
+
+- Apple path starts its container system when needed.
+- Podman path checks `podman info`. Script never starts or manages a daemon, service,
+  or Podman machine. On platforms that require a Podman machine, operator must start it.
+- Docker path checks `docker info`. Docker daemon must already be running; script does
+  not start it.
 
 ### Existing AWS capabilities
 
@@ -121,16 +136,21 @@ are not refreshed until new task starts. See
 
 ```bash
 ./build-aws.sh
+CONTAINER_CLI=podman ./build-aws.sh
+CONTAINER_CLI=docker ./build-aws.sh
 ```
 
 Build script:
 
-1. authenticates with AWS;
-2. creates ECR repository when absent;
-3. starts Apple `container` service when needed;
+1. selects and checks runtime readiness;
+2. authenticates with AWS;
+3. creates ECR repository when absent;
 4. builds `Dockerfile-aws` for `linux/amd64`;
-5. authenticates `container` to ECR;
+5. logs selected runtime in to ECR with password over standard input;
 6. pushes mutable `latest` tag.
+
+Adapter retains `--progress plain` for Apple `container` and Docker builds and omits it
+for Podman.
 
 Deployment fails when ECR `latest` is missing. For production, change automation to
 publish immutable version tag or digest in addition to convenience tag. AWS ECR image
@@ -228,16 +248,18 @@ rollback options in [ECS rolling deployments](https://docs.aws.amazon.com/Amazon
 
 ## Troubleshooting
 
-| Symptom                     | Check                                                                                                    |
-| --------------------------- | -------------------------------------------------------------------------------------------------------- |
-| AWS authentication fails    | Active profile, account, region, and STS permissions.                                                    |
-| `latest` missing            | Run reviewed `build-aws.sh`; verify ECR repository/region and Apple `container`.                         |
-| Secret missing              | `SECRETS_MANAGER_NAME`, optional copied helper, region, and IAM permissions.                             |
-| Default VPC/subnets missing | Region default VPC and at least two AZ subnets; script cannot use arbitrary VPC without changes.         |
-| ALB target unhealthy        | Target security group, target type `ip`, port 3000, task logs, and `/` response.                         |
-| CloudFront returns 403      | Distribution state, origin reachability, policies, app auth, and current false-positive health behavior. |
-| Task cannot read secret     | Execution-role policy, secret ARN/JSON keys, and Fargate platform support.                               |
-| New task loses files        | No persistent volume is configured; restore from backup or external store.                               |
+| Symptom                      | Check                                                                                                                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AWS authentication fails     | Active profile, account, region, and STS permissions.                                                                                                                                          |
+| Selected runtime unavailable | Runtime is on `PATH`, supports `linux/amd64`, and passes readiness check. Start Apple container system, Docker daemon, or required Podman machine; script manages only Apple container system. |
+| `latest` missing             | Reviewed `build-aws.sh` completed with selected runtime; verify runtime readiness, ECR login/auth store, repository, tag, and AWS region.                                                      |
+| Podman readiness fails       | Run `podman info`. On platforms requiring a Podman machine, operator must start it; script never manages Podman daemon, service, or machine.                                                   |
+| Secret missing               | `SECRETS_MANAGER_NAME`, optional copied helper, region, and IAM permissions.                                                                                                                   |
+| Default VPC/subnets missing  | Region default VPC and at least two AZ subnets; script cannot use arbitrary VPC without changes.                                                                                               |
+| ALB target unhealthy         | Target security group, target type `ip`, port 3000, task logs, and `/` response.                                                                                                               |
+| CloudFront returns 403       | Distribution state, origin reachability, policies, app auth, and current false-positive health behavior.                                                                                       |
+| Task cannot read secret      | Execution-role policy, secret ARN/JSON keys, and Fargate platform support.                                                                                                                     |
+| New task loses files         | No persistent volume is configured; restore from backup or external store.                                                                                                                     |
 
 ## Cost and cleanup
 

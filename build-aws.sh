@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+set -o pipefail
 
 # Timer tracking
 TOTAL_START_TIME=$(date +%s)

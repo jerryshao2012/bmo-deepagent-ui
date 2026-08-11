@@ -572,3 +572,81 @@ test("AWS build sends its progress option through tested runtime adapter", async
     "runtime selection must happen before ECR repository creation"
   );
 });
+
+test("AWS build propagates ECR password failures before push", async () => {
+  const tempRoot = await mkdtemp(path.join(tmpdir(), "aws-build-test-"));
+
+  try {
+    const scriptsDir = path.join(tempRoot, "scripts");
+    const binDir = path.join(tempRoot, "bin");
+    const dockerLogPath = path.join(tempRoot, "docker.log");
+    await mkdir(scriptsDir);
+    await mkdir(binDir);
+
+    const [buildScript, runtimeHelper] = await Promise.all([
+      readFile(path.join(repoRoot, "build-aws.sh"), "utf8"),
+      readFile(helperPath, "utf8"),
+    ]);
+    await writeFile(path.join(tempRoot, "build-aws.sh"), buildScript);
+    await writeFile(
+      path.join(scriptsDir, "container-runtime.sh"),
+      runtimeHelper
+    );
+    await writeFile(
+      path.join(tempRoot, "env-aws.sh"),
+      'export AWS_REGION="ca-central-1"\nexport ECR_REPO_NAME="test-repo"\n'
+    );
+
+    const executables = {
+      aws: `#!/bin/sh
+case "$1:$2" in
+  "sts:get-caller-identity") printf '%s\\n' '123456789012'; exit 0 ;;
+  "ecr:describe-repositories") exit 0 ;;
+  "ecr:get-login-password") exit 47 ;;
+esac
+exit 99
+`,
+      docker: `#!/bin/sh
+printf '%s\\n' "$*" >> "$DOCKER_LOG"
+if [ "$1" = "login" ]; then
+  IFS= read -r login_stdin || :
+fi
+exit 0
+`,
+      date: `#!/bin/sh
+exec /bin/date "$@"
+`,
+      dirname: `#!/bin/sh
+exec /usr/bin/dirname "$@"
+`,
+    };
+
+    for (const [name, contents] of Object.entries(executables)) {
+      const executablePath = path.join(binDir, name);
+      await writeFile(executablePath, contents);
+      await chmod(executablePath, 0o755);
+    }
+
+    const result = spawnSync("/bin/bash", ["./build-aws.sh"], {
+      cwd: tempRoot,
+      encoding: "utf8",
+      env: {
+        PATH: binDir,
+        CONTAINER_CLI: "docker",
+        DOCKER_LOG: dockerLogPath,
+      },
+    });
+    const dockerLog = await readFile(dockerLogPath, "utf8");
+
+    assert.deepEqual(
+      {
+        status: result.status,
+        pushReached: /^push /m.test(dockerLog),
+      },
+      { status: 47, pushReached: false },
+      result.stderr
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});

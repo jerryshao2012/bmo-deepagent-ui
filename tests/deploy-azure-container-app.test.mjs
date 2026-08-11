@@ -188,8 +188,8 @@ case "$command" in
     ;;
   containerapp:revision)
     [ "$#" -eq 13 ] && [ "$3" = "show" ] &&
-      [ "$4" = "--name" ] && [ "$5" = "ui--new" ] &&
-      [ "$6" = "--app" ] && [ "$7" = "bmo-deepagent-ui-testseed" ] &&
+      [ "$4" = "--name" ] && [ "$5" = "bmo-deepagent-ui-testseed" ] &&
+      [ "$6" = "--revision" ] && [ "$7" = "ui--new" ] &&
       [ "$8" = "--resource-group" ] && [ "$9" = "test-resource-group" ] &&
       [ "\${10}" = "--query" ] &&
       [ "\${11}" = "join('|', [properties.provisioningState, properties.runningState])" ] &&
@@ -207,10 +207,10 @@ case "$command" in
         if [ "$revision_call_count" -eq 1 ]; then
           printf '%s\\n' "Provisioning|Processing"
         else
-          printf '%s\\n' "Succeeded|Running"
+          printf '%s\\n' "Provisioned|Running"
         fi
         ;;
-      *) printf '%s\\n' "Succeeded|Running" ;;
+      *) printf '%s\\n' "Provisioned|Running" ;;
     esac
     ;;
   keyvault:show)
@@ -300,38 +300,46 @@ set -u
   done
   printf '\\n'
 } >> "$COMMAND_LOG"
-[ "$#" -eq 7 ] &&
+[ "$#" -eq 11 ] &&
   [ "$1" = "--silent" ] && [ "$2" = "--show-error" ] &&
-  [ "$3" = "--output" ] && [ "$5" = "--write-out" ] &&
-  [ "$6" = "%{http_code}" ] &&
-  [ "$7" = "https://ui.example.test/deployment-version.txt" ] || exit 86
-[ "$HTTP_SCENARIO" = "curl-failure" ] && exit 47
+  [ "$3" = "--connect-timeout" ] && [ "$4" = "10" ] &&
+  [ "$5" = "--max-time" ] && [ "$6" = "30" ] &&
+  [ "$7" = "--output" ] && [ "$9" = "--write-out" ] &&
+  [ "\${10}" = "%{http_code}" ] &&
+  [ "\${11}" = "https://ui.example.test/deployment-version.txt" ] || exit 86
 curl_count=0
 if [ -f "$CURL_CALL_COUNT" ]; then
   IFS= read -r curl_count < "$CURL_CALL_COUNT"
 fi
 curl_count=$((curl_count + 1))
 printf '%s\\n' "$curl_count" > "$CURL_CALL_COUNT"
+[ "$HTTP_SCENARIO" = "curl-failure" ] && exit 47
+[ "$HTTP_SCENARIO" = "curl-transient-then-success" ] &&
+  [ "$curl_count" -eq 1 ] && exit 47
 IFS= read -r expected_marker < "$MARKER_CAPTURE"
 case "$HTTP_SCENARIO" in
   stale-then-success)
     if [ "$curl_count" -eq 1 ]; then
-      printf '%s\\n' stale-marker > "$4"
+      printf '%s\\n' stale-marker > "$8"
     else
-      printf '%s\\n' "$expected_marker" > "$4"
+      printf '%s\\n' "$expected_marker" > "$8"
     fi
     printf '200'
     ;;
   marker-timeout)
-    printf '%s\\n' stale-marker > "$4"
+    printf '%s\\n' stale-marker > "$8"
+    printf '200'
+    ;;
+  marker-plus-extra)
+    printf '%s\\n%s\\n' "$expected_marker" extra-content > "$8"
     printf '200'
     ;;
   http-error)
-    printf '%s\\n' unavailable > "$4"
+    printf '%s\\n' unavailable > "$8"
     printf '503'
     ;;
   *)
-    printf '%s\\n' "$expected_marker" > "$4"
+    printf '%s\\n' "$expected_marker" > "$8"
     printf '200'
     ;;
 esac
@@ -370,6 +378,9 @@ const runDeployment = async ({
   loginStatus = 0,
   pushStatus = 0,
   httpScenario = "success",
+  revisionPollAttempts = "2",
+  httpPollAttempts = "2",
+  pollIntervalSeconds = "5",
 } = {}) => {
   const tempRoot = await mkdtemp(
     path.join(tmpdir(), "container-app-preflight-test-")
@@ -541,9 +552,9 @@ printf '%s\\n' "$created_context"
       LOGIN_STATUS: String(loginStatus),
       PUSH_STATUS: String(pushStatus),
       HTTP_SCENARIO: httpScenario,
-      CONTAINER_APP_REVISION_POLL_ATTEMPTS: "2",
-      CONTAINER_APP_HTTP_POLL_ATTEMPTS: "2",
-      CONTAINER_APP_POLL_INTERVAL_SECONDS: "5",
+      CONTAINER_APP_REVISION_POLL_ATTEMPTS: revisionPollAttempts,
+      CONTAINER_APP_HTTP_POLL_ATTEMPTS: httpPollAttempts,
+      CONTAINER_APP_POLL_INTERVAL_SECONDS: pollIntervalSeconds,
     };
     if (containerCli !== runtimeOverrideUnset) {
       environment.CONTAINER_CLI = containerCli;
@@ -644,6 +655,7 @@ test("preflight succeeds from an unrelated working directory without touching it
 
 const invalidDockerEnvCases = [
   ["protected override", "RESOURCE_GROUP=attacker\n", /protected/i],
+  ["poll override", "CONTAINER_APP_HTTP_POLL_ATTEMPTS=1\n", /protected/i],
   [
     "export syntax",
     "export NEXT_PUBLIC_ASSISTANT_ID=attacker\n",
@@ -904,6 +916,44 @@ test("deployment waits through provisioning and a stale marker", async () => {
   assert.match(log, /^sleep <5>$/m);
 });
 
+test("deployment retries a transient curl failure", async () => {
+  const { result, log } = await runDeployment({
+    httpScenario: "curl-transient-then-success",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal((log.match(/^curl\b/gm) ?? []).length, 2);
+  assert.match(log, /^sleep <5>$/m);
+});
+
+test("deployment rejects marker followed by extra response content", async () => {
+  const { result, log } = await runDeployment({
+    httpScenario: "marker-plus-extra",
+  });
+
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /marker.*timed out/i);
+  assert.equal((log.match(/^curl\b/gm) ?? []).length, 2);
+});
+
+for (const [name, options] of [
+  ["revision attempts", { revisionPollAttempts: "0" }],
+  ["HTTP attempts", { httpPollAttempts: "invalid" }],
+  ["poll interval", { pollIntervalSeconds: "-1" }],
+]) {
+  test(`deployment rejects invalid ${name} before build or mutation`, async () => {
+    const { result, log } = await runDeployment(options);
+
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, /poll|attempt|interval/i);
+    assert.doesNotMatch(log, /^docker <info>|^docker <build>/m);
+    assert.doesNotMatch(
+      log,
+      /az <acr> <login>|az <containerapp> <secret> <set>|az <containerapp> <update>/
+    );
+  });
+}
+
 for (const [name, httpScenario, expectedStatus, expectedError] of [
   ["marker timeout", "marker-timeout", 1, /marker.*timed out/i],
   ["curl failure", "curl-failure", 47, /HTTP verification/i],
@@ -913,6 +963,9 @@ for (const [name, httpScenario, expectedStatus, expectedError] of [
 
     assert.equal(result.status, expectedStatus, result.stderr);
     assert.match(result.stderr, expectedError);
+    if (httpScenario === "curl-failure") {
+      assert.equal((log.match(/^curl\b/gm) ?? []).length, 2);
+    }
     assert.doesNotMatch(log, /<--traffic>|<--revision-mode>/);
   });
 }

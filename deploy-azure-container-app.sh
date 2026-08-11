@@ -256,6 +256,18 @@ echo "Assistant ID: $ASSISTANT_ID"
 echo "Key Vault: $VAULT_URI"
 echo "Azure Container Apps preflight complete."
 
+REVISION_POLL_ATTEMPTS="${CONTAINER_APP_REVISION_POLL_ATTEMPTS:-60}"
+HTTP_POLL_ATTEMPTS="${CONTAINER_APP_HTTP_POLL_ATTEMPTS:-36}"
+POLL_INTERVAL_SECONDS="${CONTAINER_APP_POLL_INTERVAL_SECONDS:-5}"
+for poll_value in REVISION_POLL_ATTEMPTS HTTP_POLL_ATTEMPTS POLL_INTERVAL_SECONDS; do
+  case "${!poll_value}" in
+    ""|*[!0-9]*) fail "$poll_value must be a positive integer." ;;
+  esac
+done
+[ "$REVISION_POLL_ATTEMPTS" -gt 0 ] || fail "REVISION_POLL_ATTEMPTS must be greater than zero."
+[ "$HTTP_POLL_ATTEMPTS" -gt 0 ] || fail "HTTP_POLL_ATTEMPTS must be greater than zero."
+[ "$POLL_INTERVAL_SECONDS" -gt 0 ] || fail "POLL_INTERVAL_SECONDS must be greater than zero."
+
 ensure_container_cli_build_ready
 
 IMAGE_NAME="$ACR_LOGIN_SERVER/deepagent-ui:latest"
@@ -386,25 +398,14 @@ fi
 [ "$NEW_REVISION" != "$PREVIOUS_REVISION" ] || \
   fail "new revision must be different from previous ready revision '$PREVIOUS_REVISION'."
 
-REVISION_POLL_ATTEMPTS="${CONTAINER_APP_REVISION_POLL_ATTEMPTS:-60}"
-HTTP_POLL_ATTEMPTS="${CONTAINER_APP_HTTP_POLL_ATTEMPTS:-36}"
-POLL_INTERVAL_SECONDS="${CONTAINER_APP_POLL_INTERVAL_SECONDS:-5}"
-for poll_value in REVISION_POLL_ATTEMPTS HTTP_POLL_ATTEMPTS POLL_INTERVAL_SECONDS; do
-  case "${!poll_value}" in
-    ""|*[!0-9]*) fail "$poll_value must be a nonnegative integer." ;;
-  esac
-done
-[ "$REVISION_POLL_ATTEMPTS" -gt 0 ] || fail "REVISION_POLL_ATTEMPTS must be greater than zero."
-[ "$HTTP_POLL_ATTEMPTS" -gt 0 ] || fail "HTTP_POLL_ATTEMPTS must be greater than zero."
-
 LAST_PROVISIONING_STATE=""
 LAST_RUNNING_STATE=""
 revision_ready=false
 attempt=1
 while [ "$attempt" -le "$REVISION_POLL_ATTEMPTS" ]; do
   if REVISION_STATUS=$(az containerapp revision show \
-    --name "$NEW_REVISION" \
-    --app "$CONTAINER_APP_NAME" \
+    --name "$CONTAINER_APP_NAME" \
+    --revision "$NEW_REVISION" \
     --resource-group "$RESOURCE_GROUP" \
     --query "join('|', [properties.provisioningState, properties.runningState])" \
     -o tsv); then
@@ -422,7 +423,7 @@ while [ "$attempt" -le "$REVISION_POLL_ATTEMPTS" ]; do
       ;;
   esac
   case "$LAST_PROVISIONING_STATE|$LAST_RUNNING_STATE" in
-    [Ss][Uu][Cc][Cc][Ee][Ee][Dd][Ee][Dd]'|'[Rr][Uu][Nn][Nn][Ii][Nn][Gg])
+    [Pp][Rr][Oo][Vv][Ii][Ss][Ii][Oo][Nn][Ee][Dd]'|'[Rr][Uu][Nn][Nn][Ii][Nn][Gg])
       revision_ready=true
       break
       ;;
@@ -440,26 +441,40 @@ fi
 
 HEALTH_RESPONSE_PATH="$BUILD_CONTEXT_DIR/deployment-version-response.txt"
 HTTP_STATUS=""
-DEPLOYED_MARKER=""
+HTTP_RESPONSE_BODY=""
+EXPECTED_HTTP_BODY="${DEPLOYMENT_MARKER}"$'\n'
+LAST_CURL_STATUS=0
 attempt=1
 while [ "$attempt" -le "$HTTP_POLL_ATTEMPTS" ]; do
+  : > "$HEALTH_RESPONSE_PATH"
   if HTTP_STATUS=$(curl \
     --silent \
     --show-error \
+    --connect-timeout 10 \
+    --max-time 30 \
     --output "$HEALTH_RESPONSE_PATH" \
     --write-out "%{http_code}" \
     "$UI_URL/deployment-version.txt"); then
-    :
+    LAST_CURL_STATUS=0
   else
-    status=$?
-    echo "Error: HTTP verification failed for '$UI_URL/deployment-version.txt' (previous=$PREVIOUS_REVISION new=$NEW_REVISION provisioning=$LAST_PROVISIONING_STATE running=$LAST_RUNNING_STATE)." >&2
-    exit "$status"
+    LAST_CURL_STATUS=$?
+    HTTP_STATUS=""
   fi
-  DEPLOYED_MARKER=""
-  if [ -f "$HEALTH_RESPONSE_PATH" ]; then
-    IFS= read -r DEPLOYED_MARKER < "$HEALTH_RESPONSE_PATH" || :
-  fi
-  if [ "$HTTP_STATUS" = "200" ] && [ "$DEPLOYED_MARKER" = "$DEPLOYMENT_MARKER" ]; then
+
+  HTTP_RESPONSE_BODY=""
+  while true; do
+    response_line=""
+    if IFS= read -r response_line; then
+      HTTP_RESPONSE_BODY="${HTTP_RESPONSE_BODY}${response_line}"$'\n'
+    else
+      [ -z "$response_line" ] || HTTP_RESPONSE_BODY="${HTTP_RESPONSE_BODY}${response_line}"
+      break
+    fi
+  done < "$HEALTH_RESPONSE_PATH"
+
+  if [ "$LAST_CURL_STATUS" -eq 0 ] && \
+    [ "$HTTP_STATUS" = "200" ] && \
+    [ "$HTTP_RESPONSE_BODY" = "$EXPECTED_HTTP_BODY" ]; then
     echo "Azure Container Apps deployment complete: $UI_URL"
     exit 0
   fi
@@ -468,6 +483,11 @@ while [ "$attempt" -le "$HTTP_POLL_ATTEMPTS" ]; do
   fi
   attempt=$((attempt + 1))
 done
+
+if [ "$LAST_CURL_STATUS" -ne 0 ]; then
+  echo "Error: HTTP verification failed after $HTTP_POLL_ATTEMPTS attempts for '$UI_URL/deployment-version.txt' (curl=$LAST_CURL_STATUS previous=$PREVIOUS_REVISION new=$NEW_REVISION provisioning=$LAST_PROVISIONING_STATE running=$LAST_RUNNING_STATE)." >&2
+  exit "$LAST_CURL_STATUS"
+fi
 
 echo "Error: deployment marker verification timed out for '$UI_URL' (previous=$PREVIOUS_REVISION new=$NEW_REVISION provisioning=$LAST_PROVISIONING_STATE running=$LAST_RUNNING_STATE http=$HTTP_STATUS)." >&2
 exit 1

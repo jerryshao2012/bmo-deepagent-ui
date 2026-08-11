@@ -19,6 +19,7 @@ const overrideUnset = Symbol("override-unset");
 
 const runHelper = async ({
   runtimes,
+  nonExecutableRuntimes = [],
   override = overrideUnset,
   body = "",
   containerStatus = 0,
@@ -38,6 +39,7 @@ const runHelper = async ({
     const logPath = path.join(tempRoot, "runtime.log");
     const argumentLogPath = path.join(tempRoot, "runtime-arguments.log");
     const stdinLogPath = path.join(tempRoot, "runtime-stdin.log");
+    const nonExecutableRuntimeSet = new Set(nonExecutableRuntimes);
     await mkdir(binDir);
 
     for (const runtime of runtimes) {
@@ -68,7 +70,10 @@ esac
 exit 0
 `
       );
-      await chmod(runtimePath, 0o755);
+      await chmod(
+        runtimePath,
+        nonExecutableRuntimeSet.has(runtime) ? 0o644 : 0o755
+      );
     }
 
     const env = {
@@ -197,6 +202,29 @@ test("automatic selection ignores shell functions", async () => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "podman");
+});
+
+test("automatic selection skips non-executable runtimes", async () => {
+  const { result } = await runHelper({
+    runtimes: ["container", "podman"],
+    nonExecutableRuntimes: ["container"],
+    body: 'select_container_cli && printf "%s" "$CONTAINER_CLI"',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "podman");
+});
+
+test("explicit non-executable runtime override fails clearly", async () => {
+  const { result } = await runHelper({
+    runtimes: ["container"],
+    nonExecutableRuntimes: ["container"],
+    override: "container",
+    body: "select_container_cli",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /container.*(?:executable|PATH)/i);
 });
 
 test("sourcing helper has no observable side effects", async () => {

@@ -1,7 +1,9 @@
 #!/bin/bash
 
 _container_cli_on_path() {
-  type -P -- "$1" >/dev/null 2>&1
+  local resolved_path
+  resolved_path="$(type -P -- "$1" 2>/dev/null)" || return 1
+  [ -f "$resolved_path" ] && [ -x "$resolved_path" ]
 }
 
 select_container_cli() {

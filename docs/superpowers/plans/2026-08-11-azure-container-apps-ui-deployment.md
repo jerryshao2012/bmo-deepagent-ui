@@ -20,6 +20,9 @@
 - Maintain Bash 3.2 compatibility: no associative arrays, `mapfile`, `${var,,}`, or
   Bash 4-only features.
 - Never print ACR access tokens, Key Vault values, `.env` contents, or credentials.
+- Private `secrets.sh` is ignored and untracked. Never inspect, copy, stage, or
+  force-add it; update tracked `secrets.sh.example` and let operators regenerate their
+  own local copy.
 - Do not create Azure resources or change identity, RBAC, ingress, scaling, revision
   mode, traffic, networking, or volumes.
 
@@ -32,8 +35,8 @@
 - Modify `build.sh`: select Azure subscription before resource-group access and call
   shared container build-readiness policy.
 - Modify `deploy.sh`: select Azure subscription before App Service/backend access.
-- Modify `secrets.sh`: select Azure subscription before Key Vault mutation.
-- Modify `secrets.sh.example`: keep template behavior aligned with `secrets.sh`.
+- Do not inspect or modify private `secrets.sh`; it is ignored and untracked. Modify
+  tracked `secrets.sh.example`, and have operators regenerate their local copy.
 - Modify `scripts/container-runtime.sh`: own Apple builder capacity policy used by
   local Azure image builds.
 - Create `deploy-azure-container-app.sh`: existing-resource preflight, image build,
@@ -57,7 +60,6 @@
 - Modify: `env.sh`
 - Modify: `build.sh`
 - Modify: `deploy.sh`
-- Modify: `secrets.sh`
 - Modify: `secrets.sh.example`
 
 - [ ] **Step 1: Write helper RED tests**
@@ -187,7 +189,6 @@ order:
 const scriptContracts = [
   ["build.sh", "az group show"],
   ["deploy.sh", "az webapp show"],
-  ["secrets.sh", "az keyvault secret set"],
   ["secrets.sh.example", "az keyvault secret set"],
 ];
 
@@ -230,8 +231,8 @@ Add only this setting to `env.sh` after `ENV_NAME`:
 export CONTAINER_APP_NAME="${CONTAINER_APP_NAME:-bmo-deepagent-ui-$SEED}"
 ```
 
-In `build.sh`, `deploy.sh`, `secrets.sh`, and `secrets.sh.example`, source the helper
-after `env.sh`, verify `az` exists where the script does not already do so, and call:
+In `build.sh`, `deploy.sh`, and tracked `secrets.sh.example`, source the helper after
+`env.sh`, verify `az` exists where the script does not already do so, and call:
 
 ```bash
 select_azure_subscription
@@ -246,7 +247,7 @@ subscription UUIDs to any script.
 Run:
 
 ```bash
-bash -n scripts/azure-subscription.sh build.sh deploy.sh secrets.sh secrets.sh.example
+bash -n scripts/azure-subscription.sh build.sh deploy.sh secrets.sh.example
 node --test tests/azure-subscription.test.mjs
 git diff --check
 ```
@@ -257,7 +258,7 @@ new overridable app name appear in the intended diff.
 Commit:
 
 ```bash
-git add scripts/azure-subscription.sh tests/azure-subscription.test.mjs env.sh build.sh deploy.sh secrets.sh secrets.sh.example
+git add scripts/azure-subscription.sh tests/azure-subscription.test.mjs env.sh build.sh deploy.sh secrets.sh.example
 git commit -m "feat: select configured Azure subscription"
 ```
 
@@ -867,7 +868,7 @@ access.
 ```bash
 yarn prettier --write README.md documents/README.md documents/deployment/azure-app-service.md documents/deployment/azure-container-apps.md tests/azure-subscription.test.mjs tests/container-runtime.test.mjs tests/deploy-azure-container-app.test.mjs tests/deployment-security.test.mjs
 yarn prettier --check README.md documents/README.md documents/deployment/azure-app-service.md documents/deployment/azure-container-apps.md tests/azure-subscription.test.mjs tests/container-runtime.test.mjs tests/deploy-azure-container-app.test.mjs tests/deployment-security.test.mjs
-bash -n scripts/azure-subscription.sh scripts/container-runtime.sh build.sh deploy.sh deploy-azure-container-app.sh secrets.sh secrets.sh.example
+bash -n scripts/azure-subscription.sh scripts/container-runtime.sh build.sh deploy.sh deploy-azure-container-app.sh secrets.sh.example
 node --test tests/azure-subscription.test.mjs
 node --test tests/container-runtime.test.mjs
 node --test tests/deploy-azure-container-app.test.mjs

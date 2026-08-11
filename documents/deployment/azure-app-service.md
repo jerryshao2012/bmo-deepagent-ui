@@ -3,6 +3,11 @@
 Deploy UI as prebuilt standalone Next.js ZIP to existing Linux Azure App Service by
 running [`deploy.sh`](../../deploy.sh).
 
+This is App Service workflow. To build, push, and update an existing Azure Container
+App instead, use [`deploy-azure-container-app.sh`](../../deploy-azure-container-app.sh)
+and [Azure Container Apps guide](azure-container-apps.md). Neither workflow provisions
+Azure infrastructure.
+
 > This guide documents repository automation, not complete production hardening.
 > Operator owns Azure resource provisioning, access control, backups, availability,
 > cost management, rollback, and cleanup.
@@ -76,6 +81,7 @@ Register missing provider only with subscription-owner approval.
 Use ignored `.env` to override placeholders without committing account-specific names:
 
 ```env
+AZURE_SUBSCRIPTION_ID="your-subscription-id"
 SEED="your-suffix"
 RESOURCE_GROUP="your-resource-group"
 KV_NAME="your-key-vault"
@@ -112,6 +118,10 @@ chmod 700 secrets.sh
 ./secrets.sh
 ```
 
+Private `secrets.sh` remains ignored and untracked; never inspect, copy, or force-add an
+operator's local copy. Update tracked `secrets.sh.example` and regenerate private copy
+when template behavior changes.
+
 Current UI deployment references only `UPLOAD-API-KEY`. Other template values may be
 used by related authentication/backend workflows; confirm ownership before rotation.
 
@@ -147,16 +157,17 @@ Do not continue if any command points to unexpected subscription or resource.
 
 Script:
 
-1. validates App Service state and stops on `QuotaExceeded`/`Exceeded`;
-2. discovers backend Container App ingress hostname;
-3. verifies current CLI identity can see Key Vault secret;
-4. configures Node.js 22, `node server.cjs`, HTTPS-only, HTTP/2, TLS 1.2 minimum,
+1. selects and verifies `AZURE_SUBSCRIPTION_ID` before Azure resource access;
+2. validates App Service state and stops on `QuotaExceeded`/`Exceeded`;
+3. discovers backend Container App ingress hostname;
+4. verifies current CLI identity can see Key Vault secret;
+5. configures Node.js 22, `node server.cjs`, HTTPS-only, HTTP/2, TLS 1.2 minimum,
    WebSockets, and disabled FTPS;
-5. applies backend, Auth.js, storage, and Key Vault-reference app settings;
-6. removes local `node_modules`, runs immutable install and production build;
-7. creates standalone ZIP without environment files;
-8. runs `az webapp deploy --clean --restart`;
-9. polls deployment marker for exact newly built version.
+6. applies backend, Auth.js, storage, and Key Vault-reference app settings;
+7. removes local `node_modules`, runs immutable install and production build;
+8. creates standalone ZIP without environment files;
+9. runs `az webapp deploy --clean --restart`;
+10. polls deployment marker for exact newly built version.
 
 On rerun, unchanged runtime/app settings are skipped to avoid unnecessary restart. App
 package is still rebuilt and deployed with clean replacement. Azure ZIP deployment

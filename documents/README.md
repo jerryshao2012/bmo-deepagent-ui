@@ -33,6 +33,9 @@ section when reviewing earlier design decisions or implementation context.
 
 ### Deployment
 
+- [Azure Container Apps deployment](deployment/azure-container-apps.md) - local image
+  build, ACR push, existing Container App update, exact marker verification, and
+  manual rollback.
 - [Azure App Service deployment](deployment/azure-app-service.md) - standalone ZIP
   deployment, Key Vault integration, health verification, and manual rollback.
 - [AWS ECS Fargate deployment](deployment/aws-ecs-fargate.md) - ECR build, ECS/ALB/
@@ -41,6 +44,13 @@ section when reviewing earlier design decisions or implementation context.
   existing AMD64 image to a provisioned VM.
 - [Vercel deployment](deployment/vercel.md) - Git import, environment configuration,
   deployment, and backend redirect updates.
+
+Quick commands for existing Azure targets:
+
+```bash
+./deploy-azure-container-app.sh # Azure Container Apps
+./deploy.sh                     # Azure App Service
+```
 
 ## History
 

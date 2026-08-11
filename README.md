@@ -183,6 +183,7 @@ Select a supported file to open its viewer:
 
 ## Deployment
 
+- [`deploy-azure-container-app.sh` - Azure Container Apps](documents/deployment/azure-container-apps.md)
 - [`deploy.sh` - Azure App Service](documents/deployment/azure-app-service.md)
 - [`deploy-aws.sh` - AWS ECS Fargate](documents/deployment/aws-ecs-fargate.md)
 - [`deploy-oracle.sh` - Oracle AMD VM](documents/deployment/oracle-vm.md)
@@ -190,6 +191,13 @@ Select a supported file to open its viewer:
 
 Deployment scripts require provider-specific prerequisites and environment files.
 Inspect each script and its example secret files before running it.
+
+For existing Azure resources, choose one target:
+
+```bash
+./deploy-azure-container-app.sh # Build/push image and update Azure Container App
+./deploy.sh                     # Build/ZIP-deploy to Azure App Service
+```
 
 ## Documentation
 

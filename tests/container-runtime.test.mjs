@@ -398,6 +398,29 @@ test("Apple build readiness replaces an undersized running builder", async () =>
   );
 });
 
+test("Apple build readiness replaces an undersized stopped builder without stopping it", async () => {
+  const { result, log } = await runHelper({
+    runtimes: ["container"],
+    builderJson: JSON.stringify([
+      {
+        configuration: { resources: { memoryInBytes: 2147483648 } },
+        status: { state: "stopped" },
+      },
+    ]),
+    body: "select_container_cli && ensure_container_cli_build_ready",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    log,
+    "container system status\n" +
+      "container builder status --format json\n" +
+      "container builder delete\n" +
+      "container builder start --memory 8G\n"
+  );
+  assert.doesNotMatch(log, /container builder stop/);
+});
+
 test("Apple build readiness leaves a sufficient running builder unchanged", async () => {
   const { result, log } = await runHelper({
     runtimes: ["container"],

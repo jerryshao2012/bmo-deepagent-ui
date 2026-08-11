@@ -108,7 +108,8 @@ mutating the UI app:
   discovered and passed explicitly to `az containerapp update --container-name`;
 - UI Container App already has pull configuration for the selected ACR login server
   using its system identity;
-- backend Container App `deep-research-agent-$SEED` exists and has ingress;
+- backend Container App `deep-research-agent-$SEED` exists, uses external ingress,
+  and has a public FQDN suitable for browser-facing `NEXT_PUBLIC_LANGGRAPH_URL`;
 - Key Vault exists and contains `UPLOAD-API-KEY`; and
 - current Azure principal can read the resource metadata and secret ID needed by
   preflight.
@@ -252,8 +253,9 @@ Azure or registry operations.
 ### Container Apps deployment
 
 - missing ACR, UI app, backend app, secret, system identity, matching system-identity
-  ACR pull configuration, external ingress, target port 3000, exactly one application
-  container, or single-revision mode fails before build/push;
+  ACR pull configuration, external UI/backend ingress, public UI/backend FQDN, target
+  port 3000, exactly one application container, or single-revision mode fails before
+  build/push;
 - runtime selection preserves Apple Container, Podman, Docker priority and override;
 - clean context excludes local environment and generated files;
 - image is built for `linux/amd64` with exact argument boundaries;

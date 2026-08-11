@@ -167,7 +167,7 @@ test("local container build uses a clean staged context", async () => {
     buildScript,
     /rsync[\s\S]*--exclude-from=["']?\.dockerignore["']?/
   );
-  assert.match(buildScript, /container build[\s\S]*"\$BUILD_CONTEXT_DIR"/);
+  assert.match(buildScript, /container_cli_build[\s\S]*"\$BUILD_CONTEXT_DIR"/);
   assert.match(buildScript, /trap ['"]rm -rf "\$BUILD_CONTEXT_DIR"['"] EXIT/);
   assert.match(dockerignore, /^\.container-build-context\.\*\/$/m);
   assert.match(dockerignore, /^\.mcp\.json$/m);

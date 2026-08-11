@@ -522,3 +522,29 @@ for (const helper of [
     });
   }
 }
+
+test("local build uses shared runtime and gates Apple builder setup", async () => {
+  const buildScript = await readFile(path.join(repoRoot, "build.sh"), "utf8");
+
+  assert.match(buildScript, /source .*scripts\/container-runtime\.sh/);
+  assert.match(buildScript, /select_container_cli/);
+  assert.match(buildScript, /ensure_container_cli_ready/);
+  assert.match(buildScript, /container_cli_build[\s\S]*"\$BUILD_CONTEXT_DIR"/);
+  assert.match(buildScript, /container_cli_push "\$FULL_IMAGE_NAME"/);
+
+  const selectRuntime = buildScript.indexOf("select_container_cli");
+  const resourceGroupMutation = buildScript.indexOf("az group show");
+  assert.ok(
+    selectRuntime >= 0 && selectRuntime < resourceGroupMutation,
+    "runtime selection must happen before Azure resource-group mutation"
+  );
+
+  const guard = buildScript.indexOf(
+    'if [ "$CONTAINER_CLI" = "container" ]; then'
+  );
+  const builderStatus = buildScript.indexOf(
+    "command container builder status --format json"
+  );
+  const guardEnd = buildScript.indexOf("\nfi", guard);
+  assert.ok(guard >= 0 && builderStatus > guard && builderStatus < guardEnd);
+});

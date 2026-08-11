@@ -49,6 +49,9 @@ for required_command in az curl rsync node; do
   fi
 done
 
+select_container_cli
+echo "Container runtime: $CONTAINER_CLI"
+
 select_azure_subscription
 echo "Azure subscription: $AZURE_SUBSCRIPTION_ID"
 

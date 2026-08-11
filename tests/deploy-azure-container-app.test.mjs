@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const scriptPath = path.join(repoRoot, "deploy-azure-container-app.sh");
 const subscriptionId = "subscription-container-app-test";
+const runtimeOverrideUnset = Symbol("runtime-override-unset");
 
 const fakeAz = `#!/bin/bash
 set -u
@@ -133,6 +134,8 @@ exit 0
 const runDeployment = async ({
   scenario = "success",
   dockerEnv = true,
+  runtimes = ["docker"],
+  containerCli = runtimeOverrideUnset,
 } = {}) => {
   const fixtureRoot = await mkdtemp(
     path.join(tmpdir(), "container-app-preflight-test-")
@@ -186,18 +189,40 @@ NEXT_PUBLIC_LANGGRAPH_URL="https://docker-backend.invalid"\r
     const azPath = path.join(binDir, "az");
     await writeFile(azPath, fakeAz);
     await chmod(azPath, 0o755);
-    for (const command of [
-      "curl",
-      "rsync",
-      "node",
-      "docker",
-      "cp",
-      "sleep",
-      "date",
-    ]) {
+    for (const command of ["curl", "rsync", "node", "cp", "sleep", "date"]) {
       const commandPath = path.join(binDir, command);
       await writeFile(commandPath, fakeCommand);
       await chmod(commandPath, 0o755);
+    }
+    for (const runtime of runtimes) {
+      const runtimePath = path.join(binDir, runtime);
+      await writeFile(runtimePath, fakeCommand);
+      await chmod(runtimePath, 0o755);
+    }
+
+    const dirnamePath = path.join(binDir, "dirname");
+    await writeFile(
+      dirnamePath,
+      `#!/bin/bash
+{
+  printf 'dirname'
+  for argument in "$@"; do
+    printf ' <%s>' "$argument"
+  done
+  printf '\\n'
+} >> "$COMMAND_LOG"
+exec /usr/bin/dirname "$@"
+`
+    );
+    await chmod(dirnamePath, 0o755);
+
+    const environment = {
+      PATH: binDir,
+      COMMAND_LOG: commandLog,
+      AZ_SCENARIO: scenario,
+    };
+    if (containerCli !== runtimeOverrideUnset) {
+      environment.CONTAINER_CLI = containerCli;
     }
 
     const result = spawnSync(
@@ -210,11 +235,7 @@ NEXT_PUBLIC_LANGGRAPH_URL="https://docker-backend.invalid"\r
       {
         cwd: repoRoot,
         encoding: "utf8",
-        env: {
-          PATH: `${binDir}:/usr/bin:/bin`,
-          COMMAND_LOG: commandLog,
-          AZ_SCENARIO: scenario,
-        },
+        env: environment,
       }
     );
     const log = await readFile(commandLog, "utf8").catch(() => "");
@@ -238,6 +259,29 @@ const assertNoMutation = (log) => {
 test("Azure Container Apps deployment entry point is executable", async () => {
   await access(scriptPath, constants.X_OK);
 });
+
+test("preflight rejects a missing container runtime before Azure access", async () => {
+  const { result, log } = await runDeployment({ runtimes: [] });
+
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /no supported container runtime/i);
+  assert.doesNotMatch(log, /^az\b/m);
+  assertNoMutation(log);
+});
+
+for (const [name, containerCli, expectedError] of [
+  ["invalid", "nerdctl", /CONTAINER_CLI.*container.*podman.*docker/i],
+  ["missing", "podman", /requested container runtime.*podman.*PATH/i],
+]) {
+  test(`preflight rejects an explicit ${name} runtime before Azure access`, async () => {
+    const { result, log } = await runDeployment({ containerCli });
+
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, expectedError);
+    assert.doesNotMatch(log, /^az\b/m);
+    assertNoMutation(log);
+  });
+}
 
 const preflightFailures = [
   ["resource-group-missing", /resource group/i],
@@ -274,8 +318,10 @@ for (const [scenario, expectedError] of preflightFailures) {
 
 test("preflight selects subscription and discovers canonical endpoints", async () => {
   const { result, log } = await runDeployment();
+  const source = await readFile(scriptPath, "utf8");
 
   assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Container runtime: docker/);
   assert.match(result.stdout, /UI: https:\/\/ui\.example\.test/);
   assert.match(result.stdout, /Backend: https:\/\/backend\.example\.test/);
   assert.match(
@@ -291,5 +337,12 @@ test("preflight selects subscription and discovers canonical endpoints", async (
   );
   const groupQuery = log.indexOf("az <group> <show>");
   assert.ok(selection >= 0 && selection < groupQuery, log);
+  const runtimeSelection = source.indexOf("select_container_cli");
+  const resourceQuery = source.indexOf("az group show");
+  assert.ok(
+    runtimeSelection >= 0 && runtimeSelection < resourceQuery,
+    "runtime selection must precede first Azure resource query"
+  );
+  assert.doesNotMatch(log, /^docker\b/m);
   assertNoMutation(log);
 });

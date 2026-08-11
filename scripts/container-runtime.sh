@@ -98,24 +98,37 @@ try {
 }
 if (!Array.isArray(builders)) process.exit(1);
 const [builder] = builders;
+let output;
 if (builder === undefined) {
-  process.stdout.write("0\tmissing");
-  process.exit(0);
+  output = "0\tmissing";
+} else {
+  const memory = builder?.configuration?.resources?.memoryInBytes;
+  const state = builder?.status?.state;
+  if (
+    !Number.isSafeInteger(memory) ||
+    memory < 0 ||
+    typeof state !== "string" ||
+    state.trim().length === 0 ||
+    /[\u0000-\u001f\u007f]/.test(state)
+  ) {
+    process.exit(1);
+  }
+  output = `${memory}\t${state}`;
 }
-const memory = builder?.configuration?.resources?.memoryInBytes;
-const state = builder?.status?.state;
-if (
-  !Number.isSafeInteger(memory) ||
-  memory < 0 ||
-  typeof state !== "string" ||
-  state.trim().length === 0 ||
-  /[\u0000-\u001f\u007f]/.test(state)
-) {
-  process.exit(1);
-}
-process.stdout.write(`${memory}\t${state}`);
+process.stdout.write(output);
 '); then
+      case "$BUILDER_DETAILS" in
+        *$'\t'*) ;;
+        *)
+          echo "Error: invalid Apple Container builder status; cannot confirm build readiness." >&2
+          return 1
+          ;;
+      esac
       IFS=$'\t' read -r BUILDER_MEMORY_BYTES BUILDER_STATE <<< "$BUILDER_DETAILS"
+      if [ -z "$BUILDER_MEMORY_BYTES" ] || [ -z "$BUILDER_STATE" ]; then
+        echo "Error: invalid Apple Container builder status; cannot confirm build readiness." >&2
+        return 1
+      fi
     else
       local parse_status=$?
       echo "Error: invalid Apple Container builder status; cannot confirm build readiness." >&2

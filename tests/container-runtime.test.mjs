@@ -36,6 +36,7 @@ const runHelper = async ({
   builderStopStatus = 0,
   builderDeleteStatus = 0,
   builderStartStatus = 0,
+  deferNodeStdout = false,
   buildStatus = 0,
   loginStatus = 0,
   pushStatus = 0,
@@ -58,6 +59,17 @@ const runHelper = async ({
       `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} "$@"\n`
     );
     await chmod(nodePath, 0o755);
+
+    const nodePreludePath = path.join(tempRoot, "defer-node-stdout.cjs");
+    await writeFile(
+      nodePreludePath,
+      `const write = process.stdout.write.bind(process.stdout);
+process.stdout.write = (...args) => {
+  setImmediate(() => write(...args));
+  return true;
+};
+`
+    );
 
     for (const runtime of runtimes) {
       const runtimePath = path.join(binDir, runtime);
@@ -115,6 +127,7 @@ exit 0
       BUILDER_STOP_STATUS: String(builderStopStatus),
       BUILDER_DELETE_STATUS: String(builderDeleteStatus),
       BUILDER_START_STATUS: String(builderStartStatus),
+      NODE_OPTIONS: deferNodeStdout ? `--require=${nodePreludePath}` : "",
       BUILD_STATUS: String(buildStatus),
       LOGIN_STATUS: String(loginStatus),
       PUSH_STATUS: String(pushStatus),
@@ -372,6 +385,27 @@ test("Apple build readiness creates an 8 GiB builder when missing", async () => 
     "container system status\n" +
       "container builder status --format json\n" +
       "container builder start --memory 8G\n"
+  );
+});
+
+test("Apple build readiness treats an empty builder list as missing", async () => {
+  const { result, log } = await runHelper({
+    runtimes: ["container"],
+    builderJson: "[]",
+    deferNodeStdout: true,
+    body: "select_container_cli && ensure_container_cli_build_ready",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    log,
+    "container system status\n" +
+      "container builder status --format json\n" +
+      "container builder start --memory 8G\n"
+  );
+  assert.doesNotMatch(
+    log,
+    /container builder (?:stop|delete)\n|container builder start\n/
   );
 });
 

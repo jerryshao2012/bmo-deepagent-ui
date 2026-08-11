@@ -174,11 +174,16 @@ test("local container build uses a clean staged context", async () => {
 });
 
 test("local container build provisions enough builder memory", async () => {
-  const buildScript = await source("build.sh");
+  const [buildScript, runtimeHelper] = await Promise.all([
+    source("build.sh"),
+    source("scripts/container-runtime.sh"),
+  ]);
 
-  assert.match(buildScript, /MIN_CONTAINER_BUILDER_MEMORY_BYTES=8589934592/);
-  assert.match(buildScript, /container builder status --format json/);
-  assert.match(buildScript, /container builder start --memory 8G/);
+  assert.match(runtimeHelper, /MIN_CONTAINER_BUILDER_MEMORY_BYTES=8589934592/);
+  assert.match(runtimeHelper, /container builder status --format json/);
+  assert.match(runtimeHelper, /container builder start --memory 8G/);
+  assert.match(buildScript, /ensure_container_cli_build_ready/);
+  assert.doesNotMatch(buildScript, /container builder/);
 });
 
 test("App Service deployment uses a prebuilt standalone zip", async () => {

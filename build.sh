@@ -40,33 +40,7 @@ if [ -z "$DOCKER_HUB_USERNAME" ]; then
 fi
 
 echo "🔨 Building container image locally for linux/amd64..."
-ensure_container_cli_ready
-
-if [ "$CONTAINER_CLI" = "container" ]; then
-  # Yarn installs both build and runtime dependencies during this multi-stage build.
-  # Apple Container's 2 GiB default builder is too small for those concurrent steps.
-  MIN_CONTAINER_BUILDER_MEMORY_BYTES=8589934592
-  if BUILDER_STATUS_JSON=$(command container builder status --format json 2>/dev/null); then
-    BUILDER_MEMORY_BYTES=$(printf '%s' "$BUILDER_STATUS_JSON" | node -e 'const [builder] = JSON.parse(require("fs").readFileSync(0, "utf8")); process.stdout.write(String(builder?.configuration?.resources?.memoryInBytes ?? 0));')
-    BUILDER_STATE=$(printf '%s' "$BUILDER_STATUS_JSON" | node -e 'const [builder] = JSON.parse(require("fs").readFileSync(0, "utf8")); process.stdout.write(builder?.status?.state ?? "missing");')
-  else
-    BUILDER_MEMORY_BYTES=0
-    BUILDER_STATE=missing
-  fi
-
-  if [ "$BUILDER_MEMORY_BYTES" -lt "$MIN_CONTAINER_BUILDER_MEMORY_BYTES" ]; then
-    echo "🧠 Configuring Apple Container builder with 8 GiB of memory..."
-    if [ "$BUILDER_STATE" = "running" ]; then
-      command container builder stop
-    fi
-    if [ "$BUILDER_STATE" != "missing" ]; then
-      command container builder delete
-    fi
-    command container builder start --memory 8G
-  elif [ "$BUILDER_STATE" != "running" ]; then
-    command container builder start
-  fi
-fi
+ensure_container_cli_build_ready
 
 # Use the full Docker Hub registry host in the image name for pushing.
 FULL_IMAGE_NAME="docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest"

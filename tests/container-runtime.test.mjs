@@ -26,6 +26,16 @@ const runHelper = async ({
   podmanInfoStatus = 0,
   dockerInfoStatus = 0,
   containerStartStatus = 0,
+  builderStatus = 0,
+  builderJson = JSON.stringify([
+    {
+      configuration: { resources: { memoryInBytes: 8589934592 } },
+      status: { state: "running" },
+    },
+  ]),
+  builderStopStatus = 0,
+  builderDeleteStatus = 0,
+  builderStartStatus = 0,
   buildStatus = 0,
   loginStatus = 0,
   pushStatus = 0,
@@ -42,6 +52,13 @@ const runHelper = async ({
     const nonExecutableRuntimeSet = new Set(nonExecutableRuntimes);
     await mkdir(binDir);
 
+    const nodePath = path.join(binDir, "node");
+    await writeFile(
+      nodePath,
+      `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} "$@"\n`
+    );
+    await chmod(nodePath, 0o755);
+
     for (const runtime of runtimes) {
       const runtimePath = path.join(binDir, runtime);
       await writeFile(
@@ -56,6 +73,13 @@ printf '%s\\n' '--' >> "$RUNTIME_ARGUMENT_LOG"
 case "\${0##*/}:$1:$2" in
   "container:system:status") exit "$CONTAINER_STATUS" ;;
   "container:system:start") exit "$CONTAINER_START_STATUS" ;;
+  "container:builder:status")
+    printf '%s' "$BUILDER_JSON"
+    exit "$BUILDER_STATUS"
+    ;;
+  "container:builder:stop") exit "$BUILDER_STOP_STATUS" ;;
+  "container:builder:delete") exit "$BUILDER_DELETE_STATUS" ;;
+  "container:builder:start") exit "$BUILDER_START_STATUS" ;;
   "podman:info:"*) exit "$PODMAN_INFO_STATUS" ;;
   "docker:info:"*) exit "$DOCKER_INFO_STATUS" ;;
   container:build:*|podman:build:*|docker:build:*) exit "$BUILD_STATUS" ;;
@@ -86,6 +110,11 @@ exit 0
       PODMAN_INFO_STATUS: String(podmanInfoStatus),
       DOCKER_INFO_STATUS: String(dockerInfoStatus),
       CONTAINER_START_STATUS: String(containerStartStatus),
+      BUILDER_STATUS: String(builderStatus),
+      BUILDER_JSON: builderJson,
+      BUILDER_STOP_STATUS: String(builderStopStatus),
+      BUILDER_DELETE_STATUS: String(builderDeleteStatus),
+      BUILDER_START_STATUS: String(builderStartStatus),
       BUILD_STATUS: String(buildStatus),
       LOGIN_STATUS: String(loginStatus),
       PUSH_STATUS: String(pushStatus),
@@ -315,6 +344,174 @@ for (const override of [overrideUnset, "nerdctl"]) {
       runtimes: ["container", "podman", "docker"],
       override,
       body: "ensure_container_cli_ready",
+    });
+
+    assert.notEqual(result.status, 0);
+    assert.match(
+      result.stderr,
+      /select_container_cli.*container.*podman.*docker/i
+    );
+    assert.equal(log, "");
+  });
+}
+
+test("Apple build readiness creates an 8 GiB builder when missing", async () => {
+  const { result, log } = await runHelper({
+    runtimes: ["container"],
+    builderStatus: 17,
+    body: "select_container_cli && ensure_container_cli_build_ready && printf ready",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    result.stdout,
+    "🧠 Configuring Apple Container builder with 8 GiB of memory...\nready"
+  );
+  assert.equal(
+    log,
+    "container system status\n" +
+      "container builder status --format json\n" +
+      "container builder start --memory 8G\n"
+  );
+});
+
+test("Apple build readiness replaces an undersized running builder", async () => {
+  const { result, log } = await runHelper({
+    runtimes: ["container"],
+    builderJson: JSON.stringify([
+      {
+        configuration: { resources: { memoryInBytes: 2147483648 } },
+        status: { state: "running" },
+      },
+    ]),
+    body: "select_container_cli && ensure_container_cli_build_ready",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    log,
+    "container system status\n" +
+      "container builder status --format json\n" +
+      "container builder stop\n" +
+      "container builder delete\n" +
+      "container builder start --memory 8G\n"
+  );
+});
+
+test("Apple build readiness leaves a sufficient running builder unchanged", async () => {
+  const { result, log } = await runHelper({
+    runtimes: ["container"],
+    body: "select_container_cli && ensure_container_cli_build_ready",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    log,
+    "container system status\ncontainer builder status --format json\n"
+  );
+});
+
+test("Apple build readiness starts a sufficient stopped builder without changing memory", async () => {
+  const { result, log } = await runHelper({
+    runtimes: ["container"],
+    builderJson: JSON.stringify([
+      {
+        configuration: { resources: { memoryInBytes: 8589934592 } },
+        status: { state: "stopped" },
+      },
+    ]),
+    body: "select_container_cli && ensure_container_cli_build_ready",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    log,
+    "container system status\n" +
+      "container builder status --format json\n" +
+      "container builder start\n"
+  );
+});
+
+for (const { runtime, readinessLog } of [
+  { runtime: "podman", readinessLog: "podman info\n" },
+  { runtime: "docker", readinessLog: "docker info\n" },
+]) {
+  test(`${runtime} build readiness uses normal readiness without Apple builder commands`, async () => {
+    const { result, log } = await runHelper({
+      runtimes: [runtime],
+      body: "select_container_cli && ensure_container_cli_build_ready",
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(log, readinessLog);
+    assert.doesNotMatch(log, /container builder/);
+  });
+}
+
+test("Apple build readiness propagates its normal readiness failure", async () => {
+  const { result, log } = await runHelper({
+    runtimes: ["container"],
+    containerStatus: 1,
+    containerStartStatus: 37,
+    body: "select_container_cli && ensure_container_cli_build_ready && printf unexpected",
+  });
+
+  assert.equal(result.status, 37, result.stderr);
+  assert.equal(
+    log,
+    "container system status\ncontainer system start --disable-kernel-install\n"
+  );
+  assert.doesNotMatch(log, /container builder/);
+});
+
+for (const { operation, statusOption, status } of [
+  { operation: "stop", statusOption: "builderStopStatus", status: 61 },
+  { operation: "delete", statusOption: "builderDeleteStatus", status: 62 },
+]) {
+  test(`Apple build readiness propagates exact builder ${operation} failure`, async () => {
+    const { result, log } = await runHelper({
+      runtimes: ["container"],
+      builderJson: JSON.stringify([
+        {
+          configuration: { resources: { memoryInBytes: 2147483648 } },
+          status: { state: "running" },
+        },
+      ]),
+      [statusOption]: status,
+      body: "select_container_cli && ensure_container_cli_build_ready && printf unexpected",
+    });
+
+    assert.equal(result.status, status, result.stderr);
+    assert.match(log, new RegExp(`container builder ${operation}\\n`));
+    assert.doesNotMatch(log, /container builder start/);
+  });
+}
+
+test("Apple build readiness propagates exact builder start failure", async () => {
+  const { result, log } = await runHelper({
+    runtimes: ["container"],
+    builderStatus: 19,
+    builderStartStatus: 63,
+    body: "select_container_cli && ensure_container_cli_build_ready && printf unexpected",
+  });
+
+  assert.equal(result.status, 63, result.stderr);
+  assert.equal(
+    log,
+    "container system status\n" +
+      "container builder status --format json\n" +
+      "container builder start --memory 8G\n"
+  );
+});
+
+for (const override of [overrideUnset, "nerdctl"]) {
+  const state = override === overrideUnset ? "unselected" : "invalid";
+
+  test(`build readiness rejects an ${state} runtime`, async () => {
+    const { result, log } = await runHelper({
+      runtimes: ["container", "podman", "docker"],
+      override,
+      body: "ensure_container_cli_build_ready",
     });
 
     assert.notEqual(result.status, 0);
@@ -556,9 +753,15 @@ test("local build uses shared runtime and gates Apple builder setup", async () =
 
   assert.match(buildScript, /source .*scripts\/container-runtime\.sh/);
   assert.match(buildScript, /select_container_cli/);
-  assert.match(buildScript, /ensure_container_cli_ready/);
+  assert.match(buildScript, /ensure_container_cli_build_ready/);
+  assert.doesNotMatch(buildScript, /\bensure_container_cli_ready\b/);
   assert.match(buildScript, /container_cli_build[\s\S]*"\$BUILD_CONTEXT_DIR"/);
   assert.match(buildScript, /container_cli_push "\$FULL_IMAGE_NAME"/);
+  assert.doesNotMatch(
+    buildScript,
+    /container builder (?:status|stop|delete|start)/
+  );
+  assert.doesNotMatch(buildScript, /MIN_CONTAINER_BUILDER_MEMORY_BYTES/);
 
   const selectRuntime = buildScript.indexOf("select_container_cli");
   const resourceGroupMutation = buildScript.indexOf("az group show");
@@ -566,15 +769,6 @@ test("local build uses shared runtime and gates Apple builder setup", async () =
     selectRuntime >= 0 && selectRuntime < resourceGroupMutation,
     "runtime selection must happen before Azure resource-group mutation"
   );
-
-  const guard = buildScript.indexOf(
-    'if [ "$CONTAINER_CLI" = "container" ]; then'
-  );
-  const builderStatus = buildScript.indexOf(
-    "command container builder status --format json"
-  );
-  const guardEnd = buildScript.indexOf("\nfi", guard);
-  assert.ok(guard >= 0 && builderStatus > guard && builderStatus < guardEnd);
 });
 
 test("AWS build sends its progress option through tested runtime adapter", async () => {

@@ -66,6 +66,48 @@ ensure_container_cli_ready() {
   esac
 }
 
+ensure_container_cli_build_ready() {
+  ensure_container_cli_ready || return $?
+
+  case "${CONTAINER_CLI-}" in
+    podman|docker)
+      return 0
+      ;;
+    container) ;;
+    *)
+      _container_cli_selection_error
+      return $?
+      ;;
+  esac
+
+  # Yarn installs both build and runtime dependencies during this multi-stage build.
+  # Apple Container's 2 GiB default builder is too small for those concurrent steps.
+  local MIN_CONTAINER_BUILDER_MEMORY_BYTES=8589934592
+  local BUILDER_STATUS_JSON
+  local BUILDER_MEMORY_BYTES
+  local BUILDER_STATE
+  if BUILDER_STATUS_JSON=$(command container builder status --format json 2>/dev/null); then
+    BUILDER_MEMORY_BYTES=$(printf '%s' "$BUILDER_STATUS_JSON" | node -e 'const [builder] = JSON.parse(require("fs").readFileSync(0, "utf8")); process.stdout.write(String(builder?.configuration?.resources?.memoryInBytes ?? 0));')
+    BUILDER_STATE=$(printf '%s' "$BUILDER_STATUS_JSON" | node -e 'const [builder] = JSON.parse(require("fs").readFileSync(0, "utf8")); process.stdout.write(builder?.status?.state ?? "missing");')
+  else
+    BUILDER_MEMORY_BYTES=0
+    BUILDER_STATE=missing
+  fi
+
+  if [ "$BUILDER_MEMORY_BYTES" -lt "$MIN_CONTAINER_BUILDER_MEMORY_BYTES" ]; then
+    echo "🧠 Configuring Apple Container builder with 8 GiB of memory..."
+    if [ "$BUILDER_STATE" = "running" ]; then
+      command container builder stop || return $?
+    fi
+    if [ "$BUILDER_STATE" != "missing" ]; then
+      command container builder delete || return $?
+    fi
+    command container builder start --memory 8G || return $?
+  elif [ "$BUILDER_STATE" != "running" ]; then
+    command container builder start || return $?
+  fi
+}
+
 container_cli_build() {
   case "${CONTAINER_CLI-}" in
     container|docker)

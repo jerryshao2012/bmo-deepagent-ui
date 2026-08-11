@@ -12,8 +12,18 @@ const source = async (relativePath) =>
 const extractPasskeysSection = (readme) =>
   readme.match(/^### Passkeys\b[\s\S]*?(?=^#{1,3}\s|(?![\s\S]))/m)?.[0];
 
-const hasRequiredOAuthRecoveryGuidance = (section) =>
-  /\bOAuth\b\s+must\s+remain\s+available\b[^.!?]*\brecovery\b/i.test(section);
+const hasRequiredOAuthRecoveryGuidance = (section) => {
+  if (!section) return false;
+
+  const guidance = section.match(
+    /\bOAuth\b\s+must\s+remain\s+available\b([^.!?]*\brecovery\b)/i
+  );
+
+  return (
+    guidance !== null &&
+    !/\b(?:no|not|never|without|except|unavailable)\b/i.test(guidance[1])
+  );
+};
 
 test("App Service deployment script has valid Bash syntax", () => {
   const result = spawnSync("bash", ["-n", "deploy.sh"], {
@@ -83,11 +93,31 @@ test("Passkeys recovery guidance rejects negated OAuth availability", () => {
   const readme = `### Passkeys
 OAuth is not available for recovery.
 ## Next section`;
+  const passkeysSection = extractPasskeysSection(readme);
 
-  assert.equal(
-    hasRequiredOAuthRecoveryGuidance(extractPasskeysSection(readme)),
-    false
-  );
+  assert.ok(passkeysSection);
+  assert.equal(hasRequiredOAuthRecoveryGuidance(passkeysSection), false);
+});
+
+test("Passkeys recovery guidance rejects recovery exclusion", () => {
+  for (const sentence of [
+    "OAuth must remain available, but not for recovery.",
+    "OAuth must remain available, but never for recovery.",
+    "OAuth must remain available without support for recovery.",
+    "OAuth must remain available except for recovery.",
+    "OAuth must remain available while unavailable for recovery.",
+  ]) {
+    const passkeysSection = extractPasskeysSection(`### Passkeys
+${sentence}
+## Next section`);
+
+    assert.ok(passkeysSection, sentence);
+    assert.equal(
+      hasRequiredOAuthRecoveryGuidance(passkeysSection),
+      false,
+      sentence
+    );
+  }
 });
 
 test("custom server supports writable storage outside a read-only package", async () => {

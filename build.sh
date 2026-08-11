@@ -2,7 +2,16 @@
 set -e
 
 source ./env.sh
+source ./scripts/azure-subscription.sh
 source ./scripts/container-runtime.sh
+
+if ! command -v az >/dev/null 2>&1; then
+  echo "❌ Required command not found: az"
+  exit 1
+fi
+
+select_azure_subscription
+echo "Azure subscription: $AZURE_SUBSCRIPTION_ID"
 
 select_container_cli
 echo "📦 Using container runtime: $CONTAINER_CLI"

@@ -1,10 +1,12 @@
 export SEED="0312"
 # ACR names must be alphanumeric only and between 5 and 50 characters
 export ACR_NAME="acrdeepagentsui$SEED"
+export AZURE_SUBSCRIPTION_ID="31fcb880-f153-4bac-b91c-c694854c65ce"
 # Create resource group
 export RESOURCE_GROUP="resource-group-deep-agents-$SEED"
 export LOCATION="canadacentral"
 export ENV_NAME="env-name-deep-agents-$SEED"
+export CONTAINER_APP_NAME="${CONTAINER_APP_NAME:-bmo-deepagent-ui-$SEED}"
 
 # Source the deep research agent URL
 source ../deep-research/env.sh

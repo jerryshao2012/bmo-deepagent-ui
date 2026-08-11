@@ -2,6 +2,7 @@
 set -eo pipefail
 
 source ./env.sh
+source ./scripts/azure-subscription.sh
 
 if [ -f .env.docker ]; then
   echo "📖 Loading production environment variables from .env.docker..."
@@ -22,6 +23,9 @@ for required_command in az yarn zip curl grep; do
     exit 1
   fi
 done
+
+select_azure_subscription
+echo "Azure subscription: $AZURE_SUBSCRIPTION_ID"
 
 WEBAPP_NAME="${WEBAPP_NAME:-bmo-deepagent-ui-$SEED}"
 ASSISTANT_ID="${NEXT_PUBLIC_ASSISTANT_ID:-research}"

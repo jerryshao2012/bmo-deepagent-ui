@@ -42,6 +42,9 @@ test("passkey BFF example stays disabled and documents matched trusted-proxy set
     source(".env.docker.example"),
     source("README.md"),
   ]);
+  const passkeysSection = readme.match(
+    /^### Passkeys\b[\s\S]*?(?=^#{2,3}\s|(?![\s\S]))/m
+  )?.[0];
 
   assert.match(envExample, /^PASSKEY_ENABLED=false$/m);
   for (const setting of [
@@ -53,7 +56,8 @@ test("passkey BFF example stays disabled and documents matched trusted-proxy set
     assert.match(readme, new RegExp(setting));
   }
   assert.match(readme, /same.*PASSKEY_PROXY_(?:ID|SECRET)/is);
-  assert.match(readme, /OAuth recovery/i);
+  assert.ok(passkeysSection, "README must include a Passkeys section");
+  assert.match(passkeysSection, /\bOAuth\b[^.!?]*\brecovery\b/i);
 });
 
 test("custom server supports writable storage outside a read-only package", async () => {

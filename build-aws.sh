@@ -37,6 +37,9 @@ print_timing_summary() {
 
 # Configuration
 source ./env-aws.sh
+source ./scripts/container-runtime.sh
+select_container_cli
+echo "📦 Using container runtime: $CONTAINER_CLI"
 
 echo "🚀 Starting Deep Agent UI AWS build..."
 
@@ -61,27 +64,23 @@ fi
 end_step
 
 # 3. Build and push image
-start_step "Docker Image Build & Push"
+start_step "Container Image Build & Push"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 ECR_URL="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 IMAGE_TAG="$ECR_URL/$ECR_REPO_NAME:latest"
 
-# Ensure container service is started
-if ! container system status &>/dev/null; then
-  echo "🚀 Container system is not running. Auto-starting..."
-  container system start --disable-kernel-install
-fi
+ensure_container_cli_ready
 
-echo "🔨 Building Docker image ($IMAGE_TAG)..."
-container build --progress plain --platform linux/amd64 -f Dockerfile-aws -t "$IMAGE_TAG" .
+echo "🔨 Building container image ($IMAGE_TAG)..."
+container_cli_build --progress plain --platform linux/amd64 -f Dockerfile-aws -t "$IMAGE_TAG" .
 
 echo "🔑 Logging in to AWS ECR..."
-aws ecr get-login-password --region "$AWS_REGION" | container registry login --username AWS --password-stdin "$ECR_URL"
+aws ecr get-login-password --region "$AWS_REGION" | container_cli_login --username AWS --password-stdin "$ECR_URL"
 
 echo "⬆️  Pushing image to ECR..."
-container image push "$IMAGE_TAG"
+container_cli_push "$IMAGE_TAG"
 echo "✅ Image built and pushed successfully"
 end_step
 

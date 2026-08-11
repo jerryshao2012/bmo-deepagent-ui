@@ -548,3 +548,27 @@ test("local build uses shared runtime and gates Apple builder setup", async () =
   const guardEnd = buildScript.indexOf("\nfi", guard);
   assert.ok(guard >= 0 && builderStatus > guard && builderStatus < guardEnd);
 });
+
+test("AWS build sends its progress option through tested runtime adapter", async () => {
+  const buildScript = await readFile(
+    path.join(repoRoot, "build-aws.sh"),
+    "utf8"
+  );
+
+  assert.match(buildScript, /source .*scripts\/container-runtime\.sh/);
+  assert.match(buildScript, /select_container_cli/);
+  assert.match(buildScript, /ensure_container_cli_ready/);
+  assert.match(buildScript, /container_cli_build --progress plain/);
+  assert.match(
+    buildScript,
+    /container_cli_login --username AWS --password-stdin/
+  );
+  assert.match(buildScript, /container_cli_push "\$IMAGE_TAG"/);
+
+  const selectRuntime = buildScript.indexOf("select_container_cli");
+  const createRepository = buildScript.indexOf("aws ecr create-repository");
+  assert.ok(
+    selectRuntime >= 0 && selectRuntime < createRepository,
+    "runtime selection must happen before ECR repository creation"
+  );
+});

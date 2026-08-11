@@ -59,7 +59,7 @@ if [ -f "$SCRIPT_DIR/.env.docker" ]; then
     fi
 
     case "$key" in
-      AZURE_SUBSCRIPTION_ID|RESOURCE_GROUP|ACR_NAME|KV_NAME|SEED|CONTAINER_APP_NAME|CONTAINER_CLI|PATH|IFS|CDPATH|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|HOME|PWD|OLDPWD|TMPDIR|LD_*|DYLD_*)
+      AZURE_SUBSCRIPTION_ID|RESOURCE_GROUP|ACR_NAME|KV_NAME|SEED|CONTAINER_APP_NAME|CONTAINER_CLI|CONTAINER_APP_REVISION_POLL_ATTEMPTS|CONTAINER_APP_HTTP_POLL_ATTEMPTS|CONTAINER_APP_POLL_INTERVAL_SECONDS|PATH|IFS|CDPATH|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|HOME|PWD|OLDPWD|TMPDIR|LD_*|DYLD_*)
         dotenv_fail "$docker_env_line_number" "protected deployment or shell control '$key' cannot be overridden."
         ;;
     esac
@@ -255,3 +255,219 @@ echo "LangGraph URL: $NEXT_PUBLIC_LANGGRAPH_URL"
 echo "Assistant ID: $ASSISTANT_ID"
 echo "Key Vault: $VAULT_URI"
 echo "Azure Container Apps preflight complete."
+
+ensure_container_cli_build_ready
+
+IMAGE_NAME="$ACR_LOGIN_SERVER/deepagent-ui:latest"
+BUILD_CONTEXT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/bmo-deepagent-ui-container-app.XXXXXX")
+trap 'rm -rf "$BUILD_CONTEXT_DIR"' EXIT
+
+rsync -a \
+  --exclude-from="$SCRIPT_DIR/.dockerignore" \
+  --exclude="Dockerfile" \
+  "$SCRIPT_DIR/" \
+  "$BUILD_CONTEXT_DIR/"
+cp "$SCRIPT_DIR/Dockerfile" "$BUILD_CONTEXT_DIR/Dockerfile"
+mkdir -p "$BUILD_CONTEXT_DIR/public"
+DEPLOYMENT_MARKER="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+printf '%s\n' "$DEPLOYMENT_MARKER" > "$BUILD_CONTEXT_DIR/public/deployment-version.txt"
+
+echo "Building $IMAGE_NAME..."
+if container_cli_build \
+  --platform linux/amd64 \
+  --progress plain \
+  --build-arg "NEXT_PUBLIC_LANGGRAPH_URL=$BACKEND_URL" \
+  --build-arg "NEXT_PUBLIC_ASSISTANT_ID=$ASSISTANT_ID" \
+  --tag "$IMAGE_NAME" \
+  "$BUILD_CONTEXT_DIR"; then
+  :
+else
+  status=$?
+  echo "Error: container image build failed." >&2
+  exit "$status"
+fi
+
+if ACR_ACCESS_TOKEN=$(az acr login \
+  --name "$ACR_NAME" \
+  --expose-token \
+  --query accessToken \
+  -o tsv); then
+  :
+else
+  status=$?
+  echo "Error: could not acquire an Azure Container Registry access token." >&2
+  exit "$status"
+fi
+[ -n "$ACR_ACCESS_TOKEN" ] || fail "Azure Container Registry returned an empty access token."
+
+if printf '%s\n' "$ACR_ACCESS_TOKEN" | container_cli_login \
+  --username 00000000-0000-0000-0000-000000000000 \
+  --password-stdin \
+  "$ACR_LOGIN_SERVER"; then
+  unset ACR_ACCESS_TOKEN
+else
+  status=$?
+  unset ACR_ACCESS_TOKEN
+  echo "Error: container registry login failed." >&2
+  exit "$status"
+fi
+
+if container_cli_push "$IMAGE_NAME"; then
+  :
+else
+  status=$?
+  echo "Error: container image push failed." >&2
+  exit "$status"
+fi
+
+if PREVIOUS_REVISION=$(az containerapp show \
+  --name "$CONTAINER_APP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query properties.latestReadyRevisionName \
+  -o tsv); then
+  :
+else
+  status=$?
+  echo "Error: could not read the previous ready Container App revision." >&2
+  exit "$status"
+fi
+[ -n "$PREVIOUS_REVISION" ] || fail "previous ready Container App revision is empty."
+
+UPLOAD_SECRET_URI="${VAULT_URI%/}/secrets/UPLOAD-API-KEY"
+if az containerapp secret set \
+  --name "$CONTAINER_APP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --secrets "upload-api-key=keyvaultref:$UPLOAD_SECRET_URI,identityref:system" \
+  -o none; then
+  :
+else
+  status=$?
+  echo "Error: Container App Key Vault secret configuration failed." >&2
+  exit "$status"
+fi
+
+REVISION_SUFFIX="ui-$(date -u +%Y%m%dt%H%M%S)-$$"
+if az containerapp update \
+  --name "$CONTAINER_APP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --container-name "$TARGET_CONTAINER_NAME" \
+  --image "$IMAGE_NAME" \
+  --revision-suffix "$REVISION_SUFFIX" \
+  --set-env-vars \
+  "NEXT_TELEMETRY_DISABLED=1" \
+  "NEXT_PUBLIC_LANGGRAPH_URL=$BACKEND_URL" \
+  "BACKEND_API_URL=$BACKEND_URL" \
+  "NEXT_PUBLIC_ASSISTANT_ID=$ASSISTANT_ID" \
+  "AUTH_URL=$UI_URL" \
+  "NEXTAUTH_URL=$UI_URL" \
+  "AUTH_TRUST_HOST=true" \
+  "NODE_ENV=production" \
+  "UPLOAD_API_KEY=secretref:upload-api-key" \
+  -o none; then
+  :
+else
+  status=$?
+  echo "Error: Container App update failed." >&2
+  exit "$status"
+fi
+
+if NEW_REVISION=$(az containerapp show \
+  --name "$CONTAINER_APP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query properties.latestRevisionName \
+  -o tsv); then
+  :
+else
+  status=$?
+  echo "Error: could not discover the new Container App revision." >&2
+  exit "$status"
+fi
+[ -n "$NEW_REVISION" ] || fail "new Container App revision is empty."
+[ "$NEW_REVISION" != "$PREVIOUS_REVISION" ] || \
+  fail "new revision must be different from previous ready revision '$PREVIOUS_REVISION'."
+
+REVISION_POLL_ATTEMPTS="${CONTAINER_APP_REVISION_POLL_ATTEMPTS:-60}"
+HTTP_POLL_ATTEMPTS="${CONTAINER_APP_HTTP_POLL_ATTEMPTS:-36}"
+POLL_INTERVAL_SECONDS="${CONTAINER_APP_POLL_INTERVAL_SECONDS:-5}"
+for poll_value in REVISION_POLL_ATTEMPTS HTTP_POLL_ATTEMPTS POLL_INTERVAL_SECONDS; do
+  case "${!poll_value}" in
+    ""|*[!0-9]*) fail "$poll_value must be a nonnegative integer." ;;
+  esac
+done
+[ "$REVISION_POLL_ATTEMPTS" -gt 0 ] || fail "REVISION_POLL_ATTEMPTS must be greater than zero."
+[ "$HTTP_POLL_ATTEMPTS" -gt 0 ] || fail "HTTP_POLL_ATTEMPTS must be greater than zero."
+
+LAST_PROVISIONING_STATE=""
+LAST_RUNNING_STATE=""
+revision_ready=false
+attempt=1
+while [ "$attempt" -le "$REVISION_POLL_ATTEMPTS" ]; do
+  if REVISION_STATUS=$(az containerapp revision show \
+    --name "$NEW_REVISION" \
+    --app "$CONTAINER_APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query "join('|', [properties.provisioningState, properties.runningState])" \
+    -o tsv); then
+    :
+  else
+    status=$?
+    echo "Error: could not read revision '$NEW_REVISION' readiness." >&2
+    exit "$status"
+  fi
+  IFS='|' read -r LAST_PROVISIONING_STATE LAST_RUNNING_STATE <<< "$REVISION_STATUS"
+  case "$LAST_PROVISIONING_STATE|$LAST_RUNNING_STATE" in
+    *Failed*|*failed*|*FAILED*|*Degraded*|*degraded*|*DEGRADED*|*ActivationFailed*|*activationfailed*|*ACTIVATIONFAILED*)
+      echo "Error: revision '$NEW_REVISION' failed readiness: provisioning=$LAST_PROVISIONING_STATE running=$LAST_RUNNING_STATE." >&2
+      exit 1
+      ;;
+  esac
+  case "$LAST_PROVISIONING_STATE|$LAST_RUNNING_STATE" in
+    [Ss][Uu][Cc][Cc][Ee][Ee][Dd][Ee][Dd]'|'[Rr][Uu][Nn][Nn][Ii][Nn][Gg])
+      revision_ready=true
+      break
+      ;;
+  esac
+  if [ "$attempt" -lt "$REVISION_POLL_ATTEMPTS" ]; then
+    sleep "$POLL_INTERVAL_SECONDS"
+  fi
+  attempt=$((attempt + 1))
+done
+
+if [ "$revision_ready" != true ]; then
+  echo "Error: timed out waiting for revision '$NEW_REVISION': provisioning=$LAST_PROVISIONING_STATE running=$LAST_RUNNING_STATE." >&2
+  exit 1
+fi
+
+HEALTH_RESPONSE_PATH="$BUILD_CONTEXT_DIR/deployment-version-response.txt"
+HTTP_STATUS=""
+DEPLOYED_MARKER=""
+attempt=1
+while [ "$attempt" -le "$HTTP_POLL_ATTEMPTS" ]; do
+  if HTTP_STATUS=$(curl \
+    --silent \
+    --show-error \
+    --output "$HEALTH_RESPONSE_PATH" \
+    --write-out "%{http_code}" \
+    "$UI_URL/deployment-version.txt"); then
+    :
+  else
+    status=$?
+    echo "Error: HTTP verification failed for '$UI_URL/deployment-version.txt' (previous=$PREVIOUS_REVISION new=$NEW_REVISION provisioning=$LAST_PROVISIONING_STATE running=$LAST_RUNNING_STATE)." >&2
+    exit "$status"
+  fi
+  DEPLOYED_MARKER=""
+  if [ -f "$HEALTH_RESPONSE_PATH" ]; then
+    IFS= read -r DEPLOYED_MARKER < "$HEALTH_RESPONSE_PATH" || :
+  fi
+  if [ "$HTTP_STATUS" = "200" ] && [ "$DEPLOYED_MARKER" = "$DEPLOYMENT_MARKER" ]; then
+    echo "Azure Container Apps deployment complete: $UI_URL"
+    exit 0
+  fi
+  if [ "$attempt" -lt "$HTTP_POLL_ATTEMPTS" ]; then
+    sleep "$POLL_INTERVAL_SECONDS"
+  fi
+  attempt=$((attempt + 1))
+done
+
+echo "Error: deployment marker verification timed out for '$UI_URL' (previous=$PREVIOUS_REVISION new=$NEW_REVISION provisioning=$LAST_PROVISIONING_STATE running=$LAST_RUNNING_STATE http=$HTTP_STATUS)." >&2
+exit 1

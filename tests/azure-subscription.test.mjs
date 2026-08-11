@@ -18,6 +18,7 @@ const helperPath = path.join(repoRoot, "scripts/azure-subscription.sh");
 const defaultSubscriptionId = "subscription-default";
 const requestedSubscriptionId = "subscription-requested";
 const uuidPattern = /\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b/i;
+const fixedAcrTokenUsername = "00000000-0000-0000-0000-000000000000";
 
 const runSubscriptionGuard = async (options = {}) => {
   const subscriptionId = Object.prototype.hasOwnProperty.call(
@@ -201,12 +202,16 @@ test("tracked Azure scripts do not hardcode subscription UUIDs", async () => {
     "scripts/azure-subscription.sh",
     "build.sh",
     "deploy.sh",
+    "deploy-azure-container-app.sh",
     "secrets.sh.example",
   ];
 
   for (const file of azureFacingShellFiles) {
     const contents = await readFile(path.join(repoRoot, file), "utf8");
-    assert.doesNotMatch(contents, uuidPattern, file);
+    const withoutDocumentedAcrUsername = contents
+      .split(fixedAcrTokenUsername)
+      .join("");
+    assert.doesNotMatch(withoutDocumentedAcrUsername, uuidPattern, file);
   }
 });
 

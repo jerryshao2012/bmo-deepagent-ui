@@ -9,6 +9,12 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const source = async (relativePath) =>
   readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
 
+const extractPasskeysSection = (readme) =>
+  readme.match(/^### Passkeys\b[\s\S]*?(?=^#{1,3}\s|(?![\s\S]))/m)?.[0];
+
+const hasRequiredOAuthRecoveryGuidance = (section) =>
+  /\bOAuth\b\s+must\s+remain\s+available\b[^.!?]*\brecovery\b/i.test(section);
+
 test("App Service deployment script has valid Bash syntax", () => {
   const result = spawnSync("bash", ["-n", "deploy.sh"], {
     cwd: repoRoot,
@@ -42,9 +48,7 @@ test("passkey BFF example stays disabled and documents matched trusted-proxy set
     source(".env.docker.example"),
     source("README.md"),
   ]);
-  const passkeysSection = readme.match(
-    /^### Passkeys\b[\s\S]*?(?=^#{2,3}\s|(?![\s\S]))/m
-  )?.[0];
+  const passkeysSection = extractPasskeysSection(readme);
 
   assert.match(envExample, /^PASSKEY_ENABLED=false$/m);
   for (const setting of [
@@ -57,7 +61,33 @@ test("passkey BFF example stays disabled and documents matched trusted-proxy set
   }
   assert.match(readme, /same.*PASSKEY_PROXY_(?:ID|SECRET)/is);
   assert.ok(passkeysSection, "README must include a Passkeys section");
-  assert.match(passkeysSection, /\bOAuth\b[^.!?]*\brecovery\b/i);
+  assert.ok(
+    hasRequiredOAuthRecoveryGuidance(passkeysSection),
+    "Passkeys section must require OAuth to remain available for recovery"
+  );
+});
+
+test("Passkeys recovery guidance excludes content after a following H1", () => {
+  const readme = `### Passkeys
+No recovery guidance here.
+# Unrelated
+OAuth must remain available for recovery.`;
+  const passkeysSection = extractPasskeysSection(readme);
+
+  assert.ok(passkeysSection);
+  assert.doesNotMatch(passkeysSection, /^# Unrelated$/m);
+  assert.equal(hasRequiredOAuthRecoveryGuidance(passkeysSection), false);
+});
+
+test("Passkeys recovery guidance rejects negated OAuth availability", () => {
+  const readme = `### Passkeys
+OAuth is not available for recovery.
+## Next section`;
+
+  assert.equal(
+    hasRequiredOAuthRecoveryGuidance(extractPasskeysSection(readme)),
+    false
+  );
 });
 
 test("custom server supports writable storage outside a read-only package", async () => {

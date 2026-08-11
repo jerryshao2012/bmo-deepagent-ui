@@ -52,6 +52,21 @@ Optional `.env.docker` values may supply runtime settings using the same safe,
 line-oriented loading behavior as `deploy.sh`. The script must not print or copy
 secret values into logs, source control, or image layers.
 
+Configuration precedence is explicit:
+
+1. source `env.sh`, which sources the operator's `.env` last;
+2. load optional `.env.docker`, allowing it to override
+   `NEXT_PUBLIC_ASSISTANT_ID`;
+3. capture `NEXT_PUBLIC_ASSISTANT_ID`, defaulting to `research`; and
+4. discover the backend Container App ingress URL and use that discovered URL as the
+   canonical `NEXT_PUBLIC_LANGGRAPH_URL` and `BACKEND_API_URL` for both image build
+   arguments and runtime environment variables.
+
+Any `NEXT_PUBLIC_LANGGRAPH_URL` previously loaded from `env.sh` or `.env.docker` is
+therefore intentionally replaced for this deployment path. Build-time and runtime
+backend/assistant values must be identical because `NEXT_PUBLIC_*` values are baked
+into the client bundle.
+
 ## Shared Azure Subscription Guard
 
 Add side-effect-free-on-source `scripts/azure-subscription.sh` with a callable
@@ -86,13 +101,17 @@ mutating the UI app:
 - ACR exists and its login server is discoverable;
 - UI Container App named by `CONTAINER_APP_NAME` exists;
 - UI Container App uses external ingress and has a public FQDN;
+- ingress target port is exactly `3000`, matching the image's server port;
 - UI Container App is in single-revision mode;
 - UI Container App has a system-assigned identity;
-- UI Container App already has pull configuration for the selected ACR login
-  server;
+- UI Container App has exactly one application container; its existing name is
+  discovered and passed explicitly to `az containerapp update --container-name`;
+- UI Container App already has pull configuration for the selected ACR login server
+  using its system identity;
 - backend Container App `deep-research-agent-$SEED` exists and has ingress;
 - Key Vault exists and contains `UPLOAD-API-KEY`; and
-- current Azure principal has enough access to perform deployment operations.
+- current Azure principal can read the resource metadata and secret ID needed by
+  preflight.
 
 The script must not create resources, assign identities, grant roles, change ingress,
 change revision mode, change scale rules, change networking, or configure volume
@@ -100,8 +119,22 @@ mounts. Missing prerequisites produce actionable errors before image build or cl
 application mutation.
 
 The UI app's system identity must already have `AcrPull` on ACR and Key Vault secret
-read access. The operator principal needs resource-read/update access plus ACR push
-access.
+read access. The operator principal needs resource-read/update access, Key Vault
+secret `get` access for the preflight check, ACR token/push access, and permission to
+update Container App secrets and revisions.
+
+The script does not attempt to prove effective Azure RBAC or Key Vault policy through
+role-assignment enumeration because inherited scopes and vault access models make that
+check unreliable. It validates observable structure and operations instead:
+
+- `az keyvault secret show` proves the operator can resolve the secret ID;
+- `az acr login --expose-token` plus image push proves operator registry access;
+- Container App registry metadata must name the selected ACR and system identity; and
+- new revision provisioning/readiness proves the workload identity can resolve its
+  image and Key Vault reference.
+
+If the managed identity lacks effective `AcrPull` or secret access, the new revision
+fails and single-revision mode keeps traffic on the previous ready revision.
 
 ## Container Build and Push
 
@@ -119,8 +152,11 @@ Build steps:
 5. build for `linux/amd64` with `NEXT_PUBLIC_LANGGRAPH_URL` and
    `NEXT_PUBLIC_ASSISTANT_ID` build arguments;
 6. tag only `<acr-login-server>/deepagent-ui:latest`;
-7. request a short-lived ACR access token with `az acr login --expose-token`;
-8. pipe the token to `container_cli_login --password-stdin` without echoing it; and
+7. request a short-lived ACR access token with
+   `az acr login --name "$ACR_NAME" --expose-token --query accessToken -o tsv`;
+8. pipe the token to
+   `container_cli_login --username 00000000-0000-0000-0000-000000000000 --password-stdin "$ACR_LOGIN_SERVER"`
+   without echoing it, then unset the token variable; and
 9. push through `container_cli_push`.
 
 The temporary context is removed by an exit trap on success or failure. Build, login,
@@ -142,12 +178,13 @@ environment references it as:
 UPLOAD_API_KEY=secretref:upload-api-key
 ```
 
-Generate a lowercase UTC timestamp revision suffix such as
-`ui-20260811t170000`. The unique suffix forces a new revision for each `latest`
-deployment.
+Generate a lowercase UTC timestamp-plus-process-ID revision suffix such as
+`ui-20260811t170000-12345`. Including the process ID prevents collision between two
+deployments launched during the same second. The unique suffix forces a new revision
+for each `latest` deployment.
 
-Run `az containerapp update` with only revision-scoped image and environment changes.
-Upsert:
+Run `az containerapp update` with the discovered `--container-name` and only
+revision-scoped image and environment changes. Upsert:
 
 - `NEXT_TELEMETRY_DISABLED=1`
 - `NEXT_PUBLIC_LANGGRAPH_URL=<backend HTTPS URL>`
@@ -214,15 +251,19 @@ Azure or registry operations.
 
 ### Container Apps deployment
 
-- missing ACR, UI app, backend app, secret, system identity, matching ACR pull
-  configuration, external ingress, or single-revision mode fails before build/push;
+- missing ACR, UI app, backend app, secret, system identity, matching system-identity
+  ACR pull configuration, external ingress, target port 3000, exactly one application
+  container, or single-revision mode fails before build/push;
 - runtime selection preserves Apple Container, Podman, Docker priority and override;
 - clean context excludes local environment and generated files;
 - image is built for `linux/amd64` with exact argument boundaries;
 - only `<acr-login-server>/deepagent-ui:latest` is pushed;
 - ACR token is passed through stdin and absent from stdout/stderr;
 - secret uses Key Vault reference with `identityref:system`;
-- update uses unique revision suffix, exact image, and required environment variables;
+- discovered backend URL overrides loaded backend URLs for both build and runtime;
+- `.env.docker` assistant ID overrides earlier values for both build and runtime;
+- update names the sole discovered container and uses a collision-resistant revision
+  suffix, exact image, and required environment variables;
 - no create, identity assignment, role assignment, ingress, scale, traffic, revision
   mode, network, or volume mutation command runs;
 - build, login, push, secret, update, provisioning, and HTTP failures propagate; and

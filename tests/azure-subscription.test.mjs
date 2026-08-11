@@ -192,6 +192,74 @@ test("selects and confirms exact subscription", async () => {
   );
 });
 
+test("deploy.sh rejects subscription override from .env.docker before Azure access", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(tmpdir(), "app-service-subscription-test-")
+  );
+
+  try {
+    const binDir = path.join(tempRoot, "bin");
+    const scriptsDir = path.join(tempRoot, "scripts");
+    const azLog = path.join(tempRoot, "az.log");
+    await mkdir(binDir);
+    await mkdir(scriptsDir);
+    await Promise.all([
+      writeFile(
+        path.join(tempRoot, "deploy.sh"),
+        await readFile(path.join(repoRoot, "deploy.sh"), "utf8")
+      ),
+      writeFile(
+        path.join(scriptsDir, "azure-subscription.sh"),
+        await readFile(helperPath, "utf8")
+      ),
+      writeFile(
+        path.join(tempRoot, "env.sh"),
+        'export AZURE_SUBSCRIPTION_ID="trusted-subscription"\n'
+      ),
+      writeFile(
+        path.join(tempRoot, ".env.docker"),
+        'AZURE_SUBSCRIPTION_ID="redirected-subscription"\n'
+      ),
+    ]);
+
+    await writeFile(
+      path.join(binDir, "az"),
+      `#!/bin/bash
+printf 'az' >> "$AZ_LOG"
+printf ' <%s>' "$@" >> "$AZ_LOG"
+printf '\\n' >> "$AZ_LOG"
+exit 97
+`
+    );
+    await chmod(path.join(binDir, "az"), 0o755);
+    for (const command of ["yarn", "zip", "curl", "grep"]) {
+      const commandPath = path.join(binDir, command);
+      await writeFile(commandPath, "#!/bin/bash\nexit 0\n");
+      await chmod(commandPath, 0o755);
+    }
+
+    const result = spawnSync(
+      "/bin/bash",
+      ["--noprofile", "--norc", path.join(tempRoot, "deploy.sh")],
+      {
+        cwd: tempRoot,
+        encoding: "utf8",
+        env: { PATH: binDir, AZ_LOG: azLog },
+      }
+    );
+    const log = await readFile(azLog, "utf8").catch(() => "");
+
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(
+      result.stderr,
+      /.env.docker.*line 1.*AZURE_SUBSCRIPTION_ID.*protected/i
+    );
+    assert.equal(log, "");
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("subscription fixtures use opaque values", () => {
   assert.doesNotMatch(defaultSubscriptionId, uuidPattern);
   assert.doesNotMatch(requestedSubscriptionId, uuidPattern);

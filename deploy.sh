@@ -6,8 +6,14 @@ source ./scripts/azure-subscription.sh
 
 if [ -f .env.docker ]; then
   echo "📖 Loading production environment variables from .env.docker..."
+  docker_env_line_number=0
   while IFS='=' read -r key value || [ -n "$key" ]; do
+    docker_env_line_number=$((docker_env_line_number + 1))
     [[ "$key" =~ ^#.*$ ]] || [ -z "$key" ] && continue
+    if [ "$key" = "AZURE_SUBSCRIPTION_ID" ]; then
+      echo "❌ .env.docker line $docker_env_line_number: AZURE_SUBSCRIPTION_ID is a protected deployment control and cannot be overridden." >&2
+      exit 1
+    fi
     value="${value%$'\r'}"
     value="${value#\"}"
     value="${value%\"}"
@@ -15,6 +21,7 @@ if [ -f .env.docker ]; then
     value="${value%\'}"
     export "$key=$value"
   done < .env.docker
+  unset docker_env_line_number
 fi
 
 for required_command in az yarn zip curl grep; do

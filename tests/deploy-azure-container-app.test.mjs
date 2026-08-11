@@ -146,12 +146,17 @@ case "$command" in
       [ "$4" = "--name" ] && [ "$5" = "bmo-deepagent-ui-testseed" ] &&
       [ "$6" = "--resource-group" ] && [ "$7" = "test-resource-group" ] &&
       [ "$8" = "--query" ] &&
-      [ "$9" = "[].join('|', [server, identity])" ] &&
+      [ "$9" = "[].[server, to_string(identity)]" ] &&
       [ "\${10}" = "-o" ] && [ "\${11}" = "tsv" ] || argv_error
     case "$scenario" in
-      wrong-acr-registry) printf '%s\\n' "other.azurecr.io|system" ;;
-      wrong-acr-identity) printf '%s\\n' "testregistry.azurecr.io|user-assigned" ;;
-      *) printf '%s\\n' "testregistry.azurecr.io|system" ;;
+      wrong-acr-registry) printf '%s\\t%s\\n' "other.azurecr.io" "system" ;;
+      wrong-acr-identity) printf '%s\\t%s\\n' "testregistry.azurecr.io" "user-assigned" ;;
+      unrelated-password-registry-null-identity)
+        printf '%s\\t%s\\n' "testregistry.azurecr.io" "system"
+        # Underlying unrelated entry uses username/passwordSecretRef and has identity null.
+        printf '%s\\t%s\\n' "thirdparty.example.test" "null"
+        ;;
+      *) printf '%s\\t%s\\n' "testregistry.azurecr.io" "system" ;;
     esac
     ;;
   containerapp:secret)
@@ -779,6 +784,20 @@ test("preflight selects subscription and discovers canonical endpoints", async (
     runtimeSelection >= 0 && runtimeSelection < resourceQuery,
     "runtime selection must precede first Azure resource query"
   );
+});
+
+test("deployment preserves unrelated password registry with null identity", async () => {
+  const { result, log } = await runDeployment({
+    scenario: "unrelated-password-registry-null-identity",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(
+    log,
+    /az <containerapp> <registry> <list>.*<--query> <\[\]\.\[server, to_string\(identity\)\]>/
+  );
+  const updateLine = log.match(/^az <containerapp> <update>.*$/m)?.[0] ?? "";
+  assert.doesNotMatch(updateLine, /<--registry|<--registry-server>/);
 });
 
 test("deployment builds a clean image and performs exact Azure update", async () => {

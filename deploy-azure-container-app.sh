@@ -172,7 +172,7 @@ esac
 if UI_REGISTRIES=$(az containerapp registry list \
   --name "$CONTAINER_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --query "[].join('|', [server, identity])" \
+  --query "[].[server, to_string(identity)]" \
   -o tsv); then
   :
 else
@@ -181,7 +181,7 @@ fi
 
 ACR_SERVER_CONFIGURED=false
 ACR_SYSTEM_IDENTITY_CONFIGURED=false
-while IFS='|' read -r registry_server registry_identity; do
+while IFS=$'\t' read -r registry_server registry_identity; do
   if [ "$registry_server" = "$ACR_LOGIN_SERVER" ]; then
     ACR_SERVER_CONFIGURED=true
     case "$registry_identity" in

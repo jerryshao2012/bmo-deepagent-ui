@@ -142,12 +142,13 @@ CONTAINER_CLI=docker ./build-aws.sh
 
 Build script:
 
-1. selects and checks runtime readiness;
+1. selects runtime;
 2. authenticates with AWS;
-3. creates ECR repository when absent;
-4. builds `Dockerfile-aws` for `linux/amd64`;
-5. logs selected runtime in to ECR with password over standard input;
-6. pushes mutable `latest` tag.
+3. checks for ECR repository and creates it when absent;
+4. checks selected runtime readiness;
+5. builds `Dockerfile-aws` for `linux/amd64`;
+6. logs selected runtime in to ECR with password over standard input;
+7. pushes mutable `latest` tag.
 
 Adapter retains `--progress plain` for Apple `container` and Docker builds and omits it
 for Podman.

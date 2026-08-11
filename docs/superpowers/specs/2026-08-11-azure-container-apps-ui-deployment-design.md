@@ -44,7 +44,7 @@ does not require Azure role-assignment permissions.
 - `LOCATION`
 - `KV_NAME`
 - `SEED`
-- `DOCKER_HUB_USERNAME`, defaulting to the approved shared Docker Hub account
+- `DOCKER_HUB_USERNAME`, pinned to the approved shared account `jerryshao2013`
 - `NEXT_PUBLIC_LANGGRAPH_URL`
 - `NEXT_PUBLIC_ASSISTANT_ID`
 - `CONTAINER_APP_NAME`, defaulting to `bmo-deepagent-ui-$SEED`
@@ -66,15 +66,18 @@ Configuration precedence is explicit:
 5. deployment rediscovers the backend Container App ingress URL and uses that
    canonical URL for runtime variables.
 
-The backend URL in `env.sh` is maintained by the backend deployment and must match
-the URL rediscovered during UI deployment. Deployment fails before mutation if the
-two values differ, preventing a split build from publishing a client bundle for one
-backend and deploying it with another runtime URL.
+The build step writes an atomic ignored manifest `.deployment-build.json` containing
+the marker, image, backend URL, and assistant ID used for the successful push.
+Deployment parses and validates this manifest, then fails before mutation unless its
+image is the pinned Docker Hub image and its backend/assistant values exactly match
+the current canonical deployment configuration. This prevents configuration drift
+between the two commands.
 
-`build.sh` accepts exported Docker Hub credentials first. If they are absent, it may
-load only `DOCKER_HUB_USERNAME` and `DOCKER_HUB_PAT` from the approved sibling
-`../deep-research/.env`; it must not import unrelated deployment or shell-control
-variables. The PAT is never written to repository files or logs.
+`build.sh` accepts an exported `DOCKER_HUB_PAT` first. If it is absent, it may load
+only that key from the approved sibling `../deep-research/.env`; it must not source
+the file or import unrelated deployment or shell-control variables. The username is
+always exactly `jerryshao2013`; any conflicting username fails. The PAT is never
+written to repository files or logs.
 
 ## Shared Azure Subscription Guard
 
@@ -90,7 +93,6 @@ subscription-selection function. The function:
 The following Azure-facing scripts call the guard after loading `env.sh` and before
 their first Azure resource read or mutation:
 
-- `build.sh`
 - `deploy.sh`
 - `secrets.sh`
 - `secrets.sh.example`
@@ -116,8 +118,12 @@ app:
   discovered and passed explicitly to `az containerapp update --container-name`;
 - backend Container App `deep-research-agent-$SEED` exists, uses external ingress,
   and has a public FQDN suitable for browser-facing `NEXT_PUBLIC_LANGGRAPH_URL`;
-- Key Vault exists and contains both `UPLOAD-API-KEY` and `DOCKER-HUB-PAT`; and
-- the local `.deployment-version` marker exists and is valid; and
+- Key Vault exists and contains both `UPLOAD-API-KEY` and `DOCKER-HUB-PAT`;
+- the Container App secret `docker-hub-pat` is an unversioned Key Vault reference to
+  `DOCKER-HUB-PAT` using the system identity;
+- the existing `docker.io` registry entry uses username `jerryshao2013` and
+  `passwordSecretRef` value `docker-hub-pat`; and
+- the local `.deployment-build.json` manifest exists and is valid; and
 - current Azure principal can read the resource metadata and secret ID needed by
   preflight.
 
@@ -126,10 +132,11 @@ change revision mode, change scale rules, change networking, or configure volume
 mounts. Missing prerequisites produce actionable errors before cloud application
 mutation.
 
-The UI app's system identity needs Key Vault secret read access. No `AcrPull` role is
-required. The operator principal needs resource-read/update access, Key Vault secret
-metadata access for preflight, and permission to update Container App secrets,
-registry configuration, and revisions.
+The UI app's system identity needs Key Vault secret `get` access. No `AcrPull` role
+is required. The operator principal needs resource-read/update access, Key Vault
+secret `get` access for preflight, and permission to update Container App secrets and
+revisions. Docker Hub secret and registry metadata are one-time prerequisites; the
+reusable deploy command validates but does not rewrite registry configuration.
 
 The script does not attempt to prove effective Azure RBAC or Key Vault policy through
 role-assignment enumeration because inherited scopes and vault access models make that
@@ -161,24 +168,26 @@ Build steps:
 5. build for `linux/amd64` with `NEXT_PUBLIC_LANGGRAPH_URL` and
    `NEXT_PUBLIC_ASSISTANT_ID` build arguments;
 6. tag only `docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest`;
-7. pipe `DOCKER_HUB_PAT` to `container_cli_login` through stdin without echoing it,
-   then unset the PAT variable;
+7. disable xtrace if active, pipe `DOCKER_HUB_PAT` to `container_cli_login` through
+   stdin without echoing it, unset the PAT variable, and restore the prior xtrace
+   state;
 8. push through `container_cli_push`; and
-9. only after a successful push, atomically write the exact marker to ignored local
-   file `.deployment-version` for the deploy step.
+9. only after a successful push, atomically write ignored local manifest
+   `.deployment-build.json` containing schema version, exact marker, image, backend
+   URL, and assistant ID for the deploy step.
 
 The temporary context is removed by an exit trap on success or failure. Build, login,
 and push failures retain their nonzero outcome and do not replace a prior successful
-`.deployment-version` marker.
+`.deployment-build.json` manifest. `build.sh` performs no Azure subscription,
+resource read, resource creation, or other Azure mutation.
 
-## Docker Hub Secret, Registry, and Application Update
+## Validated Docker Hub Registry and Application Update
 
-Deployment performs no build or push. It requires `.deployment-version`, then
-configures two unversioned Key Vault references:
+Deployment performs no build or push. It requires `.deployment-build.json`, then
+configures the `upload-api-key` unversioned Key Vault reference:
 
 ```text
 keyvaultref:<vault-uri>/secrets/UPLOAD-API-KEY,identityref:system
-keyvaultref:<vault-uri>/secrets/DOCKER-HUB-PAT,identityref:system
 ```
 
 Using an unversioned reference permits platform-managed secret refresh. The app
@@ -188,10 +197,14 @@ environment references it as:
 UPLOAD_API_KEY=secretref:upload-api-key
 ```
 
-Upsert the `docker.io` registry entry with `DOCKER_HUB_USERNAME` and
-`secretref:docker-hub-pat`. The PAT value must never appear in command arguments,
-temporary files, output, or shell traces. Existing unrelated registry entries remain
-untouched.
+Docker Hub configuration is a prerequisite rather than a recurring deployment
+mutation. Its Container App secret uses Key Vault URL
+`<vault-uri>/secrets/DOCKER-HUB-PAT` and system identity. Its registry object uses
+`server: docker.io`, `username: jerryshao2013`, and
+`passwordSecretRef: docker-hub-pat`. This metadata is configured once through a
+reviewed YAML/ARM update that preserves other configuration; the deploy script only
+validates it. The PAT value never appears in command arguments, temporary files,
+output, or shell traces.
 
 Generate a lowercase UTC timestamp-plus-process-ID revision suffix such as
 `ui-20260811t170000-12345`. Including the process ID prevents collision between two
@@ -228,7 +241,7 @@ Record the previous active revision before updating. After update:
    revision diagnostics; and
 5. poll the public
    `https://<container-app-fqdn>/deployment-version.txt` endpoint until it returns
-   HTTP 200 with the exact marker read from `.deployment-version`.
+   HTTP 200 with the exact marker read from `.deployment-build.json`.
 
 Azure Container Apps single-revision mode keeps the old revision active until the new
 revision is ready. The script preserves that mode and never changes traffic weights.
@@ -242,10 +255,11 @@ revision.
 ## Failure Boundaries
 
 - Subscription errors stop before any Azure resource access.
-- Missing build marker or prerequisites stop before cloud mutation.
+- Missing/invalid build manifest, image mismatch, or build/deploy configuration drift
+  stops before cloud mutation.
 - Build, Docker Hub login, or push errors leave deployment as a separate unstarted
-  step and preserve the last successful marker.
-- Docker Hub secret or registry-configuration failure stops before new revision
+  step and preserves the last successful manifest.
+- Invalid Docker Hub secret or registry prerequisite stops before new revision
   creation.
 - Secret-reference failure stops before new revision creation.
 - Update or readiness failures leave Azure's single-revision behavior responsible for
@@ -271,30 +285,32 @@ Azure or registry operations.
 ### Docker Hub build
 
 - runtime selection preserves Apple Container, Podman, Docker priority and override;
-- only the two approved Docker Hub credential keys can be imported from the shared
-  backend `.env`;
+- only `DOCKER_HUB_PAT` can be imported from the shared backend `.env`, and the
+  username remains pinned;
 - clean context excludes local environment and generated files;
 - image is built for `linux/amd64` with exact argument boundaries;
 - only `docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest` is pushed;
-- PAT is passed through stdin and absent from stdout/stderr; and
-- `.deployment-version` is replaced only after successful push.
+- PAT is passed through stdin and absent from normal and `bash -x` stdout/stderr; and
+- `.deployment-build.json` is replaced only after successful push and records exact
+  marker/image/backend/assistant values.
 
 ### Container Apps deployment
 
-- missing UI app, backend app, either secret, system identity, local build marker,
-  external UI/backend ingress, public UI/backend FQDN, target
-  port 3000, exactly one application container, or single-revision mode fails before
-  cloud mutation;
+- missing UI app, backend app, either secret, system identity, valid local build
+  manifest, external UI/backend ingress, public UI/backend FQDN, target port 3000,
+  exactly one application container, or single-revision mode fails before cloud
+  mutation;
 - deploy script never invokes a container runtime, build, login, or push;
-- both secrets use Key Vault references with `identityref:system`;
-- Docker Hub registry configuration uses `secretref:docker-hub-pat` without exposing
-  the PAT;
-- discovered backend URL must match the URL used by the completed build;
+- both secrets use Key Vault references with system identity;
+- Docker Hub registry metadata uses `passwordSecretRef: docker-hub-pat` without
+  exposing the PAT and is validated without recurring mutation;
+- manifest image/backend/assistant values must exactly match deployment values, with
+  separate drift tests for changes between build and deploy commands;
 - `.env.docker` assistant ID overrides earlier values for both build and runtime;
 - update names the sole discovered container and uses a collision-resistant revision
   suffix, exact image, and required environment variables;
-- no create, identity assignment, role assignment, ingress, scale, traffic, revision
-  mode, network, or volume mutation command runs;
+- no build, push, registry mutation, create, identity assignment, role assignment,
+  ingress, scale, traffic, revision mode, network, or volume mutation command runs;
 - secret, registry, update, provisioning, and HTTP failures propagate; and
 - success requires exact deployment marker.
 

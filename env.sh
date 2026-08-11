@@ -15,8 +15,8 @@ export NEXT_PUBLIC_LANGGRAPH_URL=$DEEP_RESEARCH_AGENT_URL
 # Key Vault name (fallback if deep-research env.sh is not available)
 export KV_NAME="${KV_NAME:-kv-deep-agents-ui-$SEED}"
 
-# Update .env.docker if it exists
-if [ -f .env.docker ]; then
+# Update .env.docker if it exists. Read-only deployment checks opt out explicitly.
+if [ "${ENV_SH_SKIP_DOCKER_SYNC:-false}" != "true" ] && [ -f .env.docker ]; then
   # Use a temporary file to avoid issues with read/write on the same file
   tmp_file=$(mktemp)
 

@@ -20,6 +20,11 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const scriptPath = path.join(repoRoot, "deploy-azure-container-app.sh");
 const subscriptionId = "subscription-container-app-test";
 const runtimeOverrideUnset = Symbol("runtime-override-unset");
+const defaultDockerEnv = `# Values loaded after env.sh
+
+NEXT_PUBLIC_ASSISTANT_ID='docker-assistant'
+NEXT_PUBLIC_LANGGRAPH_URL="https://docker-backend.invalid"\r
+`;
 
 const fakeAz = `#!/bin/bash
 set -u
@@ -34,34 +39,52 @@ set -u
 scenario="\${AZ_SCENARIO:-success}"
 command="\${1:-}:\${2:-}"
 
+argv_error() {
+  printf 'fake az argv contract violation for %s\\n' "$command" >&2
+  exit 86
+}
+
 case "$command" in
   account:show)
+    [ "$#" -eq 6 ] &&
+      [ "$3" = "--query" ] && [ "$4" = "id" ] &&
+      [ "$5" = "-o" ] && [ "$6" = "tsv" ] || argv_error
     printf '%s\\n' "$AZURE_SUBSCRIPTION_ID"
     ;;
   account:set)
-    [ "\${3:-}" = "--subscription" ] || exit 64
-    [ "\${4:-}" = "$AZURE_SUBSCRIPTION_ID" ] || exit 64
+    [ "$#" -eq 4 ] &&
+      [ "$3" = "--subscription" ] &&
+      [ "$4" = "$AZURE_SUBSCRIPTION_ID" ] || argv_error
     ;;
   group:show)
+    [ "$#" -eq 8 ] &&
+      [ "$3" = "--name" ] && [ "$4" = "test-resource-group" ] &&
+      [ "$5" = "--query" ] && [ "$6" = "name" ] &&
+      [ "$7" = "-o" ] && [ "$8" = "tsv" ] || argv_error
     [ "$scenario" = "resource-group-missing" ] && exit 3
     printf '%s\\n' "test-resource-group"
     ;;
   acr:show)
+    [ "$#" -eq 10 ] &&
+      [ "$3" = "--name" ] && [ "$4" = "testregistry" ] &&
+      [ "$5" = "--resource-group" ] && [ "$6" = "test-resource-group" ] &&
+      [ "$7" = "--query" ] && [ "$8" = "loginServer" ] &&
+      [ "$9" = "-o" ] && [ "\${10}" = "tsv" ] || argv_error
     [ "$scenario" = "acr-missing" ] && exit 4
     [ "$scenario" = "empty-acr-login-server" ] || printf '%s\\n' "testregistry.azurecr.io"
     ;;
   containerapp:show)
-    name=""
-    query=""
-    while [ "$#" -gt 0 ]; do
-      case "$1" in
-        --name) name="\${2:-}"; shift 2 ;;
-        --query) query="\${2:-}"; shift 2 ;;
-        *) shift ;;
-      esac
-    done
+    [ "$#" -eq 10 ] &&
+      [ "$3" = "--name" ] &&
+      [ "$5" = "--resource-group" ] && [ "$6" = "test-resource-group" ] &&
+      [ "$7" = "--query" ] &&
+      [ "$9" = "-o" ] && [ "\${10}" = "tsv" ] || argv_error
+    name="$4"
+    query="$8"
 
     if [ "$name" = "bmo-deepagent-ui-testseed" ]; then
+      expected_query="join('|', [to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])"
+      [ "$query" = "$expected_query" ] || argv_error
       [ "$scenario" = "ui-app-missing" ] && exit 5
       external=true
       fqdn=ui.example.test
@@ -83,6 +106,8 @@ case "$command" in
         "$external" "$fqdn" "$target_port" "$revision_mode" \\
         "$identity_type" "$container_count" "$container_name"
     elif [ "$name" = "deep-research-agent-testseed" ]; then
+      expected_query="join('|', [to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn)])"
+      [ "$query" = "$expected_query" ] || argv_error
       [ "$scenario" = "backend-missing" ] && exit 6
       external=true
       fqdn=backend.example.test
@@ -90,12 +115,16 @@ case "$command" in
       [ "$scenario" = "backend-missing-fqdn" ] && fqdn=null
       printf '%s|%s\\n' "$external" "$fqdn"
     else
-      printf 'unexpected Container App name: %s (query: %s)\\n' "$name" "$query" >&2
-      exit 64
+      argv_error
     fi
     ;;
   containerapp:registry)
-    [ "\${3:-}" = "list" ] || exit 64
+    [ "$#" -eq 11 ] && [ "$3" = "list" ] &&
+      [ "$4" = "--name" ] && [ "$5" = "bmo-deepagent-ui-testseed" ] &&
+      [ "$6" = "--resource-group" ] && [ "$7" = "test-resource-group" ] &&
+      [ "$8" = "--query" ] &&
+      [ "$9" = "[].join('|', [server, identity])" ] &&
+      [ "\${10}" = "-o" ] && [ "\${11}" = "tsv" ] || argv_error
     case "$scenario" in
       wrong-acr-registry) printf '%s\\n' "other.azurecr.io|system" ;;
       wrong-acr-identity) printf '%s\\n' "testregistry.azurecr.io|user-assigned" ;;
@@ -103,18 +132,26 @@ case "$command" in
     esac
     ;;
   keyvault:show)
+    [ "$#" -eq 10 ] &&
+      [ "$3" = "--name" ] && [ "$4" = "testvault" ] &&
+      [ "$5" = "--resource-group" ] && [ "$6" = "test-resource-group" ] &&
+      [ "$7" = "--query" ] && [ "$8" = "properties.vaultUri" ] &&
+      [ "$9" = "-o" ] && [ "\${10}" = "tsv" ] || argv_error
     [ "$scenario" = "vault-missing" ] && exit 7
     [ "$scenario" = "empty-vault-uri" ] || printf '%s\\n' "https://testvault.vault.azure.net/"
     ;;
   keyvault:secret)
-    [ "\${3:-}" = "show" ] || exit 64
+    [ "$#" -eq 11 ] && [ "$3" = "show" ] &&
+      [ "$4" = "--vault-name" ] && [ "$5" = "testvault" ] &&
+      [ "$6" = "--name" ] && [ "$7" = "UPLOAD-API-KEY" ] &&
+      [ "$8" = "--query" ] && [ "$9" = "id" ] &&
+      [ "\${10}" = "-o" ] && [ "\${11}" = "tsv" ] || argv_error
     [ "$scenario" = "upload-secret-missing" ] && exit 8
     [ "$scenario" = "empty-upload-secret-id" ] || \\
       printf '%s\\n' "https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY/version"
     ;;
   *)
-    printf 'unexpected az command: %s\\n' "$command" >&2
-    exit 64
+    argv_error
     ;;
 esac
 `;
@@ -133,25 +170,34 @@ exit 0
 
 const runDeployment = async ({
   scenario = "success",
-  dockerEnv = true,
+  dockerEnv = defaultDockerEnv,
   runtimes = ["docker"],
   containerCli = runtimeOverrideUnset,
+  outsideCwd = false,
+  scriptTransform,
 } = {}) => {
-  const fixtureRoot = await mkdtemp(
+  const tempRoot = await mkdtemp(
     path.join(tmpdir(), "container-app-preflight-test-")
   );
+  const fixtureRoot = path.join(tempRoot, "ui");
 
   try {
     const binDir = path.join(fixtureRoot, "bin");
     const scriptsDir = path.join(fixtureRoot, "scripts");
+    const deepResearchDir = path.join(tempRoot, "deep-research");
+    const outsideDir = path.join(tempRoot, "outside");
     const commandLog = path.join(fixtureRoot, "commands.log");
-    await mkdir(binDir);
+    const fixtureScriptPath = path.join(
+      fixtureRoot,
+      "deploy-azure-container-app.sh"
+    );
+    await mkdir(binDir, { recursive: true });
     await mkdir(scriptsDir);
+    await mkdir(deepResearchDir);
+    await mkdir(outsideDir);
     await Promise.all([
-      copyFile(
-        scriptPath,
-        path.join(fixtureRoot, "deploy-azure-container-app.sh")
-      ),
+      copyFile(scriptPath, fixtureScriptPath),
+      copyFile(path.join(repoRoot, "env.sh"), path.join(fixtureRoot, "env.sh")),
       copyFile(
         path.join(repoRoot, "scripts/azure-subscription.sh"),
         path.join(scriptsDir, "azure-subscription.sh")
@@ -161,9 +207,19 @@ const runDeployment = async ({
         path.join(scriptsDir, "container-runtime.sh")
       ),
     ]);
+    if (scriptTransform) {
+      const source = await readFile(fixtureScriptPath, "utf8");
+      await writeFile(fixtureScriptPath, scriptTransform(source));
+    }
 
     await writeFile(
-      path.join(fixtureRoot, "env.sh"),
+      path.join(deepResearchDir, "env.sh"),
+      `#!/bin/bash
+export DEEP_RESEARCH_AGENT_URL="https://deep-env.example.invalid"
+`
+    );
+    await writeFile(
+      path.join(fixtureRoot, ".env"),
       `#!/bin/bash
 export AZURE_SUBSCRIPTION_ID="${subscriptionId}"
 export SEED="testseed"
@@ -172,19 +228,22 @@ export ACR_NAME="testregistry"
 export KV_NAME="testvault"
 export NEXT_PUBLIC_ASSISTANT_ID="env-assistant"
 export NEXT_PUBLIC_LANGGRAPH_URL="https://env-backend.invalid"
-export CONTAINER_APP_NAME="\${CONTAINER_APP_NAME:-bmo-deepagent-ui-$SEED}"
+export CONTAINER_APP_NAME="bmo-deepagent-ui-testseed"
 `
     );
-    if (dockerEnv) {
-      await writeFile(
-        path.join(fixtureRoot, ".env.docker"),
-        `# Values loaded after env.sh
-
-NEXT_PUBLIC_ASSISTANT_ID='docker-assistant'
-NEXT_PUBLIC_LANGGRAPH_URL="https://docker-backend.invalid"\r
-`
-      );
+    const dockerEnvPath = path.join(fixtureRoot, ".env.docker");
+    if (dockerEnv !== false) {
+      await writeFile(dockerEnvPath, dockerEnv);
     }
+    const dockerEnvBefore = await readFile(dockerEnvPath).catch(() => null);
+
+    const outsideEnvPath = path.join(outsideDir, ".env");
+    const outsideDockerEnvPath = path.join(outsideDir, ".env.docker");
+    const outsideDockerSentinel = Buffer.from(
+      "OUTSIDE_DOCKER_ENV_MUST_NOT_CHANGE\n"
+    );
+    await writeFile(outsideEnvPath, "return 91\n");
+    await writeFile(outsideDockerEnvPath, outsideDockerSentinel);
 
     const azPath = path.join(binDir, "az");
     await writeFile(azPath, fakeAz);
@@ -200,21 +259,27 @@ NEXT_PUBLIC_LANGGRAPH_URL="https://docker-backend.invalid"\r
       await chmod(runtimePath, 0o755);
     }
 
-    const dirnamePath = path.join(binDir, "dirname");
-    await writeFile(
-      dirnamePath,
-      `#!/bin/bash
+    for (const [command, target] of [
+      ["dirname", "/usr/bin/dirname"],
+      ["mktemp", "/usr/bin/mktemp"],
+      ["mv", "/bin/mv"],
+    ]) {
+      const commandPath = path.join(binDir, command);
+      await writeFile(
+        commandPath,
+        `#!/bin/bash
 {
-  printf 'dirname'
+  printf '${command}'
   for argument in "$@"; do
     printf ' <%s>' "$argument"
   done
   printf '\\n'
 } >> "$COMMAND_LOG"
-exec /usr/bin/dirname "$@"
+exec ${target} "$@"
 `
-    );
-    await chmod(dirnamePath, 0o755);
+      );
+      await chmod(commandPath, 0o755);
+    }
 
     const environment = {
       PATH: binDir,
@@ -227,21 +292,26 @@ exec /usr/bin/dirname "$@"
 
     const result = spawnSync(
       "/bin/bash",
-      [
-        "--noprofile",
-        "--norc",
-        path.join(fixtureRoot, "deploy-azure-container-app.sh"),
-      ],
+      ["--noprofile", "--norc", fixtureScriptPath],
       {
-        cwd: repoRoot,
+        cwd: outsideCwd ? outsideDir : fixtureRoot,
         encoding: "utf8",
         env: environment,
       }
     );
     const log = await readFile(commandLog, "utf8").catch(() => "");
-    return { result, log };
+    const dockerEnvAfter = await readFile(dockerEnvPath).catch(() => null);
+    const outsideDockerEnvAfter = await readFile(outsideDockerEnvPath);
+    return {
+      result,
+      log,
+      dockerEnvBefore,
+      dockerEnvAfter,
+      outsideDockerSentinel,
+      outsideDockerEnvAfter,
+    };
   } finally {
-    await rm(fixtureRoot, { recursive: true, force: true });
+    await rm(tempRoot, { recursive: true, force: true });
   }
 };
 
@@ -258,6 +328,80 @@ const assertNoMutation = (log) => {
 
 test("Azure Container Apps deployment entry point is executable", async () => {
   await access(scriptPath, constants.X_OK);
+});
+
+for (const [name, scenario, expectedStatus] of [
+  ["successful", "success", 0],
+  ["failed", "resource-group-missing", 1],
+]) {
+  test(`preflight preserves .env.docker bytes after a ${name} run`, async () => {
+    const { result, dockerEnvBefore, dockerEnvAfter } = await runDeployment({
+      scenario,
+    });
+
+    if (expectedStatus === 0) {
+      assert.equal(result.status, 0, result.stderr);
+    } else {
+      assert.notEqual(result.status, 0, result.stdout);
+    }
+    assert.deepEqual(dockerEnvAfter, dockerEnvBefore);
+  });
+}
+
+test("preflight succeeds from an unrelated working directory without touching it", async () => {
+  const {
+    result,
+    outsideDockerSentinel,
+    outsideDockerEnvAfter,
+    dockerEnvBefore,
+    dockerEnvAfter,
+  } = await runDeployment({ outsideCwd: true });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(outsideDockerEnvAfter, outsideDockerSentinel);
+  assert.deepEqual(dockerEnvAfter, dockerEnvBefore);
+});
+
+const invalidDockerEnvCases = [
+  ["protected override", "RESOURCE_GROUP=attacker\n", /protected/i],
+  [
+    "export syntax",
+    "export NEXT_PUBLIC_ASSISTANT_ID=attacker\n",
+    /shell identifier|unsupported/i,
+  ],
+  [
+    "unmatched quote",
+    'NEXT_PUBLIC_ASSISTANT_ID="unterminated\n',
+    /unmatched quote/i,
+  ],
+  ["leading-space comment", "  # not supported\n", /unsupported/i],
+  ["whitespace-only line", "   \n", /unsupported/i],
+];
+
+for (const [name, dockerEnv, expectedError] of invalidDockerEnvCases) {
+  test(`preflight rejects .env.docker ${name} before external access`, async () => {
+    const { result, log, dockerEnvBefore, dockerEnvAfter } =
+      await runDeployment({ dockerEnv });
+
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, /\.env\.docker.*line 1/i);
+    assert.match(result.stderr, expectedError);
+    assert.doesNotMatch(log, /^(?:az|docker|podman|container)\b/m);
+    assert.deepEqual(dockerEnvAfter, dockerEnvBefore);
+    assertNoMutation(log);
+  });
+}
+
+test("fake Azure rejects a production-breaking query change", async () => {
+  const { result, log } = await runDeployment({
+    scriptTransform: (source) =>
+      source.replace("--query name", "--query unexpectedGroupQuery"),
+  });
+
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /fake az argv contract violation/i);
+  assert.match(log, /<--query> <unexpectedGroupQuery>/);
+  assertNoMutation(log);
 });
 
 test("preflight rejects a missing container runtime before Azure access", async () => {

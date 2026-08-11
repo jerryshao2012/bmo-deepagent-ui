@@ -2,36 +2,96 @@
 set -eo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-source "$SCRIPT_DIR/env.sh"
+ENV_SH_SKIP_DOCKER_SYNC_WAS_SET=false
+if [ "${ENV_SH_SKIP_DOCKER_SYNC+x}" = "x" ]; then
+  ENV_SH_SKIP_DOCKER_SYNC_WAS_SET=true
+  ENV_SH_SKIP_DOCKER_SYNC_PREVIOUS="$ENV_SH_SKIP_DOCKER_SYNC"
+fi
+ENV_SH_SKIP_DOCKER_SYNC=true
+if source "$SCRIPT_DIR/env.sh"; then
+  ENV_SH_SOURCE_STATUS=0
+else
+  ENV_SH_SOURCE_STATUS=$?
+fi
+if [ "$ENV_SH_SKIP_DOCKER_SYNC_WAS_SET" = true ]; then
+  ENV_SH_SKIP_DOCKER_SYNC="$ENV_SH_SKIP_DOCKER_SYNC_PREVIOUS"
+else
+  unset ENV_SH_SKIP_DOCKER_SYNC
+fi
+unset ENV_SH_SKIP_DOCKER_SYNC_PREVIOUS ENV_SH_SKIP_DOCKER_SYNC_WAS_SET
+[ "$ENV_SH_SOURCE_STATUS" -eq 0 ] || exit "$ENV_SH_SOURCE_STATUS"
+unset ENV_SH_SOURCE_STATUS
+
 source "$SCRIPT_DIR/scripts/azure-subscription.sh"
 source "$SCRIPT_DIR/scripts/container-runtime.sh"
-
-if [ -f "$SCRIPT_DIR/.env.docker" ]; then
-  while IFS='=' read -r key value || [ -n "$key" ]; do
-    [[ "$key" =~ ^#.*$ ]] || [ -z "$key" ] && continue
-    value="${value%$'\r'}"
-    case "$value" in
-      \"*\")
-        value="${value#\"}"
-        value="${value%\"}"
-        ;;
-      \'*\')
-        value="${value#\'}"
-        value="${value%\'}"
-        ;;
-    esac
-    export "$key=$value"
-  done < "$SCRIPT_DIR/.env.docker"
-fi
-
-ASSISTANT_ID="${NEXT_PUBLIC_ASSISTANT_ID:-research}"
-CONTAINER_APP_NAME="${CONTAINER_APP_NAME:-bmo-deepagent-ui-$SEED}"
 
 fail() {
   echo "Error: $*" >&2
   exit 1
 }
+
+dotenv_fail() {
+  local line_number="$1"
+  local message="$2"
+  fail "$SCRIPT_DIR/.env.docker line $line_number: $message"
+}
+
+if [ -f "$SCRIPT_DIR/.env.docker" ]; then
+  docker_env_line_number=0
+  while IFS= read -r docker_env_line || [ -n "$docker_env_line" ]; do
+    docker_env_line_number=$((docker_env_line_number + 1))
+    docker_env_line="${docker_env_line%$'\r'}"
+    case "$docker_env_line" in
+      ""|\#*) continue ;;
+    esac
+
+    case "$docker_env_line" in
+      *=*) ;;
+      *) dotenv_fail "$docker_env_line_number" "unsupported syntax; expected KEY=VALUE." ;;
+    esac
+
+    key="${docker_env_line%%=*}"
+    value="${docker_env_line#*=}"
+    if ! [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      dotenv_fail "$docker_env_line_number" "key must be a shell identifier without 'export' or leading whitespace."
+    fi
+
+    case "$key" in
+      AZURE_SUBSCRIPTION_ID|RESOURCE_GROUP|ACR_NAME|KV_NAME|SEED|CONTAINER_APP_NAME|CONTAINER_CLI|PATH|IFS|CDPATH|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|HOME|PWD|OLDPWD|TMPDIR|LD_*|DYLD_*)
+        dotenv_fail "$docker_env_line_number" "protected deployment or shell control '$key' cannot be overridden."
+        ;;
+    esac
+
+    case "$value" in
+      \"*)
+        case "$value" in
+          \"*\")
+            value="${value#\"}"
+            value="${value%\"}"
+            ;;
+          *) dotenv_fail "$docker_env_line_number" "unmatched quote." ;;
+        esac
+        ;;
+      \'*)
+        case "$value" in
+          \'*\')
+            value="${value#\'}"
+            value="${value%\'}"
+            ;;
+          *) dotenv_fail "$docker_env_line_number" "unmatched quote." ;;
+        esac
+        ;;
+      *\"*|*\'*) dotenv_fail "$docker_env_line_number" "unmatched quote." ;;
+    esac
+    export "$key=$value"
+  done < "$SCRIPT_DIR/.env.docker"
+  unset docker_env_line docker_env_line_number key value
+fi
+
+ASSISTANT_ID="${NEXT_PUBLIC_ASSISTANT_ID:-research}"
+CONTAINER_APP_NAME="${CONTAINER_APP_NAME:-bmo-deepagent-ui-$SEED}"
 
 require_nonempty() {
   local variable_name="$1"

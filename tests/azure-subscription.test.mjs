@@ -15,7 +15,9 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const helperPath = path.join(repoRoot, "scripts/azure-subscription.sh");
-const defaultSubscriptionId = "11111111-2222-3333-4444-555555555555";
+const defaultSubscriptionId = "subscription-default";
+const requestedSubscriptionId = "subscription-requested";
+const uuidPattern = /\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b/i;
 
 const runSubscriptionGuard = async (options = {}) => {
   const subscriptionId = Object.prototype.hasOwnProperty.call(
@@ -176,16 +178,36 @@ test("active subscription mismatch fails", async () => {
 });
 
 test("selects and confirms exact subscription", async () => {
-  const subscriptionId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-  const { result, log } = await runSubscriptionGuard({ subscriptionId });
+  const { result, log } = await runSubscriptionGuard({
+    subscriptionId: requestedSubscriptionId,
+  });
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(
     log,
     "az <account> <show> <--query> <id> <-o> <tsv>\n" +
-      `az <account> <set> <--subscription> <${subscriptionId}>\n` +
+      `az <account> <set> <--subscription> <${requestedSubscriptionId}>\n` +
       "az <account> <show> <--query> <id> <-o> <tsv>\n"
   );
+});
+
+test("subscription fixtures use opaque values", () => {
+  assert.doesNotMatch(defaultSubscriptionId, uuidPattern);
+  assert.doesNotMatch(requestedSubscriptionId, uuidPattern);
+});
+
+test("tracked Azure scripts do not hardcode subscription UUIDs", async () => {
+  const azureFacingShellFiles = [
+    "scripts/azure-subscription.sh",
+    "build.sh",
+    "deploy.sh",
+    "secrets.sh.example",
+  ];
+
+  for (const file of azureFacingShellFiles) {
+    const contents = await readFile(path.join(repoRoot, file), "utf8");
+    assert.doesNotMatch(contents, uuidPattern, file);
+  }
 });
 
 const scriptContracts = [

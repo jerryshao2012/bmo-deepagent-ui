@@ -37,6 +37,7 @@ RUN yarn workspaces focus --all --production && yarn cache clean --all
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/server.cjs ./server.cjs
+COPY --from=builder /app/runtime ./runtime
 
 EXPOSE 3000
 ENV PORT=3000

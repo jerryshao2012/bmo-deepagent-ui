@@ -44,6 +44,12 @@ test("container image never embeds local environment files", async () => {
   assert.match(dockerignore, /^\.env\*$/m);
 });
 
+test("container image includes custom server runtime modules", async () => {
+  const dockerfile = await source("Dockerfile");
+
+  assert.match(dockerfile, /COPY\s+--from=builder\s+\/app\/runtime\s+\.\/runtime/);
+});
+
 test("deployment never exposes server API keys through NEXT_PUBLIC variables", async () => {
   const deployScript = await source("deploy.sh");
 

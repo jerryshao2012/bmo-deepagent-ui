@@ -77,7 +77,9 @@ between the two commands.
 only that key from the approved sibling `../deep-research/.env`; it must not source
 the file or import unrelated deployment or shell-control variables. The username is
 always exactly `jerryshao2013`; any conflicting username fails. The PAT is never
-written to repository files or logs.
+written to repository files or logs. If xtrace is active, `build.sh` disables it at
+script entry before any configuration or credential access, remembers the prior
+state, and restores it only after the PAT has been unset.
 
 ## Shared Azure Subscription Guard
 
@@ -160,21 +162,22 @@ builder-capacity policy.
 
 Build steps:
 
-1. select and ready the container runtime;
-2. create a clean temporary context using `.dockerignore`;
-3. generate a unique deployment marker in staged
+1. disable xtrace before any configuration or credential access while remembering
+   whether it must be restored;
+2. select and ready the container runtime;
+3. create a clean temporary context using `.dockerignore`;
+4. generate a unique deployment marker in staged
    `public/deployment-version.txt` without modifying the source tree;
-4. copy `Dockerfile` explicitly into the staged context;
-5. build for `linux/amd64` with `NEXT_PUBLIC_LANGGRAPH_URL` and
+5. copy `Dockerfile` explicitly into the staged context;
+6. build for `linux/amd64` with `NEXT_PUBLIC_LANGGRAPH_URL` and
    `NEXT_PUBLIC_ASSISTANT_ID` build arguments;
-6. tag only `docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest`;
-7. disable xtrace if active, pipe `DOCKER_HUB_PAT` to `container_cli_login` through
-   stdin without echoing it, unset the PAT variable, and restore the prior xtrace
-   state;
-8. push through `container_cli_push`; and
-9. only after a successful push, atomically write ignored local manifest
-   `.deployment-build.json` containing schema version, exact marker, image, backend
-   URL, and assistant ID for the deploy step.
+7. tag only `docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest`;
+8. pipe `DOCKER_HUB_PAT` to `container_cli_login` through stdin without echoing it,
+   then unset the PAT variable and restore the prior xtrace state;
+9. push through `container_cli_push`; and
+10. only after a successful push, atomically write ignored local manifest
+    `.deployment-build.json` containing schema version, exact marker, image, backend
+    URL, and assistant ID for the deploy step.
 
 The temporary context is removed by an exit trap on success or failure. Build, login,
 and push failures retain their nonzero outcome and do not replace a prior successful
@@ -290,7 +293,8 @@ Azure or registry operations.
 - clean context excludes local environment and generated files;
 - image is built for `linux/amd64` with exact argument boundaries;
 - only `docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest` is pushed;
-- PAT is passed through stdin and absent from normal and `bash -x` stdout/stderr; and
+- PAT is passed through stdin and absent from normal and `bash -x` stdout/stderr for
+  both exported-PAT and sibling-file-PAT paths; and
 - `.deployment-build.json` is replaced only after successful push and records exact
   marker/image/backend/assistant values.
 

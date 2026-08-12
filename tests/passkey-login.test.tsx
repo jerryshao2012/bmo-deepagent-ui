@@ -17,13 +17,20 @@ import {
   authenticateWithPasskey,
   isPasskeyCancellation,
 } from "../src/lib/passkey-client";
+import { PASSKEY_ENROLLMENT_MARKER_KEY } from "../src/lib/passkey-enrollment-state";
+
+function seedPasskeyEnrollmentMarker(value = "1") {
+  localStorage.setItem(PASSKEY_ENROLLMENT_MARKER_KEY, value);
+}
 
 afterEach(() => {
   cleanup();
   localStorage.clear();
 });
 
-test("shows passkey sign-in above OAuth alternatives when browser supports it", async () => {
+test("shows passkey sign-in above OAuth alternatives for an enrolled browser", async () => {
+  seedPasskeyEnrollmentMarker();
+
   const { container } = render(
     <LoginProviders
       onSignIn={async () => {}}
@@ -43,6 +50,87 @@ test("shows passkey sign-in above OAuth alternatives when browser supports it", 
     Node.DOCUMENT_POSITION_FOLLOWING & passkey.compareDocumentPosition(google)
   );
   assert.ok(container.contains(screen.getByRole("button", { name: "Github" })));
+});
+
+test("hides passkey sign-in when enrollment marker is absent", async () => {
+  render(
+    <LoginProviders
+      onSignIn={async () => {}}
+      passkeysEnabled
+      supportsPasskeys={() => true}
+      onPasskeySignIn={async () => {}}
+    />
+  );
+
+  assert.equal(
+    Boolean(screen.queryByRole("button", { name: "Sign in with a passkey" })),
+    false
+  );
+});
+
+test("hides passkey sign-in when enrollment marker is malformed", async () => {
+  seedPasskeyEnrollmentMarker("true");
+
+  render(
+    <LoginProviders
+      onSignIn={async () => {}}
+      passkeysEnabled
+      supportsPasskeys={() => true}
+      onPasskeySignIn={async () => {}}
+    />
+  );
+
+  assert.equal(
+    Boolean(screen.queryByRole("button", { name: "Sign in with a passkey" })),
+    false
+  );
+});
+
+test("hides passkey sign-in when enrollment marker storage cannot be read", async () => {
+  const storagePrototype = Object.getPrototypeOf(window.localStorage);
+  const originalGetItem = storagePrototype.getItem;
+  storagePrototype.getItem = () => {
+    throw new Error("storage blocked");
+  };
+
+  try {
+    render(
+      <LoginProviders
+        onSignIn={async () => {}}
+        passkeysEnabled
+        supportsPasskeys={() => true}
+        onPasskeySignIn={async () => {}}
+      />
+    );
+
+    assert.equal(
+      Boolean(screen.queryByRole("button", { name: "Sign in with a passkey" })),
+      false
+    );
+  } finally {
+    storagePrototype.getItem = originalGetItem;
+  }
+});
+
+test("keeps OAuth usable when passkey sign-in is hidden", async () => {
+  const signIns: string[] = [];
+  render(
+    <LoginProviders
+      onSignIn={async (provider) => {
+        signIns.push(provider);
+      }}
+      passkeysEnabled
+      supportsPasskeys={() => true}
+      onPasskeySignIn={async () => {}}
+    />
+  );
+
+  assert.equal(
+    Boolean(screen.queryByRole("button", { name: "Sign in with a passkey" })),
+    false
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Google" }));
+  await waitFor(() => assert.deepEqual(signIns, ["google"]));
 });
 
 test("hides passkey sign-in when WebAuthn is unavailable", async () => {
@@ -82,6 +170,8 @@ test("passkeys default disabled even when browser supports WebAuthn", async () =
 });
 
 test("guards duplicate passkey ceremonies and disables every sign-in action", async () => {
+  seedPasskeyEnrollmentMarker();
+
   let finish: () => void = () => {};
   let callCount = 0;
   const ceremony = () => {
@@ -117,6 +207,8 @@ test("guards duplicate passkey ceremonies and disables every sign-in action", as
 });
 
 test("restores OAuth fallback when passkey ceremony fails", async () => {
+  seedPasskeyEnrollmentMarker();
+
   render(
     <LoginProviders
       onSignIn={async () => {}}

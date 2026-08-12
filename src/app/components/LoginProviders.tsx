@@ -13,6 +13,7 @@ import {
   isPasskeyCancellation,
   supportsPasskeyAuthentication,
 } from "@/lib/passkey-client";
+import { hasSeenPasskeyEnrollment } from "@/lib/passkey-enrollment-state";
 
 interface LoginProvidersProps {
   onSignIn: (provider: LoginProvider) => Promise<void>;
@@ -113,7 +114,9 @@ export default function LoginProviders({
 
   useEffect(() => {
     setRemembered(readRememberedLogin());
-    setPasskeysSupported(passkeysEnabled && supportsPasskeys());
+    setPasskeysSupported(
+      passkeysEnabled && supportsPasskeys() && hasSeenPasskeyEnrollment()
+    );
 
     const handlePageShow = (event: PageTransitionEvent) => {
       if (event.persisted) resetSignIn();

@@ -24,6 +24,7 @@ data/
 graphify-out/
 .container-build-context*/
 .deployment-build.json
+.resolved-azure-endpoints.json
 .deepeval/
 
 # Temporary files

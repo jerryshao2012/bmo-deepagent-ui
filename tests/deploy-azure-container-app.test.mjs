@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import {
   access,
@@ -8,7 +9,9 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -18,6 +21,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const scriptPath = path.join(repoRoot, "deploy-azure-container-app.sh");
+const resolverPath = path.join(repoRoot, "scripts/resolve-azure-endpoints.sh");
 const dockerEnvExample = await readFile(
   path.join(repoRoot, ".env.docker.example"),
   "utf8"
@@ -747,3 +751,491 @@ for (const [name, dockerEnv, error] of [
     assert.deepEqual(dockerEnvAfter, dockerEnvBefore);
   });
 }
+
+const resolverSubscriptionId = "12345678-1234-1234-1234-123456789abc";
+const resolverResourceGroup = "test-resource-group";
+const resolverEnvironmentName = "test-environment";
+const resolverBackendApp = "deep-research-agent-testseed";
+const resolverUiApp = "bmo-deepagent-ui-testseed";
+const resolverDomain = "calmpond-12345678.canadacentral.azurecontainerapps.io";
+const resolverEnvironmentId =
+  `/subscriptions/${resolverSubscriptionId}/resourceGroups/${resolverResourceGroup}` +
+  `/providers/Microsoft.App/managedEnvironments/${resolverEnvironmentName}`;
+const resolverBackendUrl = `https://${resolverBackendApp}.${resolverDomain}`;
+const resolverUiUrl = `https://${resolverUiApp}.${resolverDomain}`;
+const resolverMetadataName = ".resolved-azure-endpoints.json";
+const resolverExpectedAzCall = [
+  "containerapp",
+  "env",
+  "show",
+  "--subscription",
+  resolverSubscriptionId,
+  "--resource-group",
+  resolverResourceGroup,
+  "--name",
+  resolverEnvironmentName,
+  "--query",
+  "[id,properties.defaultDomain,properties.provisioningState]",
+  "--output",
+  "tsv",
+];
+
+const resolverExpectedStdout = [
+  `AZURE_ENVIRONMENT_ID='${resolverEnvironmentId}'`,
+  `AZURE_ENVIRONMENT_DEFAULT_DOMAIN='${resolverDomain}'`,
+  `BACKEND_APP_NAME='${resolverBackendApp}'`,
+  `UI_APP_NAME='${resolverUiApp}'`,
+  `BACKEND_URL='${resolverBackendUrl}'`,
+  `AZURE_UI_URL='${resolverUiUrl}'`,
+  `FRONTEND_URLS='${resolverUiUrl},https://bmo-deepagent-ui.vercel.app'`,
+  `GOOGLE_CALLBACK_URL='${resolverBackendUrl}/auth/callback/google'`,
+  `GITHUB_CALLBACK_URL='${resolverBackendUrl}/auth/callback/github'`,
+  `GITHUB_HOMEPAGE_URL='${resolverUiUrl}'`,
+  "CHANGED='true'",
+].join("\n");
+const resolverGoldenSha256 =
+  "ecc920b9938fab7d0af9bfa15ca0df3f4c441897e1e7971d76d1be37ca2d4e2c";
+
+const resolverExpectedMetadata = {
+  azure_environment_id: resolverEnvironmentId,
+  azure_environment_default_domain: resolverDomain,
+  backend_app_name: resolverBackendApp,
+  ui_app_name: resolverUiApp,
+  backend_url: resolverBackendUrl,
+  azure_ui_url: resolverUiUrl,
+  frontend_urls: `${resolverUiUrl},https://bmo-deepagent-ui.vercel.app`,
+  google_callback_url: `${resolverBackendUrl}/auth/callback/google`,
+  github_callback_url: `${resolverBackendUrl}/auth/callback/github`,
+  github_homepage_url: resolverUiUrl,
+};
+
+const resolverFakeAz = `#!/bin/bash
+set -u
+printf '%s\\n' "$*" >> "$RESOLVER_AZ_LOG"
+expected=(
+  containerapp env show
+  --subscription "$AZURE_SUBSCRIPTION_ID"
+  --resource-group "$RESOURCE_GROUP"
+  --name "$ENV_NAME"
+  --query '[id,properties.defaultDomain,properties.provisioningState]'
+  --output tsv
+)
+[ "$#" -eq "\${#expected[@]}" ] || exit 86
+index=1
+for value in "\${expected[@]}"; do
+  [ "\${!index}" = "$value" ] || exit 86
+  index=$((index + 1))
+done
+printf '%s' "\${FAKE_AZ_STDERR-}" >&2
+printf '%s' "\${FAKE_AZ_STDOUT-}"
+exit "\${FAKE_AZ_STATUS:-0}"
+`;
+
+const createResolverFixture = async () => {
+  const root = await mkdtemp(
+    path.join(tmpdir(), "azure-endpoint-resolver-test-")
+  );
+  const bin = path.join(root, "bin");
+  const azLog = path.join(root, "az.log");
+  await mkdir(bin);
+  await writeFile(path.join(bin, "az"), resolverFakeAz);
+  await chmod(path.join(bin, "az"), 0o700);
+  return { root, bin, azLog };
+};
+
+const runResolver = (
+  executable,
+  fixture,
+  {
+    args = [],
+    environment = {},
+    azStdout = `${resolverEnvironmentId}\t${resolverDomain}\tSucceeded\n`,
+    azStderr = "",
+    azStatus = 0,
+  } = {}
+) =>
+  spawnSync("bash", [executable, ...args], {
+    cwd: fixture.root,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${fixture.bin}:${process.env.PATH}`,
+      RESOLVER_AZ_LOG: fixture.azLog,
+      FAKE_AZ_STDOUT: azStdout,
+      FAKE_AZ_STDERR: azStderr,
+      FAKE_AZ_STATUS: String(azStatus),
+      AZURE_SUBSCRIPTION_ID: resolverSubscriptionId,
+      RESOURCE_GROUP: resolverResourceGroup,
+      ENV_NAME: resolverEnvironmentName,
+      BACKEND_APP_NAME: resolverBackendApp,
+      UI_APP_NAME: resolverUiApp,
+      ...environment,
+    },
+  });
+
+const readResolverAzCalls = async (fixture) => {
+  const contents = await readFile(fixture.azLog, "utf8").catch(() => "");
+  return contents.trim() ? contents.trim().split("\n") : [];
+};
+
+const parseResolverAssignments = (stdout) => {
+  const assignments = {};
+  for (const line of stdout.trimEnd().split("\n")) {
+    const match = line.match(/^([A-Z][A-Z0-9_]*)='((?:[^']|'"'"')*)'$/);
+    assert.ok(match, `unsafe resolver assignment: ${JSON.stringify(line)}`);
+    const [, key, encoded] = match;
+    assert.equal(assignments[key], undefined, `duplicate resolver key: ${key}`);
+    assignments[key] = encoded.replaceAll(`'"'"'`, `'`);
+  }
+  return assignments;
+};
+
+const expectedResolverNotice = (changed) =>
+  [
+    changed
+      ? "ACTION REQUIRED: update and verify Google/GitHub OAuth provider settings before deployment."
+      : "OAuth provider reminder: verify the following URLs remain configured.",
+    `Google authorized redirect URI: ${resolverBackendUrl}/auth/callback/google`,
+    `GitHub authorization callback URL: ${resolverBackendUrl}/auth/callback/github`,
+    `GitHub homepage / frontend origin: ${resolverUiUrl}`,
+  ].join("\n") + "\n";
+
+test("endpoint resolver queries environment once and emits deterministic schema", async () => {
+  const fixture = await createResolverFixture();
+  try {
+    const result = runResolver(resolverPath, fixture);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, `${resolverExpectedStdout}\n`);
+    assert.equal(result.stderr, expectedResolverNotice(true));
+    assert.deepEqual(parseResolverAssignments(result.stdout), {
+      AZURE_ENVIRONMENT_ID: resolverEnvironmentId,
+      AZURE_ENVIRONMENT_DEFAULT_DOMAIN: resolverDomain,
+      BACKEND_APP_NAME: resolverBackendApp,
+      UI_APP_NAME: resolverUiApp,
+      BACKEND_URL: resolverBackendUrl,
+      AZURE_UI_URL: resolverUiUrl,
+      FRONTEND_URLS: `${resolverUiUrl},https://bmo-deepagent-ui.vercel.app`,
+      GOOGLE_CALLBACK_URL: `${resolverBackendUrl}/auth/callback/google`,
+      GITHUB_CALLBACK_URL: `${resolverBackendUrl}/auth/callback/github`,
+      GITHUB_HOMEPAGE_URL: resolverUiUrl,
+      CHANGED: "true",
+    });
+    assert.deepEqual(await readResolverAzCalls(fixture), [
+      resolverExpectedAzCall.join(" "),
+    ]);
+    assert.equal(
+      await access(path.join(fixture.root, resolverMetadataName))
+        .then(() => true)
+        .catch(() => false),
+      false
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("endpoint resolver records atomically then compares without writes", async () => {
+  const fixture = await createResolverFixture();
+  try {
+    const recorded = runResolver(resolverPath, fixture, { args: ["--record"] });
+    assert.equal(recorded.status, 0, recorded.stderr);
+    const metadataPath = path.join(fixture.root, resolverMetadataName);
+    assert.deepEqual(
+      JSON.parse(await readFile(metadataPath, "utf8")),
+      resolverExpectedMetadata
+    );
+    assert.equal((await stat(metadataPath)).mode & 0o777, 0o600);
+    assert.deepEqual(
+      (await readFile(metadataPath, "utf8")).endsWith("\n"),
+      true
+    );
+    const before = await readFile(metadataPath);
+    const mktempSentinel = path.join(fixture.root, "mktemp-called");
+    await writeFile(
+      path.join(fixture.bin, "mktemp"),
+      `#!/bin/sh\nprintf called > ${JSON.stringify(mktempSentinel)}\nexit 72\n`
+    );
+    await chmod(path.join(fixture.bin, "mktemp"), 0o700);
+
+    const compared = runResolver(resolverPath, fixture);
+    assert.equal(compared.status, 0, compared.stderr);
+    assert.equal(
+      compared.stdout,
+      `${resolverExpectedStdout.replace("CHANGED='true'", "CHANGED='false'")}\n`
+    );
+    assert.equal(compared.stderr, expectedResolverNotice(false));
+    assert.deepEqual(await readFile(metadataPath), before);
+    assert.equal(
+      await access(mktempSentinel)
+        .then(() => true)
+        .catch(() => false),
+      false
+    );
+    assert.deepEqual(
+      (await readFile(fixture.azLog, "utf8")).trim().split("\n"),
+      [resolverExpectedAzCall.join(" "), resolverExpectedAzCall.join(" ")]
+    );
+    assert.deepEqual(
+      (await readdir(fixture.root)).filter((name) =>
+        name.startsWith(`${resolverMetadataName}.tmp.`)
+      ),
+      []
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("endpoint resolver reports changes without replacing metadata", async () => {
+  const fixture = await createResolverFixture();
+  try {
+    const metadataPath = path.join(fixture.root, resolverMetadataName);
+    const prior = Buffer.from('{"prior":"metadata"}\n');
+    await writeFile(metadataPath, prior);
+    const result = runResolver(resolverPath, fixture);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /metadata file is malformed/);
+    assert.equal(result.stdout, "");
+    assert.deepEqual(await readFile(metadataPath), prior);
+
+    const changedMetadata = {
+      ...resolverExpectedMetadata,
+      azure_environment_default_domain: "old.example.test",
+    };
+    const changedBytes = Buffer.from(`${JSON.stringify(changedMetadata)}\n`);
+    await writeFile(metadataPath, changedBytes);
+    const changed = runResolver(resolverPath, fixture);
+    assert.equal(changed.status, 0, changed.stderr);
+    assert.equal(parseResolverAssignments(changed.stdout).CHANGED, "true");
+    assert.deepEqual(await readFile(metadataPath), changedBytes);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+for (const [name, environment, message] of [
+  [
+    "missing subscription",
+    { AZURE_SUBSCRIPTION_ID: "" },
+    "AZURE_SUBSCRIPTION_ID",
+  ],
+  ["invalid subscription", { AZURE_SUBSCRIPTION_ID: "not-a-uuid" }, "UUID"],
+  ["invalid resource group", { RESOURCE_GROUP: "bad/group" }, "resource-group"],
+  ["trailing-dot resource group", { RESOURCE_GROUP: "bad." }, "resource-group"],
+  [
+    "invalid environment",
+    { ENV_NAME: "Bad_Environment" },
+    "managed-environment",
+  ],
+  ["short environment", { ENV_NAME: "a" }, "managed-environment"],
+  [
+    "invalid backend app",
+    { BACKEND_APP_NAME: "bad--backend" },
+    "BACKEND_APP_NAME",
+  ],
+  ["short backend app", { BACKEND_APP_NAME: "b" }, "BACKEND_APP_NAME"],
+  ["long UI app", { UI_APP_NAME: "u".repeat(33) }, "UI_APP_NAME"],
+  ["uppercase UI app", { UI_APP_NAME: "Badui" }, "UI_APP_NAME"],
+]) {
+  test(`endpoint resolver rejects ${name} before Azure access`, async () => {
+    const fixture = await createResolverFixture();
+    try {
+      const result = runResolver(resolverPath, fixture, { environment });
+      assert.equal(result.status, 2);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, new RegExp(message));
+      assert.deepEqual(await readResolverAzCalls(fixture), []);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+}
+
+for (const [name, azStdout, message] of [
+  [
+    "non-Succeeded state",
+    `${resolverEnvironmentId}\t${resolverDomain}\tProvisioning\n`,
+    "Succeeded",
+  ],
+  [
+    "empty default domain",
+    `${resolverEnvironmentId}\t\tSucceeded\n`,
+    "default domain",
+  ],
+  [
+    "invalid default domain",
+    `${resolverEnvironmentId}\tBad_Domain\tSucceeded\n`,
+    "default domain",
+  ],
+  [
+    "other ARM resource",
+    `/subscriptions/${resolverSubscriptionId}/resourceGroups/${resolverResourceGroup}/providers/Microsoft.App/managedEnvironments/other\t${resolverDomain}\tSucceeded\n`,
+    "does not match requested",
+  ],
+  [
+    "malformed response",
+    `${resolverEnvironmentId}\t${resolverDomain}\n`,
+    "invalid response",
+  ],
+]) {
+  test(`endpoint resolver rejects ${name} without mutating metadata`, async () => {
+    const fixture = await createResolverFixture();
+    try {
+      const metadataPath = path.join(fixture.root, resolverMetadataName);
+      const prior = Buffer.from("prior metadata bytes\n");
+      await writeFile(metadataPath, prior);
+      const result = runResolver(resolverPath, fixture, {
+        args: ["--record"],
+        azStdout,
+      });
+      assert.equal(result.status, 2);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, new RegExp(message, "i"));
+      assert.deepEqual(await readFile(metadataPath), prior);
+      assert.deepEqual(await readResolverAzCalls(fixture), [
+        resolverExpectedAzCall.join(" "),
+      ]);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+}
+
+test("endpoint resolver preserves Azure failure status and bytes", async () => {
+  const fixture = await createResolverFixture();
+  try {
+    const metadataPath = path.join(fixture.root, resolverMetadataName);
+    const prior = Buffer.from("prior metadata bytes\n");
+    await writeFile(metadataPath, prior);
+    const result = runResolver(resolverPath, fixture, {
+      args: ["--record"],
+      azStdout: "az stdout bytes\n",
+      azStderr: "az stderr bytes\n",
+      azStatus: 43,
+    });
+    assert.equal(result.status, 43);
+    assert.equal(result.stdout, "az stdout bytes\n");
+    assert.equal(result.stderr, "az stderr bytes\n");
+    assert.deepEqual(await readFile(metadataPath), prior);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("endpoint resolver preserves metadata and failure bytes when atomic rename fails", async () => {
+  const fixture = await createResolverFixture();
+  try {
+    const metadataPath = path.join(fixture.root, resolverMetadataName);
+    const prior = Buffer.from(
+      `${JSON.stringify({
+        ...resolverExpectedMetadata,
+        azure_environment_default_domain: "old.example.test",
+      })}\n`
+    );
+    await writeFile(metadataPath, prior);
+    await writeFile(
+      path.join(fixture.bin, "mv"),
+      "#!/bin/sh\nprintf 'rename failed bytes\\n' >&2\nexit 47\n"
+    );
+    await chmod(path.join(fixture.bin, "mv"), 0o700);
+    const result = runResolver(resolverPath, fixture, { args: ["--record"] });
+    assert.equal(result.status, 47);
+    assert.equal(result.stderr, "rename failed bytes\n");
+    assert.deepEqual(await readFile(metadataPath), prior);
+    assert.equal(
+      (await readdir(fixture.root)).some((name) =>
+        name.startsWith(`${resolverMetadataName}.tmp.`)
+      ),
+      false
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("endpoint resolver handles valid parenthesized resource group with safe round trip", async () => {
+  const fixture = await createResolverFixture();
+  try {
+    const resourceGroup = "test(resource-group)";
+    const environmentId =
+      `/subscriptions/${resolverSubscriptionId}/resourceGroups/${resourceGroup}` +
+      `/providers/Microsoft.App/managedEnvironments/${resolverEnvironmentName}`;
+    const result = runResolver(resolverPath, fixture, {
+      environment: { RESOURCE_GROUP: resourceGroup },
+      azStdout: `${environmentId}\t${resolverDomain}\tSucceeded\n`,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const parsed = parseResolverAssignments(result.stdout);
+    assert.equal(parsed.AZURE_ENVIRONMENT_ID, environmentId);
+    assert.equal(parsed.BACKEND_URL, resolverBackendUrl);
+    assert.equal(parsed.CHANGED, "true");
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("endpoint resolver matches self-contained golden contract in isolated checkout", async () => {
+  const source = await readFile(resolverPath);
+  assert.equal(
+    createHash("sha256").update(source).digest("hex"),
+    resolverGoldenSha256
+  );
+});
+
+test(
+  "UI and backend endpoint resolvers retain explicit cross-repository parity",
+  { skip: !process.env.BACKEND_ENDPOINT_RESOLVER_PATH },
+  async () => {
+    const backendResolver = process.env.BACKEND_ENDPOINT_RESOLVER_PATH;
+    await access(backendResolver);
+    const normalize = (source) =>
+      source
+        .replace(/^#!.*$/m, "#!bash")
+        .split("\n")
+        .map((line) => line.trimEnd())
+        .filter((line) => line.length > 0)
+        .join("\n");
+    assert.equal(
+      normalize(await readFile(resolverPath, "utf8")),
+      normalize(await readFile(backendResolver, "utf8"))
+    );
+
+    for (const scenario of [
+      {},
+      { args: ["--record"] },
+      {
+        azStdout: `${resolverEnvironmentId}\t${resolverDomain}\tProvisioning\n`,
+      },
+      {
+        azStdout: "az stdout bytes\n",
+        azStderr: "az stderr bytes\n",
+        azStatus: 43,
+      },
+    ]) {
+      const uiFixture = await createResolverFixture();
+      const backendFixture = await createResolverFixture();
+      try {
+        const ui = runResolver(resolverPath, uiFixture, scenario);
+        const backend = runResolver(backendResolver, backendFixture, scenario);
+        assert.deepEqual(
+          { status: ui.status, stdout: ui.stdout, stderr: ui.stderr },
+          {
+            status: backend.status,
+            stdout: backend.stdout,
+            stderr: backend.stderr,
+          }
+        );
+        const uiMetadata = await readFile(
+          path.join(uiFixture.root, resolverMetadataName)
+        ).catch(() => null);
+        const backendMetadata = await readFile(
+          path.join(backendFixture.root, resolverMetadataName)
+        ).catch(() => null);
+        assert.deepEqual(uiMetadata, backendMetadata);
+      } finally {
+        await rm(uiFixture.root, { recursive: true, force: true });
+        await rm(backendFixture.root, { recursive: true, force: true });
+      }
+    }
+  }
+);

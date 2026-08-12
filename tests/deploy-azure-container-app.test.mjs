@@ -75,6 +75,13 @@ done
 
 scenario="\${AZ_SCENARIO:-success}"
 command="\${1:-}:\${2:-}"
+user_identity_id="/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.ManagedIdentity/userAssignedIdentities/test-identity"
+expected_identity_principal="system-principal-id"
+case "$scenario" in
+  user-assigned-identity|multiple-user-assigned-identities|missing-user-assigned-principal)
+    expected_identity_principal="user-principal-id"
+    ;;
+esac
 argv_error() { printf 'fake az argv contract violation for %s\n' "$command" >&2; exit 86; }
 
 case "$command" in
@@ -101,13 +108,16 @@ case "$command" in
     name="$4"
     query="$8"
     if [ "$name" = "bmo-deepagent-ui-testseed" ]; then
-      details_query="join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(identity.principalId), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])"
+      legacy_details_query="join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(identity.principalId), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])"
+      managed_details_query="join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(identity.principalId), to_string(identity.userAssignedIdentities), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])"
       case "$query" in
-        "$details_query")
+        "$legacy_details_query"|"$managed_details_query")
           [ "$scenario" = "ui-app-missing" ] && exit 5
           environment_id=/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.App/managedEnvironments/test-environment
           external=true; fqdn=bmo-deepagent-ui-testseed.env.example.test; target_port=3000; mode=Single
-          identity=SystemAssigned; principal_id=system-principal-id; count=1; container_name=deepagent-ui
+          identity=SystemAssigned; principal_id=system-principal-id
+          user_identities_json=null
+          count=1; container_name=deepagent-ui
           case "$scenario" in
             ui-internal-ingress) external=false ;;
             ui-missing-fqdn) fqdn=null ;;
@@ -115,12 +125,28 @@ case "$command" in
             ui-environment-drift) environment_id=/subscriptions/other/resourceGroups/test-resource-group/providers/Microsoft.App/managedEnvironments/test-environment ;;
             wrong-target-port) target_port=8080 ;;
             multiple-revision-mode) mode=Multiple ;;
-            missing-system-identity) identity=UserAssigned ;;
+            missing-managed-identity) identity=None; principal_id=null ;;
             missing-system-principal) principal_id=null ;;
+            user-assigned-identity)
+              identity=UserAssigned; principal_id=null
+              user_identities_json='{"'"$user_identity_id"'":{"principalId":"user-principal-id"}}'
+              ;;
+            multiple-user-assigned-identities)
+              identity=UserAssigned; principal_id=null
+              user_identities_json='{"'"$user_identity_id"'":{"principalId":"user-principal-id"},"/subscriptions/test/resourceGroups/test-resource-group/providers/Microsoft.ManagedIdentity/userAssignedIdentities/other-identity":{"principalId":"other-principal-id"}}'
+              ;;
+            missing-user-assigned-principal)
+              identity=UserAssigned; principal_id=null
+              user_identities_json='{"'"$user_identity_id"'":{"principalId":null}}'
+              ;;
             zero-containers) count=0; container_name= ;;
             multiple-containers) count=2 ;;
           esac
-          printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$environment_id" "$external" "$fqdn" "$target_port" "$mode" "$identity" "$principal_id" "$count" "$container_name"
+          if [ "$query" = "$managed_details_query" ]; then
+            printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$environment_id" "$external" "$fqdn" "$target_port" "$mode" "$identity" "$principal_id" "$user_identities_json" "$count" "$container_name"
+          else
+            printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$environment_id" "$external" "$fqdn" "$target_port" "$mode" "$identity" "$principal_id" "$count" "$container_name"
+          fi
           ;;
         properties.latestReadyRevisionName)
           case "$scenario" in
@@ -159,6 +185,10 @@ case "$command" in
           docker-secret-versioned) printf 'docker-hub-pat\thttps://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT/version\tsystem\n' ;;
           docker-secret-wrong-vault) printf 'docker-hub-pat\thttps://other.vault.azure.net/secrets/DOCKER-HUB-PAT\tsystem\n' ;;
           docker-secret-wrong-identity) printf 'docker-hub-pat\thttps://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT\tuser-assigned\n' ;;
+          user-assigned-identity|multiple-user-assigned-identities|missing-user-assigned-principal)
+            printf 'docker-hub-pat\thttps://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT\t%s\n' "$user_identity_id"
+            printf 'unrelated\thttps://other/secrets/value\tsystem\n'
+            ;;
           *)
             printf 'docker-hub-pat\thttps://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT\tsystem\n'
             printf 'unrelated\thttps://other/secrets/value\tsystem\n'
@@ -166,11 +196,13 @@ case "$command" in
         esac
         ;;
       set)
+        identity_ref=system
+        [ "$scenario" = "user-assigned-identity" ] && identity_ref="$user_identity_id"
         [ "$#" -eq 12 ] && [ "$4" = "--name" ] && [ "$5" = "bmo-deepagent-ui-testseed" ] &&
           [ "$6" = "--resource-group" ] && [ "$7" = "test-resource-group" ] &&
           [ "$8" = "--secrets" ] &&
-          [ "$9" = "upload-api-key=keyvaultref:https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY,identityref:system" ] &&
-          [ "\${10}" = "passkey-proxy-secret=keyvaultref:https://testvault.vault.azure.net/secrets/PASSKEY-PROXY-SECRET,identityref:system" ] &&
+          [ "$9" = "upload-api-key=keyvaultref:https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY,identityref:$identity_ref" ] &&
+          [ "\${10}" = "passkey-proxy-secret=keyvaultref:https://testvault.vault.azure.net/secrets/PASSKEY-PROXY-SECRET,identityref:$identity_ref" ] &&
           [ "\${11}" = "-o" ] && [ "\${12}" = "none" ] || argv_error
         [ "$scenario" = "secret-set-failure" ] && exit 43
         :
@@ -240,7 +272,7 @@ case "$command" in
   keyvault:show)
     [ "$#" -eq 10 ] && [ "$3" = "--name" ] && [ "$4" = "testvault" ] &&
       [ "$5" = "--resource-group" ] && [ "$6" = "test-resource-group" ] &&
-      [ "$7" = "--query" ] && [ "$8" = "join('|', [properties.vaultUri, id, to_string(properties.enableRbacAuthorization), to_string(length(properties.accessPolicies[?objectId=='system-principal-id' && (contains(permissions.secrets, 'get') || contains(permissions.secrets, 'all'))]))])" ] &&
+      [ "$7" = "--query" ] && [ "$8" = "join('|', [properties.vaultUri, id, to_string(properties.enableRbacAuthorization), to_string(length(properties.accessPolicies[?objectId=='$expected_identity_principal' && (contains(permissions.secrets, 'get') || contains(permissions.secrets, 'all'))]))])" ] &&
       [ "$9" = "-o" ] && [ "\${10}" = "tsv" ] || argv_error
     [ "$scenario" = "vault-missing" ] && exit 7
     rbac=true; policy_count=0
@@ -264,7 +296,7 @@ case "$command" in
     ;;
   role:assignment)
     [ "$#" -eq 12 ] && [ "$3" = "list" ] &&
-      [ "$4" = "--assignee-object-id" ] && [ "$5" = "system-principal-id" ] &&
+      [ "$4" = "--assignee-object-id" ] && [ "$5" = "$expected_identity_principal" ] &&
       [ "$6" = "--scope" ] && [ "$7" = "/subscriptions/test/resourceGroups/test-resource-group/providers/Microsoft.KeyVault/vaults/testvault" ] &&
       [ "$8" = "--include-inherited" ] && [ "$9" = "--query" ] &&
       [ "\${10}" = "[].roleDefinitionId" ] &&
@@ -767,6 +799,19 @@ test("deployment configures managed passkey secret and runtime then records endp
   }
 });
 
+test("deployment reuses one existing user-assigned identity without changing Azure permissions or identities", async () => {
+  const { result, log } = await runDeployment({
+    scenario: "user-assigned-identity",
+  });
+  assert.equal(result.status, 0, `${result.stderr}\n${log}`);
+  assert.match(
+    log,
+    /<upload-api-key=keyvaultref:https:\/\/testvault\.vault\.azure\.net\/secrets\/UPLOAD-API-KEY,identityref:\/subscriptions\/12345678-1234-1234-1234-123456789abc\/resourceGroups\/test-resource-group\/providers\/Microsoft\.ManagedIdentity\/userAssignedIdentities\/test-identity>/
+  );
+  assert.match(log, /objectId=='user-principal-id'/);
+  assertNoPermissionMutation(log);
+});
+
 test("deployment rejects endpoint drift after health without recording metadata", async () => {
   const { result, log } = await runDeployment({
     endpointResolverOutput: deploymentResolverOutput,
@@ -779,6 +824,8 @@ test("deployment rejects endpoint drift after health without recording metadata"
 
 for (const [scenario, error] of [
   ["missing-system-principal", /system-assigned.*principal/i],
+  ["missing-user-assigned-principal", /user-assigned.*principal/i],
+  ["multiple-user-assigned-identities", /exactly one.*user-assigned/i],
   ["missing-keyvault-access", /Key Vault secret read access/i],
   ["role-owner-actions-only", /Key Vault secret read access/i],
   ["role-contributor", /Key Vault secret read access/i],
@@ -860,7 +907,7 @@ const preflightFailures = [
   ["ui-environment-drift", /UI.*managed environment/i],
   ["wrong-target-port", /target port.*3000/i],
   ["multiple-revision-mode", /single-revision/i],
-  ["missing-system-identity", /system-assigned identity/i],
+  ["missing-managed-identity", /managed identity/i],
   ["zero-containers", /exactly one.*container/i],
   ["multiple-containers", /exactly one.*container/i],
   ["backend-missing", /backend Container App/i],
@@ -877,7 +924,7 @@ const preflightFailures = [
   ["docker-secret-missing", /secret.*docker-hub-pat/i],
   ["docker-secret-versioned", /unversioned.*DOCKER-HUB-PAT/i],
   ["docker-secret-wrong-vault", /unversioned.*DOCKER-HUB-PAT/i],
-  ["docker-secret-wrong-identity", /system identity/i],
+  ["docker-secret-wrong-identity", /selected managed identity/i],
   ["docker-registry-missing", /Docker Hub registry/i],
   ["docker-registry-wrong-username", /username.*jerryshao2013/i],
   ["docker-registry-wrong-secret", /passwordSecretRef.*docker-hub-pat/i],

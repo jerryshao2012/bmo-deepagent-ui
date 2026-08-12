@@ -13,14 +13,15 @@ infrastructure. For Linux App Service ZIP deployment, use
 - resource group and Container Apps environment named by `env.sh`;
 - existing backend and UI Container Apps in same environment, external ingress, and
   expected ports (`2024` backend, `3000` UI);
-- UI `Single` revision mode, exactly one application container, and existing
-  system-assigned identity;
+- UI `Single` revision mode, exactly one application container, and either an
+  existing system-assigned identity or exactly one existing user-assigned identity;
 - Key Vault with `UPLOAD-API-KEY`, `DOCKER-HUB-PAT`, and
   `PASSKEY-PROXY-SECRET`;
-- effective UI system-identity secret read through current authorization model
+- effective selected UI managed-identity secret read through current authorization model
   (RBAC role dataActions or access policy);
 - existing Docker Hub registry entry using `docker.io`, expected username,
-  `passwordSecretRef: docker-hub-pat`, and `identityref:system` Key Vault secret;
+  `passwordSecretRef: docker-hub-pat`, and same selected managed identity on its
+  Key Vault secret reference;
 - operator read access for preflight, permission to update existing UI app, Docker
   Hub publish credential for build, and local Node.js plus supported container runtime.
 
@@ -107,7 +108,8 @@ Runtime passkey values are `PASSKEY_ENABLED=true`, exact Azure `PASSKEY_ORIGIN`,
 
 - backend health/revision succeeded before UI build;
 - UI root and `/login` return 200 and marker matches manifest;
-- UI Key Vault references resolve via existing system identity with zero restarts;
+- UI Key Vault references resolve via selected existing managed identity with zero
+  restarts;
 - `/api/auth/passkeys` reaches backend and returns backend auth rejection, not
   `passkeys_unavailable`;
 - OAuth login returns to exact Azure UI;

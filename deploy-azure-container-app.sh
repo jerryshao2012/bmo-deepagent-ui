@@ -245,19 +245,59 @@ fi
 if UI_DETAILS=$(az containerapp show \
   --name "$CONTAINER_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --query "join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(identity.principalId), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])" \
+  --query "join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(identity.principalId), to_string(identity.userAssignedIdentities), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])" \
   -o tsv); then :; else
   fail "UI Container App '$CONTAINER_APP_NAME' does not exist or is not readable."
 fi
-IFS='|' read -r UI_ENVIRONMENT_ID UI_EXTERNAL UI_FQDN UI_TARGET_PORT UI_REVISIONS_MODE UI_IDENTITY_TYPE UI_PRINCIPAL_ID UI_CONTAINER_COUNT TARGET_CONTAINER_NAME <<< "$UI_DETAILS"
+IFS='|' read -r UI_ENVIRONMENT_ID UI_EXTERNAL UI_FQDN UI_TARGET_PORT UI_REVISIONS_MODE UI_IDENTITY_TYPE UI_SYSTEM_PRINCIPAL_ID UI_USER_IDENTITIES_JSON UI_CONTAINER_COUNT TARGET_CONTAINER_NAME <<< "$UI_DETAILS"
 [ "$UI_ENVIRONMENT_ID" = "$AZURE_ENVIRONMENT_ID" ] || fail "UI Container App must use the resolved managed environment."
 case "$UI_EXTERNAL" in true|True|TRUE) ;; *) fail "UI Container App '$CONTAINER_APP_NAME' must use external ingress." ;; esac
 case "$UI_FQDN" in ""|null|Null|NULL) fail "UI Container App '$CONTAINER_APP_NAME' must have a public FQDN." ;; esac
 [ "https://$UI_FQDN" = "$AZURE_UI_URL" ] || fail "UI Container App FQDN must match the resolved Azure UI URL."
 [ "$UI_TARGET_PORT" = 3000 ] || fail "UI Container App '$CONTAINER_APP_NAME' target port must be exactly 3000."
 case "$UI_REVISIONS_MODE" in [Ss][Ii][Nn][Gg][Ll][Ee]) ;; *) fail "UI Container App '$CONTAINER_APP_NAME' must use single-revision mode." ;; esac
-case "$UI_IDENTITY_TYPE" in *SystemAssigned*|*systemassigned*|*SYSTEMASSIGNED*) ;; *) fail "UI Container App '$CONTAINER_APP_NAME' must have a system-assigned identity." ;; esac
-case "$UI_PRINCIPAL_ID" in ""|null|Null|NULL) fail "UI Container App '$CONTAINER_APP_NAME' system-assigned identity principal is missing." ;; esac
+case "$UI_IDENTITY_TYPE" in
+  *[Ss]ystem[Aa]ssigned*)
+    case "$UI_SYSTEM_PRINCIPAL_ID" in ""|null|Null|NULL) fail "UI Container App '$CONTAINER_APP_NAME' system-assigned identity principal is missing." ;; esac
+    UI_PRINCIPAL_ID="$UI_SYSTEM_PRINCIPAL_ID"
+    MANAGED_IDENTITY_REF=system
+    ;;
+  *[Uu]ser[Aa]ssigned*)
+    if USER_IDENTITY_VALUES=$(printf '%s' "$UI_USER_IDENTITIES_JSON" | node -e '
+const fs = require("node:fs");
+let identities;
+try {
+  identities = JSON.parse(fs.readFileSync(0, "utf8"));
+} catch {
+  process.exit(2);
+}
+if (identities === null || Array.isArray(identities) || typeof identities !== "object") process.exit(2);
+const entries = Object.entries(identities);
+if (entries.length !== 1) process.exit(3);
+const [resourceId, metadata] = entries[0];
+if (
+  typeof resourceId !== "string" ||
+  !/^\/subscriptions\/[^/]+\/resourcegroups\/[^/]+\/providers\/microsoft\.managedidentity\/userassignedidentities\/[^/]+$/i.test(resourceId)
+) process.exit(2);
+if (metadata === null || Array.isArray(metadata) || typeof metadata !== "object") process.exit(2);
+const principalId = metadata.principalId;
+if (typeof principalId !== "string" || principalId.length === 0 || /[\u0000-\u001f\u007f]/.test(principalId)) process.exit(4);
+process.stdout.write(`${resourceId}\t${principalId}`);
+'); then
+      :
+    else
+      status=$?
+      case "$status" in
+        3) fail "UI Container App '$CONTAINER_APP_NAME' must have exactly one user-assigned identity when no system-assigned identity exists." ;;
+        4) fail "UI Container App '$CONTAINER_APP_NAME' user-assigned identity principal is missing." ;;
+        *) fail "UI Container App '$CONTAINER_APP_NAME' returned invalid user-assigned identity metadata." ;;
+      esac
+    fi
+    IFS=$'\t' read -r MANAGED_IDENTITY_REF UI_PRINCIPAL_ID <<< "$USER_IDENTITY_VALUES"
+    unset USER_IDENTITY_VALUES
+    ;;
+  *) fail "UI Container App '$CONTAINER_APP_NAME' must have an existing managed identity." ;;
+esac
 [ "$UI_CONTAINER_COUNT" = 1 ] && [ -n "$TARGET_CONTAINER_NAME" ] || fail "UI Container App '$CONTAINER_APP_NAME' must have exactly one application container."
 UI_URL="$AZURE_UI_URL"
 
@@ -292,7 +332,7 @@ case "$VAULT_RBAC_ENABLED" in
     if ROLE_DEFINITION_IDS=$(az role assignment list \
       --assignee-object-id "$UI_PRINCIPAL_ID" --scope "$VAULT_ID" --include-inherited \
       --query "[].roleDefinitionId" -o tsv); then :; else
-      status=$?; echo "Error: could not validate system identity Key Vault access." >&2; exit "$status"
+      status=$?; echo "Error: could not validate managed identity Key Vault access." >&2; exit "$status"
     fi
     while IFS= read -r role_definition_id; do
       [ -n "$role_definition_id" ] || continue
@@ -310,7 +350,7 @@ EOF
     ;;
   *) fail "Key Vault authorization mode is invalid." ;;
 esac
-[ "$KEY_VAULT_ACCESS" = true ] || fail "existing system identity Key Vault secret read access is a deployment prerequisite; this deployment does not grant permissions."
+[ "$KEY_VAULT_ACCESS" = true ] || fail "existing managed identity Key Vault secret read access is a deployment prerequisite; this deployment does not grant permissions."
 
 if UPLOAD_SECRET_ID=$(az keyvault secret show --vault-name "$KV_NAME" --name UPLOAD-API-KEY --query id -o tsv); then :; else
   fail "Key Vault secret '$KV_NAME/UPLOAD-API-KEY' is unavailable."
@@ -337,7 +377,18 @@ while IFS=$'\t' read -r secret_name secret_url secret_identity; do
   if [ "$secret_name" = docker-hub-pat ]; then
     DOCKER_SECRET_FOUND=true
     [ "$secret_url" = "${VAULT_URI}secrets/DOCKER-HUB-PAT" ] || fail "docker-hub-pat must use the unversioned DOCKER-HUB-PAT reference in '$KV_NAME'."
-    case "$secret_identity" in system|System|SYSTEM) ;; *) fail "docker-hub-pat secret must use system identity." ;; esac
+    if node -e '
+const [actual, expected] = process.argv.slice(1);
+process.exit(
+  typeof actual === "string" &&
+  typeof expected === "string" &&
+  actual.toLowerCase() === expected.toLowerCase() ? 0 : 1
+);
+' "$secret_identity" "$MANAGED_IDENTITY_REF"; then
+      :
+    else
+      fail "docker-hub-pat secret must use the selected managed identity."
+    fi
   fi
 done <<EOF
 $APP_SECRETS
@@ -380,8 +431,8 @@ PASSKEY_SECRET_URI="${VAULT_URI}secrets/PASSKEY-PROXY-SECRET"
 if az containerapp secret set \
   --name "$CONTAINER_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --secrets "upload-api-key=keyvaultref:$UPLOAD_SECRET_URI,identityref:system" \
-  "passkey-proxy-secret=keyvaultref:$PASSKEY_SECRET_URI,identityref:system" \
+  --secrets "upload-api-key=keyvaultref:$UPLOAD_SECRET_URI,identityref:$MANAGED_IDENTITY_REF" \
+  "passkey-proxy-secret=keyvaultref:$PASSKEY_SECRET_URI,identityref:$MANAGED_IDENTITY_REF" \
   -o none; then :; else
   status=$?; echo "Error: Container App Key Vault secret configuration failed." >&2; exit "$status"
 fi

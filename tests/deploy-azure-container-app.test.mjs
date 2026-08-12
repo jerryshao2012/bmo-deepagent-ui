@@ -265,6 +265,7 @@ case "$command" in
       revision-failed) printf 'Failed|Degraded|Unhealthy\n' ;;
       revision-timeout) printf 'Provisioning|Processing|Unknown\n' ;;
       revision-unhealthy) printf 'Provisioned|Running|Unhealthy\n' ;;
+      revision-running-at-max-scale) printf 'Provisioned|RunningAtMaxScale|Healthy\n' ;;
       revision-sequence) [ "$count" -eq 1 ] && printf 'Provisioning|Processing|Unknown\n' || printf 'Provisioned|Running|Healthy\n' ;;
       *) printf 'Provisioned|Running|Healthy\n' ;;
     esac
@@ -1128,6 +1129,13 @@ test("deployment waits through provisioning and stale marker", async () => {
     2
   );
   assert.equal((log.match(/^curl\b/gm) ?? []).length, 2);
+});
+
+test("deployment accepts Azure RunningAtMaxScale as ready", async () => {
+  const { result } = await runDeployment({
+    scenario: "revision-running-at-max-scale",
+  });
+  assert.equal(result.status, 0, result.stderr);
 });
 
 for (const [name, httpScenario, status, error] of [

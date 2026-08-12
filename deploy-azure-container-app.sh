@@ -485,6 +485,8 @@ while [ "$attempt" -le "$REVISION_POLL_ATTEMPTS" ]; do
       ;;
     [Pp][Rr][Oo][Vv][Ii][Ss][Ii][Oo][Nn][Ee][Dd]'|'[Rr][Uu][Nn][Nn][Ii][Nn][Gg]'|'[Hh][Ee][Aa][Ll][Tt][Hh][Yy])
       revision_ready=true; break ;;
+    [Pp][Rr][Oo][Vv][Ii][Ss][Ii][Oo][Nn][Ee][Dd]'|'[Rr][Uu][Nn][Nn][Ii][Nn][Gg][Aa][Tt][Mm][Aa][Xx][Ss][Cc][Aa][Ll][Ee]'|'[Hh][Ee][Aa][Ll][Tt][Hh][Yy])
+      revision_ready=true; break ;;
   esac
   [ "$attempt" -ge "$REVISION_POLL_ATTEMPTS" ] || sleep "$POLL_INTERVAL_SECONDS"
   attempt=$((attempt + 1))

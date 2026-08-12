@@ -23,6 +23,7 @@ data/
 .DS_Store
 graphify-out/
 .container-build-context*/
+.deployment-build.json
 .deepeval/
 
 # Temporary files

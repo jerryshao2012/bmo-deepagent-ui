@@ -47,7 +47,10 @@ test("container image never embeds local environment files", async () => {
 test("container image includes custom server runtime modules", async () => {
   const dockerfile = await source("Dockerfile");
 
-  assert.match(dockerfile, /COPY\s+--from=builder\s+\/app\/runtime\s+\.\/runtime/);
+  assert.match(
+    dockerfile,
+    /COPY\s+--from=builder\s+\/app\/runtime\s+\.\/runtime/
+  );
 });
 
 test("deployment never exposes server API keys through NEXT_PUBLIC variables", async () => {
@@ -173,8 +176,10 @@ test("local container build uses a clean staged context", async () => {
     buildScript,
     /rsync[\s\S]*--exclude-from=["']?\.dockerignore["']?/
   );
+  assert.match(buildScript, /--exclude=["']\.deployment-build\.json["']/);
   assert.match(buildScript, /container_cli_build[\s\S]*"\$BUILD_CONTEXT_DIR"/);
-  assert.match(buildScript, /trap ['"]rm -rf "\$BUILD_CONTEXT_DIR"['"] EXIT/);
+  assert.match(buildScript, /trap cleanup EXIT/);
+  assert.match(buildScript, /rm -rf -- "\$BUILD_CONTEXT_DIR"/);
   assert.match(dockerignore, /^\.container-build-context\.\*\/$/m);
   assert.match(dockerignore, /^\.mcp\.json$/m);
 });
@@ -190,6 +195,38 @@ test("local container build provisions enough builder memory", async () => {
   assert.match(runtimeHelper, /container builder start --memory 8G/);
   assert.match(buildScript, /ensure_container_cli_build_ready/);
   assert.doesNotMatch(buildScript, /container builder/);
+});
+
+test("Docker Hub build owns image production without Azure access", async () => {
+  const [buildScript, gitignore] = await Promise.all([
+    source("build.sh"),
+    source(".gitignore"),
+  ]);
+
+  assert.match(buildScript, /container_cli_build/);
+  assert.match(buildScript, /container_cli_login/);
+  assert.match(buildScript, /container_cli_push/);
+  assert.match(
+    buildScript,
+    /docker\.io\/\$DOCKER_HUB_USERNAME\/deepagent-ui:latest/
+  );
+  assert.match(buildScript, /\.deployment-build\.json/);
+  assert.doesNotMatch(buildScript, /\baz\s/);
+  assert.match(gitignore, /^\.deployment-build\.json$/m);
+});
+
+test("Container Apps deployment consumes manifest without image-production dependencies", async () => {
+  const deployScript = await source("deploy-azure-container-app.sh");
+
+  assert.match(deployScript, /\.deployment-build\.json/);
+  assert.doesNotMatch(
+    deployScript,
+    /container-runtime\.sh|select_container_cli|container_cli_(?:build|login|push)|\brsync\b|az acr login/
+  );
+  assert.doesNotMatch(
+    deployScript,
+    /az containerapp (?:create|registry set|registry remove|identity assign|ingress|revision set-mode)/
+  );
 });
 
 test("App Service deployment uses a prebuilt standalone zip", async () => {

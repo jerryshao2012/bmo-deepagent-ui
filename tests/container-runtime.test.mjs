@@ -856,18 +856,19 @@ test("local build uses shared runtime and gates Apple builder setup", async () =
   assert.match(buildScript, /ensure_container_cli_build_ready/);
   assert.doesNotMatch(buildScript, /\bensure_container_cli_ready\b/);
   assert.match(buildScript, /container_cli_build[\s\S]*"\$BUILD_CONTEXT_DIR"/);
-  assert.match(buildScript, /container_cli_push "\$FULL_IMAGE_NAME"/);
+  assert.match(buildScript, /container_cli_push "\$IMAGE_NAME"/);
   assert.doesNotMatch(
     buildScript,
     /container builder (?:status|stop|delete|start)/
   );
   assert.doesNotMatch(buildScript, /MIN_CONTAINER_BUILDER_MEMORY_BYTES/);
+  assert.doesNotMatch(buildScript, /\baz\b/);
 
   const selectRuntime = buildScript.indexOf("select_container_cli");
-  const resourceGroupMutation = buildScript.indexOf("az group show");
+  const buildImage = buildScript.indexOf("container_cli_build");
   assert.ok(
-    selectRuntime >= 0 && selectRuntime < resourceGroupMutation,
-    "runtime selection must happen before Azure resource-group mutation"
+    selectRuntime >= 0 && selectRuntime < buildImage,
+    "runtime selection must happen before the image build"
   );
 });
 

@@ -59,9 +59,9 @@ const liveTemplate = {
   volumes: [{ name: "keep-volume", storageType: "EmptyDir" }],
   scale: { minReplicas: 1, maxReplicas: 3 },
 };
-const liveAppSnapshot = {
-  id: uiResourceId,
-  location: "Canada Central",
+const initialReadyRevision = "ui--previous";
+const liveReadyRevisionSnapshot = {
+  name: initialReadyRevision,
   template: liveTemplate,
 };
 const deploymentResolverOutput = [
@@ -139,7 +139,7 @@ case "$command" in
     if [ "$name" = "bmo-deepagent-ui-testseed" ]; then
       legacy_details_query="join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(identity.principalId), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])"
       managed_details_query="join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(identity.principalId), to_string(identity.userAssignedIdentities), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])"
-      template_snapshot_query="{id:id,location:location,template:properties.template}"
+      deployment_metadata_query="[id,location,properties.latestReadyRevisionName]"
       case "$query" in
         "$legacy_details_query"|"$managed_details_query")
           [ "$output" = "tsv" ] || argv_error
@@ -179,34 +179,46 @@ case "$command" in
             printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$environment_id" "$external" "$fqdn" "$target_port" "$mode" "$identity" "$principal_id" "$count" "$container_name"
           fi
           ;;
-        "$template_snapshot_query")
+        "$deployment_metadata_query")
           [ "$output" = "json" ] || argv_error
-          count=0; [ ! -f "$TEMPLATE_SNAPSHOT_COUNT" ] || IFS= read -r count < "$TEMPLATE_SNAPSHOT_COUNT"
-          count=$((count + 1)); printf '%s\n' "$count" > "$TEMPLATE_SNAPSHOT_COUNT"
-          if [ "$scenario" = "template-read-cli-failure" ]; then
-            printf 'sensitive-template-response-canary\n'
-            printf 'sensitive-template-error-canary\n' >&2
-            exit 51
+          if [ "$scenario" = "deployment-metadata-read-cli-failure" ]; then
+            printf 'sensitive-metadata-response-canary\n'
+            printf 'sensitive-metadata-error-canary\n' >&2
+            exit 55
           fi
-          if [ "$scenario" = "template-malformed" ]; then
-            printf '{"id":7,"location":null,"template":[]}'
-          elif [ "$scenario" = "template-drift" ] && [ "$count" -ge 2 ]; then
-            printf '%s' "$LIVE_APP_SNAPSHOT_JSON" | node -e '
-const fs = require("node:fs");
-const value = JSON.parse(fs.readFileSync(0, "utf8"));
-value.template.scale.maxReplicas = 99;
-process.stdout.write(JSON.stringify(value));
-'
-          else
-            printf '%s' "$LIVE_APP_SNAPSHOT_JSON"
-          fi
+          ready_revision=ui--previous
+          [ "$scenario" = "empty-previous-revision" ] && ready_revision=
+          [ "$scenario" = "unchanged-revision" ] && ready_revision="bmo-deepagent-ui-testseed--ui-20260812t101112-$PPID"
+          [ "$scenario" = "deployment-metadata-malformed" ] && printf '{"not":"metadata"}' || printf '["%s","Canada Central","%s"]' "$EXPECTED_APP_RESOURCE_ID" "$ready_revision"
           ;;
         properties.latestReadyRevisionName)
           [ "$output" = "tsv" ] || argv_error
+          count=0; [ ! -f "$LATEST_READY_COUNT" ] || IFS= read -r count < "$LATEST_READY_COUNT"
+          count=$((count + 1)); printf '%s\n' "$count" > "$LATEST_READY_COUNT"
+          if [ "$scenario" = "latest-ready-read-cli-failure" ]; then
+            printf 'sensitive-ready-response-canary\n'
+            printf 'sensitive-ready-error-canary\n' >&2
+            exit 52
+          fi
+          if [ "$scenario" = "latest-ready-drift" ]; then
+            printf 'ui--concurrent\n'
+          elif [ "$scenario" = "unchanged-revision" ]; then
+            printf 'bmo-deepagent-ui-testseed--ui-20260812t101112-%s\n' "$PPID"
+          else
+            printf 'ui--previous\n'
+          fi
+          ;;
+        properties.provisioningState)
+          [ "$output" = "tsv" ] || argv_error
+          if [ "$scenario" = "app-provisioning-read-cli-failure" ]; then
+            printf 'sensitive-provisioning-response-canary\n'
+            printf 'sensitive-provisioning-error-canary\n' >&2
+            exit 54
+          fi
           case "$scenario" in
-            empty-previous-revision) ;;
-            unchanged-revision) printf 'bmo-deepagent-ui-testseed--ui-20260812t101112-%s\n' "$PPID" ;;
-            *) printf 'ui--previous\n' ;;
+            app-provisioning-failed) printf 'Failed\n' ;;
+            app-provisioning-canceled) printf 'Canceled\n' ;;
+            *) printf 'Succeeded\n' ;;
           esac
           ;;
         *) argv_error ;;
@@ -306,21 +318,45 @@ fs.writeFileSync(revisionPath, "bmo-deepagent-ui-testseed--" + patch.properties.
   containerapp:revision)
     [ "$#" -eq 13 ] && [ "$3" = "show" ] &&
       [ "$4" = "--name" ] && [ "$5" = "bmo-deepagent-ui-testseed" ] &&
-      [ "$6" = "--revision" ] && IFS= read -r expected_revision < "$EXPECTED_REVISION_NAME" && [ "$7" = "$expected_revision" ] &&
+      [ "$6" = "--revision" ] &&
       [ "$8" = "--resource-group" ] && [ "$9" = "test-resource-group" ] &&
       [ "\${10}" = "--query" ] &&
-      [ "\${11}" = "join('|', [properties.provisioningState, properties.runningState, properties.healthState])" ] &&
-      [ "\${12}" = "-o" ] && [ "\${13}" = "tsv" ] || argv_error
-    count=0; [ ! -f "$REVISION_COUNT" ] || IFS= read -r count < "$REVISION_COUNT"
-    count=$((count + 1)); printf '%s\n' "$count" > "$REVISION_COUNT"
-    case "$scenario" in
-      revision-failed) printf 'Failed|Degraded|Unhealthy\n' ;;
-      revision-timeout) printf 'Provisioning|Processing|Unknown\n' ;;
-      revision-unhealthy) printf 'Provisioned|Running|Unhealthy\n' ;;
-      revision-running-at-max-scale) printf 'Provisioned|RunningAtMaxScale|Healthy\n' ;;
-      revision-sequence) [ "$count" -eq 1 ] && printf 'Provisioning|Processing|Unknown\n' || printf 'Provisioned|Running|Healthy\n' ;;
-      *) printf 'Provisioned|Running|Healthy\n' ;;
-    esac
+      [ "\${12}" = "-o" ] || argv_error
+    query="\${11}"
+    if [ "$query" = "{name:name,template:properties.template}" ]; then
+      [ "\${13}" = "json" ] || argv_error
+      if [ "$scenario" = "ready-template-read-cli-failure" ]; then
+        printf 'sensitive-template-response-canary\n'
+        printf 'sensitive-template-error-canary\n' >&2
+        exit 51
+      fi
+      ready_json="\${LIVE_READY_REVISION_JSON/ui--previous/$7}"
+      [ "$scenario" = "ready-template-malformed" ] && printf '{"name":7,"template":[]}' ||
+        [ "$scenario" = "ready-template-name-mismatch" ] && printf '%s' "\${ready_json/$7/ui--other}" || printf '%s' "$ready_json"
+    elif [ "$query" = "join('|', [properties.provisioningState, properties.runningState, properties.healthState])" ]; then
+      [ "\${13}" = "tsv" ] || argv_error
+      IFS= read -r expected_revision < "$EXPECTED_REVISION_NAME" && [ "$7" = "$expected_revision" ] || argv_error
+      count=0; [ ! -f "$REVISION_COUNT" ] || IFS= read -r count < "$REVISION_COUNT"
+      count=$((count + 1)); printf '%s\n' "$count" > "$REVISION_COUNT"
+      if [ "$scenario" = "revision-read-cli-failure" ]; then
+        printf 'sensitive-revision-response-canary\n'
+        printf 'sensitive-revision-error-canary\n' >&2
+        exit 53
+      fi
+      case "$scenario" in
+        revision-not-found-sequence) [ "$count" -le 2 ] && exit 3 || printf 'Provisioned|Running|Healthy\n' ;;
+        revision-not-found-timeout) exit 3 ;;
+        revision-not-found-four-sequence) [ "$count" -le 2 ] && exit 4 || printf 'Provisioned|Running|Healthy\n' ;;
+        revision-failed) printf 'Failed|Degraded|Unhealthy\n' ;;
+        revision-timeout) printf 'Provisioning|Processing|Unknown\n' ;;
+        revision-unhealthy) printf 'Provisioned|Running|Unhealthy\n' ;;
+        revision-running-at-max-scale) printf 'Provisioned|RunningAtMaxScale|Healthy\n' ;;
+        revision-sequence) [ "$count" -eq 1 ] && printf 'Provisioning|Processing|Unknown\n' || printf 'Provisioned|Running|Healthy\n' ;;
+        *) printf 'Provisioned|Running|Healthy\n' ;;
+      esac
+    else
+      argv_error
+    fi
     ;;
   keyvault:show)
     [ "$#" -eq 10 ] && [ "$3" = "--name" ] && [ "$4" = "testvault" ] &&
@@ -331,21 +367,6 @@ fs.writeFileSync(revisionPath, "bmo-deepagent-ui-testseed--" + patch.properties.
     rbac=true; policy_count=0
     [ "$scenario" = "access-policy-secret-get" ] && rbac=false && policy_count=1
     [ "$scenario" = "empty-vault-uri" ] || printf 'https://testvault.vault.azure.net/|/subscriptions/test/resourceGroups/test-resource-group/providers/Microsoft.KeyVault/vaults/testvault|%s|%s\n' "$rbac" "$policy_count"
-    ;;
-  keyvault:secret)
-    [ "$#" -eq 11 ] && [ "$3" = "show" ] &&
-      [ "$4" = "--vault-name" ] && [ "$5" = "testvault" ] &&
-      [ "$6" = "--name" ] && [ "$8" = "--query" ] && [ "$9" = "id" ] &&
-      [ "\${10}" = "-o" ] && [ "\${11}" = "tsv" ] || argv_error
-    case "$7:$scenario" in
-      DOCKER-HUB-PAT:docker-pat-show-cli-failure) exit 48 ;;
-      UPLOAD-API-KEY:upload-secret-missing|DOCKER-HUB-PAT:docker-pat-missing|PASSKEY-PROXY-SECRET:passkey-secret-missing) exit 8 ;;
-      UPLOAD-API-KEY:empty-upload-secret-id|DOCKER-HUB-PAT:empty-docker-pat-id|PASSKEY-PROXY-SECRET:empty-passkey-secret-id) ;;
-      UPLOAD-API-KEY:*) printf 'https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY/version\n' ;;
-      DOCKER-HUB-PAT:*) printf 'https://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT/version\n' ;;
-      PASSKEY-PROXY-SECRET:*) printf 'https://testvault.vault.azure.net/secrets/PASSKEY-PROXY-SECRET/version\n' ;;
-      *) argv_error ;;
-    esac
     ;;
   role:assignment)
     [ "$#" -eq 12 ] && [ "$3" = "list" ] &&
@@ -429,10 +450,7 @@ const runDeployment = async ({
   const commandLog = path.join(fixtureRoot, "commands.log");
   const revisionCount = path.join(fixtureRoot, "revision-count");
   const expectedRevisionName = path.join(fixtureRoot, "expected-revision-name");
-  const templateSnapshotCount = path.join(
-    fixtureRoot,
-    "template-snapshot-count"
-  );
+  const latestReadyCount = path.join(fixtureRoot, "latest-ready-count");
   const patchCapture = path.join(fixtureRoot, "update-patch.json");
   const resolverCallCount = path.join(fixtureRoot, "resolver-call-count");
   const curlCount = path.join(fixtureRoot, "curl-count");
@@ -572,10 +590,10 @@ exec ${process.execPath} "$@"
       AZ_SCENARIO: scenario,
       REVISION_COUNT: revisionCount,
       EXPECTED_REVISION_NAME: expectedRevisionName,
-      TEMPLATE_SNAPSHOT_COUNT: templateSnapshotCount,
+      LATEST_READY_COUNT: latestReadyCount,
       PATCH_CAPTURE: patchCapture,
       EXPECTED_APP_RESOURCE_ID: uiResourceId,
-      LIVE_APP_SNAPSHOT_JSON: JSON.stringify(liveAppSnapshot),
+      LIVE_READY_REVISION_JSON: JSON.stringify(liveReadyRevisionSnapshot),
       RESOLVER_CALL_COUNT: resolverCallCount,
       CURL_COUNT: curlCount,
       HTTP_SCENARIO: httpScenario,
@@ -836,7 +854,9 @@ test("deployment validates immutable secrets and patches only the preserved temp
   const firstResolve = log.indexOf("resolver\n");
   const secretRead = log.indexOf("az <containerapp> <secret> <list>");
   const patch = log.indexOf("az <rest> <--method> <patch>");
-  const ready = log.indexOf("az <containerapp> <revision> <show>");
+  const ready = log.indexOf(
+    "<join('|', [properties.provisioningState, properties.runningState, properties.healthState])>"
+  );
   const health = log.indexOf("curl <");
   const finalCompare = log.lastIndexOf("resolver\n");
   const record = log.lastIndexOf("resolver <--record-if-current> <");
@@ -895,6 +915,8 @@ test("deployment validates immutable secrets and patches only the preserved temp
   );
   assert.doesNotMatch(log, /az <containerapp> <secret> <set>/);
   assert.doesNotMatch(log, /az <containerapp> <update>/);
+  assert.doesNotMatch(log, /az <keyvault> <secret>/);
+  assert.doesNotMatch(log, /az <containerapp> <revision> <copy>/);
 });
 
 test("deployment reuses one existing user-assigned identity without changing Azure permissions or identities", async () => {
@@ -927,8 +949,6 @@ for (const [scenario, error] of [
   ["role-contributor", /Key Vault secret read access/i],
   ["role-data-action-excluded", /Key Vault secret read access/i],
   ["role-malformed", /role definition response/i],
-  ["passkey-secret-missing", /PASSKEY-PROXY-SECRET/i],
-  ["empty-passkey-secret-id", /PASSKEY-PROXY-SECRET.*ID/i],
 ]) {
   test(`passkey preflight rejects ${scenario} before app mutation`, async () => {
     const { result, log } = await runDeployment({ scenario });
@@ -1013,10 +1033,6 @@ const preflightFailures = [
   ["backend-environment-drift", /backend.*managed environment/i],
   ["vault-missing", /Key Vault/i],
   ["empty-vault-uri", /vault URI/i],
-  ["upload-secret-missing", /UPLOAD-API-KEY/i],
-  ["empty-upload-secret-id", /UPLOAD-API-KEY.*ID/i],
-  ["docker-pat-missing", /DOCKER-HUB-PAT/i],
-  ["empty-docker-pat-id", /DOCKER-HUB-PAT.*ID/i],
   ["app-secret-metadata-malformed", /secret reference metadata/i],
   ["upload-app-secret-missing", /secret reference metadata/i],
   ["passkey-app-secret-missing", /secret reference metadata/i],
@@ -1141,24 +1157,38 @@ NEXT_PUBLIC_LANGGRAPH_URL=https://${dockerEnvCanary}.invalid
 test("deployment validates prerequisites, guards template drift, then performs one narrow ARM patch", async () => {
   const { result, log, patchBody } = await runDeployment();
   assert.equal(result.status, 0, `${result.stderr}\n${log}`);
-  const patRead = log.indexOf("<--name> <DOCKER-HUB-PAT>");
   const appSecrets = log.indexOf("az <containerapp> <secret> <list>");
   const registries = log.indexOf("az <containerapp> <registry> <list>");
-  const firstTemplate = log.indexOf(
-    "<{id:id,location:location,template:properties.template}>"
+  const initialMetadata = log.indexOf(
+    "<[id,location,properties.latestReadyRevisionName]>"
   );
-  const secondTemplate = log.lastIndexOf(
-    "<{id:id,location:location,template:properties.template}>"
+  const readyTemplate = log.indexOf(
+    "<{name:name,template:properties.template}>"
   );
+  const readyGuard = log.lastIndexOf("<properties.latestReadyRevisionName>");
   const patch = log.indexOf("az <rest> <--method> <patch>");
   assert.ok(
-    patRead >= 0 &&
-      patRead < appSecrets &&
+    appSecrets >= 0 &&
       appSecrets < registries &&
-      registries < firstTemplate &&
-      firstTemplate < secondTemplate &&
-      secondTemplate < patch,
+      registries < initialMetadata &&
+      initialMetadata < readyTemplate &&
+      readyTemplate < readyGuard &&
+      readyGuard < patch,
     log
+  );
+  assert.match(
+    log,
+    /^az <containerapp> <revision> <show>.*<--revision> <ui--previous>.*<{name:name,template:properties\.template}>.*<-o> <json>$/m
+  );
+  const azureCommands = log
+    .split("\n")
+    .filter((line) => line.startsWith("az "));
+  const guardCommand = azureCommands.findLastIndex((line) =>
+    line.includes("<properties.latestReadyRevisionName>")
+  );
+  assert.match(
+    azureCommands[guardCommand + 1],
+    /^az <rest> <--method> <patch>/
   );
   assert.match(
     log,
@@ -1184,7 +1214,11 @@ test("deployment validates prerequisites, guards template drift, then performs o
 });
 
 for (const [scenario, status, forbidden] of [
-  ["rest-patch-failure", 44, /az <containerapp> <revision> <show>/],
+  [
+    "rest-patch-failure",
+    44,
+    /<join\('\|', \[properties\.provisioningState, properties\.runningState, properties\.healthState\]\)>/,
+  ],
 ]) {
   test(`deployment propagates ${scenario}`, async () => {
     const { result, log } = await runDeployment({ scenario });
@@ -1198,7 +1232,6 @@ for (const [scenario, status, forbidden] of [
 }
 
 for (const [scenario, status] of [
-  ["docker-pat-show-cli-failure", 48],
   ["app-secret-list-cli-failure", 49],
   ["docker-registry-list-cli-failure", 50],
 ]) {
@@ -1215,12 +1248,24 @@ for (const [scenario, status] of [
 
 for (const [scenario, status, error] of [
   [
-    "template-read-cli-failure",
-    51,
-    /could not read current Container App template/i,
+    "deployment-metadata-read-cli-failure",
+    55,
+    /could not read initial Container App deployment metadata/i,
   ],
-  ["template-malformed", 1, /template metadata is invalid/i],
-  ["template-drift", 1, /template changed during deployment/i],
+  ["deployment-metadata-malformed", 1, /deployment metadata is invalid/i],
+  [
+    "ready-template-read-cli-failure",
+    51,
+    /could not read ready revision template/i,
+  ],
+  ["ready-template-malformed", 1, /ready revision template is invalid/i],
+  ["ready-template-name-mismatch", 1, /ready revision template is invalid/i],
+  [
+    "latest-ready-read-cli-failure",
+    52,
+    /could not recheck latest ready revision/i,
+  ],
+  ["latest-ready-drift", 1, /latest ready revision changed/i],
 ]) {
   test(`deployment fails closed on ${scenario} before ARM patch`, async () => {
     const { result, log } = await runDeployment({ scenario });
@@ -1228,15 +1273,18 @@ for (const [scenario, status, error] of [
     assert.match(result.stderr, error);
     assert.doesNotMatch(
       `${result.stdout}${result.stderr}`,
-      /sensitive-template-(?:response|error)-canary/
+      /sensitive-(?:metadata|template|ready)-(?:response|error)-canary/
     );
     assert.doesNotMatch(log, /az <rest> <--method> <patch>/);
   });
 }
 
 for (const [scenario, error] of [
-  ["empty-previous-revision", /previous.*revision/i],
-  ["unchanged-revision", /new revision.*different/i],
+  ["empty-previous-revision", /deployment metadata|previous.*revision/i],
+  [
+    "unchanged-revision",
+    /new revision.*different|latest ready revision changed/i,
+  ],
   ["revision-failed", /Failed.*Degraded/i],
   ["revision-timeout", /timed out.*revision/i],
   ["revision-unhealthy", /Unhealthy/i],
@@ -1256,7 +1304,11 @@ test("deployment waits through provisioning and stale marker", async () => {
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(
-    (log.match(/^az <containerapp> <revision> <show>/gm) ?? []).length,
+    (
+      log.match(
+        /^az <containerapp> <revision> <show>.*<join\('\|', \[properties\.provisioningState, properties\.runningState, properties\.healthState\]\)>.*$/gm
+      ) ?? []
+    ).length,
     2
   );
   assert.equal((log.match(/^curl\b/gm) ?? []).length, 2);
@@ -1268,6 +1320,90 @@ test("deployment accepts Azure RunningAtMaxScale as ready", async () => {
   });
   assert.equal(result.status, 0, result.stderr);
 });
+
+test("deployment tolerates several transient missing-revision reads after asynchronous PATCH", async () => {
+  const { result, log } = await runDeployment({
+    scenario: "revision-not-found-sequence",
+    revisionPollAttempts: "4",
+  });
+  assert.equal(result.status, 0, `${result.stderr}\n${log}`);
+  assert.equal(
+    (
+      log.match(
+        /^az <containerapp> <revision> <show>.*<join\('\|', \[properties\.provisioningState, properties\.runningState, properties\.healthState\]\)>.*$/gm
+      ) ?? []
+    ).length,
+    3
+  );
+  assert.equal(
+    (
+      log.match(
+        /^az <containerapp> <show>.*<properties\.provisioningState>.*$/gm
+      ) ?? []
+    ).length,
+    3
+  );
+  assert.equal((log.match(/^sleep <5>$/gm) ?? []).length, 2);
+});
+
+test("deployment tolerates Azure CLI not-found status four before revision appears", async () => {
+  const { result, log } = await runDeployment({
+    scenario: "revision-not-found-four-sequence",
+    revisionPollAttempts: "4",
+  });
+  assert.equal(result.status, 0, `${result.stderr}\n${log}`);
+});
+
+test("deployment times out rather than false-failing on repeated missing revision", async () => {
+  const { result, log } = await runDeployment({
+    scenario: "revision-not-found-timeout",
+    revisionPollAttempts: "2",
+  });
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /timed out waiting for revision/i);
+  assert.doesNotMatch(log, /^curl\b/m);
+});
+
+for (const scenario of [
+  "app-provisioning-failed",
+  "app-provisioning-canceled",
+]) {
+  test(`deployment stops on terminal ${scenario}`, async () => {
+    const { result, log } = await runDeployment({ scenario });
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(
+      result.stderr,
+      /Container App provisioning.*(?:Failed|Canceled)/i
+    );
+    assert.doesNotMatch(
+      log,
+      /<join\('\|', \[properties\.provisioningState, properties\.runningState, properties\.healthState\]\)>/
+    );
+    assert.doesNotMatch(log, /^curl\b/m);
+  });
+}
+
+for (const [scenario, status, error, canary] of [
+  [
+    "revision-read-cli-failure",
+    53,
+    /could not read revision.*readiness/i,
+    /sensitive-revision-(?:response|error)-canary/,
+  ],
+  [
+    "app-provisioning-read-cli-failure",
+    54,
+    /could not read Container App provisioning state/i,
+    /sensitive-provisioning-(?:response|error)-canary/,
+  ],
+]) {
+  test(`deployment preserves exact ${scenario} status without response leakage`, async () => {
+    const { result } = await runDeployment({ scenario });
+    assert.equal(result.status, status, result.stderr);
+    assert.match(result.stderr, error);
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, canary);
+  });
+}
 
 for (const [name, httpScenario, status, error] of [
   ["marker timeout", "marker-timeout", 1, /marker.*timed out/i],

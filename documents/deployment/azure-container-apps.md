@@ -95,9 +95,17 @@ backend URL, stage clean context, build `linux/amd64`, log in/push
 Deployment never invokes runtime, build, login, push, or `rsync`. It requires manifest
 to match current resolved endpoints/config, validates existing Key Vault/identity and
 Docker Hub registry prerequisites before app mutation, uses pinned manifest image,
-adds versionless Key Vault references, updates deployment-owned runtime values while
-preserving unrelated configuration, waits for named revision, and requires exact
-marker over HTTP before recording endpoint metadata.
+validates existing versionless Key Vault references without reading secret values,
+copies template state from exact latest ready revision, updates deployment-owned
+runtime values while preserving unrelated configuration, waits through asynchronous
+revision creation, and requires exact marker over HTTP before recording endpoint
+metadata.
+
+Run one UI deployment at a time. Script rechecks latest ready revision immediately
+before ARM PATCH, but Container Apps ETag is currently null and service documents no
+compare-and-swap precondition for this update. A second writer can therefore win after
+final revision check and before PATCH; last writer wins in that bounded window. If
+another deployment may be active, wait for it to finish and rerun from fresh preflight.
 
 Runtime passkey values are `PASSKEY_ENABLED=true`, exact Azure `PASSKEY_ORIGIN`,
 `PASSKEY_PROXY_ID=web-bff`, and `PASSKEY_PROXY_SECRET` secret reference. Backend uses

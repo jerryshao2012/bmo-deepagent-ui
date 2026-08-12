@@ -683,11 +683,22 @@ test("Container Apps deployment keeps secret values and configuration immutable"
 
   assert.doesNotMatch(deployScript, /az containerapp secret set/);
   assert.doesNotMatch(deployScript, /az containerapp update/);
+  assert.doesNotMatch(deployScript, /az keyvault secret show/);
+  assert.doesNotMatch(deployScript, /containerapp revision copy/);
   assert.doesNotMatch(deployScript, /show-values|listSecrets|list-secrets/i);
   assert.match(deployScript, /az rest --method patch/);
   assert.match(deployScript, /api-version=2025-07-01/);
   assert.match(deployScript, /application\/merge-patch\+json/);
   assert.doesNotMatch(templatePatch, /configuration|secrets|registries/);
+});
+
+test("Container Apps deployment documents its permission-neutral last-writer boundary", async () => {
+  const azure = await source("documents/deployment/azure-container-apps.md");
+
+  assert.match(azure, /latest ready revision/i);
+  assert.match(azure, /ETag.*null|no documented.*compare-and-swap/is);
+  assert.match(azure, /final revision check.*PATCH|last writer/is);
+  assert.match(azure, /one UI deployment at a time/i);
 });
 
 test("App Service deployment uses a prebuilt standalone zip", async () => {

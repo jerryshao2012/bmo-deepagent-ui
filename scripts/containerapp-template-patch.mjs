@@ -26,13 +26,15 @@ const parseJson = (bytes) => {
   }
 };
 
-const validateSnapshot = (snapshot, expectedResourceId, targetContainer) => {
+const validateReadyRevision = (
+  snapshot,
+  expectedRevisionName,
+  targetContainer
+) => {
   if (
     !isObject(snapshot) ||
-    Object.keys(snapshot).sort().join("|") !== "id|location|template" ||
-    !isSafeString(snapshot.id) ||
-    snapshot.id.toLowerCase() !== expectedResourceId.toLowerCase() ||
-    !isSafeString(snapshot.location) ||
+    Object.keys(snapshot).sort().join("|") !== "name|template" ||
+    snapshot.name !== expectedRevisionName ||
     !isObject(snapshot.template) ||
     !Array.isArray(snapshot.template.containers)
   ) {
@@ -74,35 +76,24 @@ const validateEnv = (env) => {
 const [mode, ...args] = process.argv.slice(2);
 
 if (mode === "capture") {
-  if (args.length !== 3) process.exit(2);
-  const [outputPath, expectedResourceId, targetContainer] = args;
-  const snapshot = validateSnapshot(
+  if (args.length !== 4) process.exit(2);
+  const [outputPath, location, expectedRevisionName, targetContainer] = args;
+  if (!isSafeString(location) || !isSafeString(expectedRevisionName)) {
+    process.exit(2);
+  }
+  const snapshot = validateReadyRevision(
     parseJson(fs.readFileSync(0, "utf8")),
-    expectedResourceId,
+    expectedRevisionName,
     targetContainer
   );
-  fs.writeFileSync(outputPath, `${JSON.stringify(canonicalize(snapshot))}\n`, {
+  const baseline = canonicalize({
+    location,
+    revisionName: snapshot.name,
+    template: snapshot.template,
+  });
+  fs.writeFileSync(outputPath, `${JSON.stringify(baseline)}\n`, {
     mode: 0o600,
   });
-} else if (mode === "compare") {
-  if (args.length !== 3) process.exit(2);
-  const [baselinePath, expectedResourceId, targetContainer] = args;
-  const baseline = validateSnapshot(
-    parseJson(fs.readFileSync(baselinePath, "utf8")),
-    expectedResourceId,
-    targetContainer
-  );
-  const live = validateSnapshot(
-    parseJson(fs.readFileSync(0, "utf8")),
-    expectedResourceId,
-    targetContainer
-  );
-  if (
-    JSON.stringify(canonicalize(live)) !==
-    JSON.stringify(canonicalize(baseline))
-  ) {
-    process.exit(3);
-  }
 } else if (mode === "patch") {
   if (args.length !== 8) process.exit(2);
   const [
@@ -126,7 +117,16 @@ if (mode === "capture") {
     if (!isSafeString(value)) process.exit(2);
   }
   const baseline = parseJson(fs.readFileSync(baselinePath, "utf8"));
-  if (!isObject(baseline) || !isObject(baseline.template)) process.exit(2);
+  if (
+    !isObject(baseline) ||
+    Object.keys(baseline).sort().join("|") !==
+      "location|revisionName|template" ||
+    !isSafeString(baseline.location) ||
+    !isSafeString(baseline.revisionName) ||
+    !isObject(baseline.template)
+  ) {
+    process.exit(2);
+  }
   const template = structuredClone(baseline.template);
   const containers = template.containers.filter(
     (container) => isObject(container) && container.name === targetContainer

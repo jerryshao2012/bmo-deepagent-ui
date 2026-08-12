@@ -362,19 +362,6 @@ EOF
 esac
 [ "$KEY_VAULT_ACCESS" = true ] || fail "existing managed identity Key Vault secret read access is a deployment prerequisite; this deployment does not grant permissions."
 
-if UPLOAD_SECRET_ID=$(az keyvault secret show --vault-name "$KV_NAME" --name UPLOAD-API-KEY --query id -o tsv); then :; else
-  fail "Key Vault secret '$KV_NAME/UPLOAD-API-KEY' is unavailable."
-fi
-[ -n "$UPLOAD_SECRET_ID" ] || fail "Key Vault secret '$KV_NAME/UPLOAD-API-KEY' returned an empty ID."
-if DOCKER_PAT_SECRET_ID=$(az keyvault secret show --vault-name "$KV_NAME" --name DOCKER-HUB-PAT --query id -o tsv); then :; else
-  status=$?; echo "Error: Key Vault secret '$KV_NAME/DOCKER-HUB-PAT' is unavailable." >&2; exit "$status"
-fi
-[ -n "$DOCKER_PAT_SECRET_ID" ] || fail "Key Vault secret '$KV_NAME/DOCKER-HUB-PAT' returned an empty ID."
-if PASSKEY_SECRET_ID=$(az keyvault secret show --vault-name "$KV_NAME" --name PASSKEY-PROXY-SECRET --query id -o tsv); then :; else
-  status=$?; echo "Error: Key Vault secret '$KV_NAME/PASSKEY-PROXY-SECRET' is unavailable." >&2; exit "$status"
-fi
-[ -n "$PASSKEY_SECRET_ID" ] || fail "Key Vault secret '$KV_NAME/PASSKEY-PROXY-SECRET' returned an empty ID."
-
 if APP_SECRETS=$(az containerapp secret list \
   --name "$CONTAINER_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
@@ -438,26 +425,45 @@ echo "Backend: $BACKEND_URL"
 echo "Assistant ID: $ASSISTANT_ID"
 echo "Azure Container Apps preflight complete."
 
-if PREVIOUS_REVISION=$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query properties.latestReadyRevisionName -o tsv); then :; else
-  status=$?; echo "Error: could not read previous ready Container App revision." >&2; exit "$status"
-fi
-[ -n "$PREVIOUS_REVISION" ] || fail "previous ready Container App revision is empty."
-
 APP_RESOURCE_ID="/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.App/containerApps/$CONTAINER_APP_NAME"
-TEMPLATE_BASELINE_JSON=$(umask 077; mktemp "${TMPDIR:-/tmp}/ui-containerapp-template.XXXXXX")
-if CURRENT_TEMPLATE=$(az containerapp show \
+if INITIAL_DEPLOYMENT_METADATA=$(az containerapp show \
   --name "$CONTAINER_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --query "{id:id,location:location,template:properties.template}" \
+  --query "[id,location,properties.latestReadyRevisionName]" \
   -o json 2>/dev/null); then :; else
-  status=$?; echo "Error: could not read current Container App template." >&2; exit "$status"
+  status=$?; echo "Error: could not read initial Container App deployment metadata." >&2; exit "$status"
 fi
-if printf '%s' "$CURRENT_TEMPLATE" | node "$SCRIPT_DIR/scripts/containerapp-template-patch.mjs" \
-  capture "$TEMPLATE_BASELINE_JSON" "$APP_RESOURCE_ID" "$TARGET_CONTAINER_NAME" \
+if INITIAL_DEPLOYMENT_VALUES=$(printf '%s' "$INITIAL_DEPLOYMENT_METADATA" | node -e '
+const fs = require("node:fs");
+const expectedId = process.argv[1];
+const safe = (value) => typeof value === "string" && value.length > 0 && !/[\u0000-\u001f\u007f]/.test(value);
+let value;
+try { value = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.exit(2); }
+if (!Array.isArray(value) || value.length !== 3 || !safe(value[0]) || value[0].toLowerCase() !== expectedId.toLowerCase() || !safe(value[1]) || !safe(value[2])) process.exit(2);
+process.stdout.write(`${value[1]}\t${value[2]}`);
+' "$APP_RESOURCE_ID" 2>/dev/null); then :; else
+  fail "initial Container App deployment metadata is invalid."
+fi
+unset INITIAL_DEPLOYMENT_METADATA
+IFS=$'\t' read -r APP_LOCATION PREVIOUS_REVISION <<< "$INITIAL_DEPLOYMENT_VALUES"
+unset INITIAL_DEPLOYMENT_VALUES
+[ -n "$PREVIOUS_REVISION" ] || fail "previous ready Container App revision is empty."
+
+TEMPLATE_BASELINE_JSON=$(umask 077; mktemp "${TMPDIR:-/tmp}/ui-containerapp-template.XXXXXX")
+if READY_REVISION_TEMPLATE=$(az containerapp revision show \
+  --name "$CONTAINER_APP_NAME" \
+  --revision "$PREVIOUS_REVISION" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query "{name:name,template:properties.template}" \
+  -o json 2>/dev/null); then :; else
+  status=$?; echo "Error: could not read ready revision template." >&2; exit "$status"
+fi
+if printf '%s' "$READY_REVISION_TEMPLATE" | node "$SCRIPT_DIR/scripts/containerapp-template-patch.mjs" \
+  capture "$TEMPLATE_BASELINE_JSON" "$APP_LOCATION" "$PREVIOUS_REVISION" "$TARGET_CONTAINER_NAME" \
   >/dev/null 2>/dev/null; then :; else
-  fail "current Container App template metadata is invalid."
+  fail "ready revision template is invalid."
 fi
-unset CURRENT_TEMPLATE
+unset READY_REVISION_TEMPLATE
 
 REVISION_SUFFIX="ui-$(date -u +%Y%m%dt%H%M%S)-$$"
 NEW_REVISION="${UI_APP_NAME}--${REVISION_SUFFIX}"
@@ -469,23 +475,24 @@ if node "$SCRIPT_DIR/scripts/containerapp-template-patch.mjs" patch \
   >/dev/null 2>/dev/null; then :; else
   fail "could not prepare the Container App template update."
 fi
-if GUARDED_TEMPLATE=$(az containerapp show \
+if GUARDED_READY_REVISION=$(az containerapp show \
   --name "$CONTAINER_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --query "{id:id,location:location,template:properties.template}" \
-  -o json 2>/dev/null); then :; else
-  status=$?; echo "Error: could not read current Container App template." >&2; exit "$status"
+  --query properties.latestReadyRevisionName \
+  -o tsv 2>/dev/null); then :; else
+  status=$?; echo "Error: could not recheck latest ready revision." >&2; exit "$status"
 fi
-if printf '%s' "$GUARDED_TEMPLATE" | node "$SCRIPT_DIR/scripts/containerapp-template-patch.mjs" \
-  compare "$TEMPLATE_BASELINE_JSON" "$APP_RESOURCE_ID" "$TARGET_CONTAINER_NAME" \
-  >/dev/null 2>/dev/null; then :; else
+if node -e '
+const [actual, expected] = process.argv.slice(1);
+const safe = (value) => typeof value === "string" && value.length > 0 && !/[\u0000-\u001f\u007f]/.test(value);
+if (!safe(actual)) process.exit(2);
+if (actual !== expected) process.exit(3);
+' "$GUARDED_READY_REVISION" "$PREVIOUS_REVISION" >/dev/null 2>/dev/null; then :; else
   status=$?
-  if [ "$status" -eq 3 ]; then
-    fail "Container App template changed during deployment; rerun after reviewing the concurrent change."
-  fi
-  fail "current Container App template metadata is invalid."
+  [ "$status" -eq 3 ] && fail "latest ready revision changed during deployment; rerun after reviewing the concurrent deployment."
+  fail "latest ready revision metadata is invalid."
 fi
-unset GUARDED_TEMPLATE
+unset GUARDED_READY_REVISION
 if az rest --method patch \
   --uri "${APP_RESOURCE_ID}?api-version=2025-07-01" \
   --headers Content-Type=application/merge-patch+json \
@@ -500,15 +507,39 @@ LAST_HEALTH_STATE=""
 revision_ready=false
 attempt=1
 while [ "$attempt" -le "$REVISION_POLL_ATTEMPTS" ]; do
+  if APP_PROVISIONING_STATE=$(az containerapp show \
+    --name "$CONTAINER_APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query properties.provisioningState \
+    -o tsv 2>/dev/null); then :; else
+    status=$?; echo "Error: could not read Container App provisioning state." >&2; exit "$status"
+  fi
+  if ! [[ "$APP_PROVISIONING_STATE" =~ ^[A-Za-z]+$ ]]; then
+    fail "Container App provisioning state is invalid."
+  fi
+  case "$APP_PROVISIONING_STATE" in
+    [Ff][Aa][Ii][Ll][Ee][Dd]|[Cc][Aa][Nn][Cc][Ee][Ll][Ee][Dd])
+      fail "Container App provisioning reached terminal state '$APP_PROVISIONING_STATE'."
+      ;;
+  esac
   if REVISION_STATUS=$(az containerapp revision show \
     --name "$CONTAINER_APP_NAME" \
     --revision "$NEW_REVISION" \
     --resource-group "$RESOURCE_GROUP" \
     --query "join('|', [properties.provisioningState, properties.runningState, properties.healthState])" \
-    -o tsv); then :; else
-    status=$?; echo "Error: could not read revision '$NEW_REVISION' readiness." >&2; exit "$status"
+    -o tsv 2>/dev/null); then
+    IFS='|' read -r LAST_PROVISIONING_STATE LAST_RUNNING_STATE LAST_HEALTH_STATE <<< "$REVISION_STATUS"
+  else
+    status=$?
+    if [ "$status" -eq 3 ] || [ "$status" -eq 4 ]; then
+      LAST_PROVISIONING_STATE=NotFound
+      LAST_RUNNING_STATE=NotFound
+      LAST_HEALTH_STATE=NotFound
+    else
+      echo "Error: could not read revision '$NEW_REVISION' readiness." >&2
+      exit "$status"
+    fi
   fi
-  IFS='|' read -r LAST_PROVISIONING_STATE LAST_RUNNING_STATE LAST_HEALTH_STATE <<< "$REVISION_STATUS"
   case "$LAST_PROVISIONING_STATE|$LAST_RUNNING_STATE|$LAST_HEALTH_STATE" in
     *Failed*|*failed*|*FAILED*|*Degraded*|*degraded*|*DEGRADED*|*ActivationFailed*|*activationfailed*|*ACTIVATIONFAILED*|*Unhealthy*|*unhealthy*|*UNHEALTHY*)
       fail "revision '$NEW_REVISION' failed readiness: provisioning=$LAST_PROVISIONING_STATE running=$LAST_RUNNING_STATE health=$LAST_HEALTH_STATE."

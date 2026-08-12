@@ -675,6 +675,21 @@ test("Container Apps deployment consumes manifest without image-production depen
   );
 });
 
+test("Container Apps deployment keeps secret values and configuration immutable", async () => {
+  const [deployScript, templatePatch] = await Promise.all([
+    source("deploy-azure-container-app.sh"),
+    source("scripts/containerapp-template-patch.mjs"),
+  ]);
+
+  assert.doesNotMatch(deployScript, /az containerapp secret set/);
+  assert.doesNotMatch(deployScript, /az containerapp update/);
+  assert.doesNotMatch(deployScript, /show-values|listSecrets|list-secrets/i);
+  assert.match(deployScript, /az rest --method patch/);
+  assert.match(deployScript, /api-version=2025-07-01/);
+  assert.match(deployScript, /application\/merge-patch\+json/);
+  assert.doesNotMatch(templatePatch, /configuration|secrets|registries/);
+});
+
 test("App Service deployment uses a prebuilt standalone zip", async () => {
   const deployScript = await source("deploy.sh");
 

@@ -181,6 +181,16 @@ for required_command in az curl node; do
   command -v "$required_command" >/dev/null 2>&1 || fail "required command not found: $required_command"
 done
 
+TEMPLATE_BASELINE_JSON=""
+UPDATE_PATCH_JSON=""
+HEALTH_RESPONSE_PATH=""
+cleanup() {
+  [ -z "$TEMPLATE_BASELINE_JSON" ] || rm -f -- "$TEMPLATE_BASELINE_JSON"
+  [ -z "$UPDATE_PATCH_JSON" ] || rm -f -- "$UPDATE_PATCH_JSON"
+  [ -z "$HEALTH_RESPONSE_PATH" ] || rm -f -- "$HEALTH_RESPONSE_PATH"
+}
+trap cleanup EXIT
+
 [ -f "$MANIFEST_PATH" ] || fail "deployment build manifest '$MANIFEST_PATH' is required; run ./build.sh first."
 if MANIFEST_VALUES=$(node -e '
 const fs = require("node:fs");
@@ -369,50 +379,57 @@ if APP_SECRETS=$(az containerapp secret list \
   --name "$CONTAINER_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
   --query "[].[name, keyVaultUrl, identity]" \
-  -o tsv); then :; else
+  -o json 2>/dev/null); then :; else
   status=$?; echo "Error: could not read Container App secrets for '$CONTAINER_APP_NAME'." >&2; exit "$status"
 fi
-DOCKER_SECRET_FOUND=false
-while IFS=$'\t' read -r secret_name secret_url secret_identity; do
-  if [ "$secret_name" = docker-hub-pat ]; then
-    DOCKER_SECRET_FOUND=true
-    [ "$secret_url" = "${VAULT_URI}secrets/DOCKER-HUB-PAT" ] || fail "docker-hub-pat must use the unversioned DOCKER-HUB-PAT reference in '$KV_NAME'."
-    if node -e '
-const [actual, expected] = process.argv.slice(1);
-process.exit(
-  typeof actual === "string" &&
-  typeof expected === "string" &&
-  actual.toLowerCase() === expected.toLowerCase() ? 0 : 1
-);
-' "$secret_identity" "$MANAGED_IDENTITY_REF"; then
-      :
-    else
-      fail "docker-hub-pat secret must use the selected managed identity."
-    fi
-  fi
-done <<EOF
-$APP_SECRETS
-EOF
-[ "$DOCKER_SECRET_FOUND" = true ] || fail "Container App secret 'docker-hub-pat' is required."
+if printf '%s' "$APP_SECRETS" | node -e '
+const fs = require("node:fs");
+const [vaultUri, identity] = process.argv.slice(1);
+const safe = (value) => typeof value === "string" && value.length > 0 && !/[\u0000-\u001f\u007f]/.test(value);
+let rows;
+try { rows = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.exit(2); }
+if (!Array.isArray(rows) || rows.some((row) =>
+  !Array.isArray(row) || row.length !== 3 || !safe(row[0]) ||
+  !(row[1] === null || safe(row[1])) || !(row[2] === null || safe(row[2]))
+)) process.exit(2);
+const required = new Map([
+  ["upload-api-key", [`${vaultUri}secrets/UPLOAD-API-KEY`, identity]],
+  ["passkey-proxy-secret", [`${vaultUri}secrets/PASSKEY-PROXY-SECRET`, identity]],
+  ["docker-hub-pat", [`${vaultUri}secrets/DOCKER-HUB-PAT`, identity]],
+]);
+for (const [name, [url, expectedIdentity]] of required) {
+  const matches = rows.filter((row) => row[0] === name);
+  if (matches.length !== 1) process.exit(2);
+  if (matches[0][1] !== url) process.exit(2);
+  if (typeof matches[0][2] !== "string" || matches[0][2].toLowerCase() !== expectedIdentity.toLowerCase()) process.exit(2);
+}
+' "$VAULT_URI" "$MANAGED_IDENTITY_REF"; then :; else
+  fail "required Container App secret reference metadata is invalid."
+fi
+unset APP_SECRETS
 
 if REGISTRIES=$(az containerapp registry list \
   --name "$CONTAINER_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
   --query "[].[server, username, passwordSecretRef]" \
-  -o tsv); then :; else
+  -o json 2>/dev/null); then :; else
   status=$?; echo "Error: could not read Docker Hub registry configuration for '$CONTAINER_APP_NAME'." >&2; exit "$status"
 fi
-DOCKER_REGISTRY_FOUND=false
-while IFS=$'\t' read -r registry_server registry_username registry_secret_ref; do
-  if [ "$registry_server" = docker.io ]; then
-    DOCKER_REGISTRY_FOUND=true
-    [ "$registry_username" = "$DOCKER_HUB_USERNAME" ] || fail "Docker Hub registry username must be '$DOCKER_HUB_USERNAME'."
-    [ "$registry_secret_ref" = docker-hub-pat ] || fail "Docker Hub registry passwordSecretRef must be 'docker-hub-pat'."
-  fi
-done <<EOF
-$REGISTRIES
-EOF
-[ "$DOCKER_REGISTRY_FOUND" = true ] || fail "Docker Hub registry entry for 'docker.io' is required."
+if printf '%s' "$REGISTRIES" | node -e '
+const fs = require("node:fs");
+const expectedUsername = process.argv[1];
+const safe = (value) => typeof value === "string" && value.length > 0 && !/[\u0000-\u001f\u007f]/.test(value);
+let rows;
+try { rows = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.exit(2); }
+if (!Array.isArray(rows) || rows.some((row) =>
+  !Array.isArray(row) || row.length !== 3 || row.some((value) => !safe(value))
+)) process.exit(2);
+const matches = rows.filter((row) => row[0] === "docker.io");
+if (matches.length !== 1 || matches[0][1] !== expectedUsername || matches[0][2] !== "docker-hub-pat") process.exit(2);
+' "$DOCKER_HUB_USERNAME"; then :; else
+  fail "required Docker Hub registry metadata is invalid."
+fi
+unset REGISTRIES
 
 echo "Container App: $CONTAINER_APP_NAME (container: $TARGET_CONTAINER_NAME)"
 echo "Registry: docker.io"
@@ -426,42 +443,55 @@ if PREVIOUS_REVISION=$(az containerapp show --name "$CONTAINER_APP_NAME" --resou
 fi
 [ -n "$PREVIOUS_REVISION" ] || fail "previous ready Container App revision is empty."
 
-UPLOAD_SECRET_URI="${VAULT_URI}secrets/UPLOAD-API-KEY"
-PASSKEY_SECRET_URI="${VAULT_URI}secrets/PASSKEY-PROXY-SECRET"
-if az containerapp secret set \
+APP_RESOURCE_ID="/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.App/containerApps/$CONTAINER_APP_NAME"
+TEMPLATE_BASELINE_JSON=$(umask 077; mktemp "${TMPDIR:-/tmp}/ui-containerapp-template.XXXXXX")
+if CURRENT_TEMPLATE=$(az containerapp show \
   --name "$CONTAINER_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --secrets "upload-api-key=keyvaultref:$UPLOAD_SECRET_URI,identityref:$MANAGED_IDENTITY_REF" \
-  "passkey-proxy-secret=keyvaultref:$PASSKEY_SECRET_URI,identityref:$MANAGED_IDENTITY_REF" \
-  -o none; then :; else
-  status=$?; echo "Error: Container App Key Vault secret configuration failed." >&2; exit "$status"
+  --query "{id:id,location:location,template:properties.template}" \
+  -o json 2>/dev/null); then :; else
+  status=$?; echo "Error: could not read current Container App template." >&2; exit "$status"
 fi
+if printf '%s' "$CURRENT_TEMPLATE" | node "$SCRIPT_DIR/scripts/containerapp-template-patch.mjs" \
+  capture "$TEMPLATE_BASELINE_JSON" "$APP_RESOURCE_ID" "$TARGET_CONTAINER_NAME" \
+  >/dev/null 2>/dev/null; then :; else
+  fail "current Container App template metadata is invalid."
+fi
+unset CURRENT_TEMPLATE
 
 REVISION_SUFFIX="ui-$(date -u +%Y%m%dt%H%M%S)-$$"
 NEW_REVISION="${UI_APP_NAME}--${REVISION_SUFFIX}"
 [ "$NEW_REVISION" != "$PREVIOUS_REVISION" ] || fail "new revision must be different from previous ready revision '$PREVIOUS_REVISION'."
-if az containerapp update \
+UPDATE_PATCH_JSON=$(umask 077; mktemp "${TMPDIR:-/tmp}/ui-containerapp-update.XXXXXX")
+if node "$SCRIPT_DIR/scripts/containerapp-template-patch.mjs" patch \
+  "$TEMPLATE_BASELINE_JSON" "$UPDATE_PATCH_JSON" "$TARGET_CONTAINER_NAME" \
+  "$REVISION_SUFFIX" "$EXPECTED_IMAGE" "$BACKEND_URL" "$ASSISTANT_ID" "$UI_URL" \
+  >/dev/null 2>/dev/null; then :; else
+  fail "could not prepare the Container App template update."
+fi
+if GUARDED_TEMPLATE=$(az containerapp show \
   --name "$CONTAINER_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --container-name "$TARGET_CONTAINER_NAME" \
-  --image "$EXPECTED_IMAGE" \
-  --revision-suffix "$REVISION_SUFFIX" \
-  --set-env-vars \
-  "NEXT_TELEMETRY_DISABLED=1" \
-  "NEXT_PUBLIC_LANGGRAPH_URL=$BACKEND_URL" \
-  "BACKEND_API_URL=$BACKEND_URL" \
-  "NEXT_PUBLIC_ASSISTANT_ID=$ASSISTANT_ID" \
-  "AUTH_URL=$UI_URL" \
-  "NEXTAUTH_URL=$UI_URL" \
-  "AUTH_TRUST_HOST=true" \
-  "NODE_ENV=production" \
-  "UPLOAD_API_KEY=secretref:upload-api-key" \
-  "PASSKEY_ENABLED=true" \
-  "PASSKEY_ORIGIN=$AZURE_UI_URL" \
-  "PASSKEY_PROXY_ID=web-bff" \
-  "PASSKEY_PROXY_SECRET=secretref:passkey-proxy-secret" \
-  -o none; then :; else
-  status=$?; echo "Error: Container App update failed." >&2; exit "$status"
+  --query "{id:id,location:location,template:properties.template}" \
+  -o json 2>/dev/null); then :; else
+  status=$?; echo "Error: could not read current Container App template." >&2; exit "$status"
+fi
+if printf '%s' "$GUARDED_TEMPLATE" | node "$SCRIPT_DIR/scripts/containerapp-template-patch.mjs" \
+  compare "$TEMPLATE_BASELINE_JSON" "$APP_RESOURCE_ID" "$TARGET_CONTAINER_NAME" \
+  >/dev/null 2>/dev/null; then :; else
+  status=$?
+  if [ "$status" -eq 3 ]; then
+    fail "Container App template changed during deployment; rerun after reviewing the concurrent change."
+  fi
+  fail "current Container App template metadata is invalid."
+fi
+unset GUARDED_TEMPLATE
+if az rest --method patch \
+  --uri "${APP_RESOURCE_ID}?api-version=2025-07-01" \
+  --headers Content-Type=application/merge-patch+json \
+  --body "@$UPDATE_PATCH_JSON" \
+  --output none >/dev/null 2>/dev/null; then :; else
+  status=$?; echo "Error: Container App template update failed." >&2; exit "$status"
 fi
 
 LAST_PROVISIONING_STATE=""
@@ -494,7 +524,6 @@ done
 [ "$revision_ready" = true ] || fail "timed out waiting for revision '$NEW_REVISION': provisioning=$LAST_PROVISIONING_STATE running=$LAST_RUNNING_STATE health=$LAST_HEALTH_STATE."
 
 HEALTH_RESPONSE_PATH=$(mktemp "${TMPDIR:-/tmp}/deployment-version-response.XXXXXX")
-trap 'rm -f -- "$HEALTH_RESPONSE_PATH"' EXIT
 HTTP_STATUS=""
 HTTP_RESPONSE_BODY=""
 EXPECTED_HTTP_BODY="${MANIFEST_MARKER}"$'\n'

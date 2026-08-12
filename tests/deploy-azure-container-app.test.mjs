@@ -26,6 +26,10 @@ const rbacEvaluatorPath = path.join(
   repoRoot,
   "scripts/evaluate-keyvault-rbac.mjs"
 );
+const templatePatchPath = path.join(
+  repoRoot,
+  "scripts/containerapp-template-patch.mjs"
+);
 const dockerEnvExample = await readFile(
   path.join(repoRoot, ".env.docker.example"),
   "utf8"
@@ -36,6 +40,30 @@ const deploymentMarker = "20260812T101112Z-4242";
 const resolvedBackendUrl =
   "https://deep-research-agent-testseed.env.example.test";
 const resolvedUiUrl = "https://bmo-deepagent-ui-testseed.env.example.test";
+const uiResourceId = `/subscriptions/${subscriptionId}/resourceGroups/test-resource-group/providers/Microsoft.App/containerApps/bmo-deepagent-ui-testseed`;
+const liveTemplate = {
+  revisionSuffix: "prior",
+  containers: [
+    {
+      name: "deepagent-ui",
+      image: "docker.io/jerryshao2013/deepagent-ui:old",
+      env: [
+        { name: "KEEP_ME", value: "untouched" },
+        { name: "PASSKEY_ENABLED", value: "false" },
+      ],
+      resources: { cpu: 0.5, memory: "1Gi" },
+      probes: [{ type: "Liveness", httpGet: { path: "/", port: 3000 } }],
+    },
+  ],
+  initContainers: [{ name: "keep-init", image: "example.test/init:1" }],
+  volumes: [{ name: "keep-volume", storageType: "EmptyDir" }],
+  scale: { minReplicas: 1, maxReplicas: 3 },
+};
+const liveAppSnapshot = {
+  id: uiResourceId,
+  location: "Canada Central",
+  template: liveTemplate,
+};
 const deploymentResolverOutput = [
   "AZURE_ENVIRONMENT_ID='/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.App/managedEnvironments/test-environment'",
   "AZURE_ENVIRONMENT_DEFAULT_DOMAIN='env.example.test'",
@@ -104,14 +132,17 @@ case "$command" in
   containerapp:show)
     [ "$#" -eq 10 ] && [ "$3" = "--name" ] &&
       [ "$5" = "--resource-group" ] && [ "$6" = "test-resource-group" ] &&
-      [ "$7" = "--query" ] && [ "$9" = "-o" ] && [ "\${10}" = "tsv" ] || argv_error
+      [ "$7" = "--query" ] && [ "$9" = "-o" ] || argv_error
     name="$4"
     query="$8"
+    output="\${10}"
     if [ "$name" = "bmo-deepagent-ui-testseed" ]; then
       legacy_details_query="join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(identity.principalId), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])"
       managed_details_query="join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(identity.principalId), to_string(identity.userAssignedIdentities), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])"
+      template_snapshot_query="{id:id,location:location,template:properties.template}"
       case "$query" in
         "$legacy_details_query"|"$managed_details_query")
+          [ "$output" = "tsv" ] || argv_error
           [ "$scenario" = "ui-app-missing" ] && exit 5
           environment_id=/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.App/managedEnvironments/test-environment
           external=true; fqdn=bmo-deepagent-ui-testseed.env.example.test; target_port=3000; mode=Single
@@ -148,7 +179,30 @@ case "$command" in
             printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$environment_id" "$external" "$fqdn" "$target_port" "$mode" "$identity" "$principal_id" "$count" "$container_name"
           fi
           ;;
+        "$template_snapshot_query")
+          [ "$output" = "json" ] || argv_error
+          count=0; [ ! -f "$TEMPLATE_SNAPSHOT_COUNT" ] || IFS= read -r count < "$TEMPLATE_SNAPSHOT_COUNT"
+          count=$((count + 1)); printf '%s\n' "$count" > "$TEMPLATE_SNAPSHOT_COUNT"
+          if [ "$scenario" = "template-read-cli-failure" ]; then
+            printf 'sensitive-template-response-canary\n'
+            printf 'sensitive-template-error-canary\n' >&2
+            exit 51
+          fi
+          if [ "$scenario" = "template-malformed" ]; then
+            printf '{"id":7,"location":null,"template":[]}'
+          elif [ "$scenario" = "template-drift" ] && [ "$count" -ge 2 ]; then
+            printf '%s' "$LIVE_APP_SNAPSHOT_JSON" | node -e '
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(0, "utf8"));
+value.template.scale.maxReplicas = 99;
+process.stdout.write(JSON.stringify(value));
+'
+          else
+            printf '%s' "$LIVE_APP_SNAPSHOT_JSON"
+          fi
+          ;;
         properties.latestReadyRevisionName)
+          [ "$output" = "tsv" ] || argv_error
           case "$scenario" in
             empty-previous-revision) ;;
             unchanged-revision) printf 'bmo-deepagent-ui-testseed--ui-20260812t101112-%s\n' "$PPID" ;;
@@ -158,6 +212,7 @@ case "$command" in
         *) argv_error ;;
       esac
     elif [ "$name" = "deep-research-agent-testseed" ]; then
+      [ "$output" = "tsv" ] || argv_error
       [ "$query" = "join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn)])" ] || argv_error
       [ "$scenario" = "backend-missing" ] && exit 6
       environment_id=/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.App/managedEnvironments/test-environment
@@ -178,34 +233,28 @@ case "$command" in
         [ "$#" -eq 11 ] && [ "$4" = "--name" ] && [ "$5" = "bmo-deepagent-ui-testseed" ] &&
           [ "$6" = "--resource-group" ] && [ "$7" = "test-resource-group" ] &&
           [ "$8" = "--query" ] && [ "$9" = "[].[name, keyVaultUrl, identity]" ] &&
-          [ "\${10}" = "-o" ] && [ "\${11}" = "tsv" ] || argv_error
-        [ "$scenario" = "docker-secret-list-cli-failure" ] && exit 49
+          [ "\${10}" = "-o" ] && [ "\${11}" = "json" ] || argv_error
+        if [ "$scenario" = "app-secret-list-cli-failure" ]; then
+          printf 'sensitive-secret-response-canary\n'
+          printf 'sensitive-secret-error-canary\n' >&2
+          exit 49
+        fi
         case "$scenario" in
-          docker-secret-missing) printf 'unrelated\thttps://other/secrets/value\tsystem\n' ;;
-          docker-secret-versioned) printf 'docker-hub-pat\thttps://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT/version\tsystem\n' ;;
-          docker-secret-wrong-vault) printf 'docker-hub-pat\thttps://other.vault.azure.net/secrets/DOCKER-HUB-PAT\tsystem\n' ;;
-          docker-secret-wrong-identity) printf 'docker-hub-pat\thttps://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT\tuser-assigned\n' ;;
+          app-secret-metadata-malformed) printf '{"not":"rows"}' ;;
+          upload-app-secret-missing) printf '[["passkey-proxy-secret","https://testvault.vault.azure.net/secrets/PASSKEY-PROXY-SECRET","system"],["docker-hub-pat","https://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT","system"]]' ;;
+          passkey-app-secret-missing) printf '[["upload-api-key","https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY","system"],["docker-hub-pat","https://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT","system"]]' ;;
+          docker-app-secret-missing) printf '[["upload-api-key","https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY","system"],["passkey-proxy-secret","https://testvault.vault.azure.net/secrets/PASSKEY-PROXY-SECRET","system"]]' ;;
+          upload-app-secret-duplicate) printf '[["upload-api-key","https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY","system"],["upload-api-key","https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY","system"],["passkey-proxy-secret","https://testvault.vault.azure.net/secrets/PASSKEY-PROXY-SECRET","system"],["docker-hub-pat","https://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT","system"]]' ;;
+          upload-app-secret-versioned) printf '[["upload-api-key","https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY/version","system"],["passkey-proxy-secret","https://testvault.vault.azure.net/secrets/PASSKEY-PROXY-SECRET","system"],["docker-hub-pat","https://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT","system"]]' ;;
+          passkey-app-secret-wrong-vault) printf '[["upload-api-key","https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY","system"],["passkey-proxy-secret","https://other.vault.azure.net/secrets/PASSKEY-PROXY-SECRET","system"],["docker-hub-pat","https://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT","system"]]' ;;
+          docker-app-secret-wrong-identity) printf '[["upload-api-key","https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY","system"],["passkey-proxy-secret","https://testvault.vault.azure.net/secrets/PASSKEY-PROXY-SECRET","system"],["docker-hub-pat","https://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT","user-assigned"]]' ;;
           user-assigned-identity|multiple-user-assigned-identities|missing-user-assigned-principal)
-            printf 'docker-hub-pat\thttps://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT\t%s\n' "$user_identity_id"
-            printf 'unrelated\thttps://other/secrets/value\tsystem\n'
+            printf '[["upload-api-key","https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY","%s"],["passkey-proxy-secret","https://testvault.vault.azure.net/secrets/PASSKEY-PROXY-SECRET","%s"],["docker-hub-pat","https://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT","%s"],["unrelated",null,null]]' "$user_identity_id" "$user_identity_id" "$user_identity_id"
             ;;
           *)
-            printf 'docker-hub-pat\thttps://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT\tsystem\n'
-            printf 'unrelated\thttps://other/secrets/value\tsystem\n'
+            printf '[["upload-api-key","https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY","system"],["passkey-proxy-secret","https://testvault.vault.azure.net/secrets/PASSKEY-PROXY-SECRET","system"],["docker-hub-pat","https://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT","system"],["unrelated",null,null]]'
             ;;
         esac
-        ;;
-      set)
-        identity_ref=system
-        [ "$scenario" = "user-assigned-identity" ] && identity_ref="$user_identity_id"
-        [ "$#" -eq 12 ] && [ "$4" = "--name" ] && [ "$5" = "bmo-deepagent-ui-testseed" ] &&
-          [ "$6" = "--resource-group" ] && [ "$7" = "test-resource-group" ] &&
-          [ "$8" = "--secrets" ] &&
-          [ "$9" = "upload-api-key=keyvaultref:https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY,identityref:$identity_ref" ] &&
-          [ "\${10}" = "passkey-proxy-secret=keyvaultref:https://testvault.vault.azure.net/secrets/PASSKEY-PROXY-SECRET,identityref:$identity_ref" ] &&
-          [ "\${11}" = "-o" ] && [ "\${12}" = "none" ] || argv_error
-        [ "$scenario" = "secret-set-failure" ] && exit 43
-        :
         ;;
       *) argv_error ;;
     esac
@@ -215,40 +264,43 @@ case "$command" in
       [ "$4" = "--name" ] && [ "$5" = "bmo-deepagent-ui-testseed" ] &&
       [ "$6" = "--resource-group" ] && [ "$7" = "test-resource-group" ] &&
       [ "$8" = "--query" ] && [ "$9" = "[].[server, username, passwordSecretRef]" ] &&
-      [ "\${10}" = "-o" ] && [ "\${11}" = "tsv" ] || argv_error
-    [ "$scenario" = "docker-registry-list-cli-failure" ] && exit 50
+      [ "\${10}" = "-o" ] && [ "\${11}" = "json" ] || argv_error
+    if [ "$scenario" = "docker-registry-list-cli-failure" ]; then
+      printf 'sensitive-registry-response-canary\n'
+      printf 'sensitive-registry-error-canary\n' >&2
+      exit 50
+    fi
     case "$scenario" in
-      docker-registry-missing) printf 'other.example.test\tother\tother-secret\n' ;;
-      docker-registry-wrong-username) printf 'docker.io\tattacker\tdocker-hub-pat\n' ;;
-      docker-registry-wrong-secret) printf 'docker.io\tjerryshao2013\twrong-secret\n' ;;
+      docker-registry-malformed) printf '{"not":"rows"}' ;;
+      docker-registry-missing) printf '[["other.example.test","other","other-secret"]]' ;;
+      docker-registry-duplicate) printf '[["docker.io","jerryshao2013","docker-hub-pat"],["docker.io","jerryshao2013","docker-hub-pat"]]' ;;
+      docker-registry-wrong-username) printf '[["docker.io","attacker","docker-hub-pat"]]' ;;
+      docker-registry-wrong-secret) printf '[["docker.io","jerryshao2013","wrong-secret"]]' ;;
       *)
-        printf 'docker.io\tjerryshao2013\tdocker-hub-pat\n'
-        printf 'other.example.test\tother\tother-secret\n'
+        printf '[["docker.io","jerryshao2013","docker-hub-pat"],["other.example.test","other","other-secret"]]'
         ;;
     esac
     ;;
-  containerapp:update)
-    [ "$#" -eq 28 ] && [ "$3" = "--name" ] && [ "$4" = "bmo-deepagent-ui-testseed" ] &&
-      [ "$5" = "--resource-group" ] && [ "$6" = "test-resource-group" ] &&
-      [ "$7" = "--container-name" ] && [ "$8" = "deepagent-ui" ] &&
-      [ "$9" = "--image" ] && [ "\${10}" = "docker.io/jerryshao2013/deepagent-ui:latest" ] &&
-      [ "\${11}" = "--revision-suffix" ] && [ "\${13}" = "--set-env-vars" ] &&
-      [ "\${14}" = "NEXT_TELEMETRY_DISABLED=1" ] &&
-      [ "\${15}" = "NEXT_PUBLIC_LANGGRAPH_URL=https://deep-research-agent-testseed.env.example.test" ] &&
-      [ "\${16}" = "BACKEND_API_URL=https://deep-research-agent-testseed.env.example.test" ] &&
-      [ "\${17}" = "NEXT_PUBLIC_ASSISTANT_ID=docker-assistant" ] &&
-      [ "\${18}" = "AUTH_URL=https://bmo-deepagent-ui-testseed.env.example.test" ] &&
-      [ "\${19}" = "NEXTAUTH_URL=https://bmo-deepagent-ui-testseed.env.example.test" ] &&
-      [ "\${20}" = "AUTH_TRUST_HOST=true" ] && [ "\${21}" = "NODE_ENV=production" ] &&
-      [ "\${22}" = "UPLOAD_API_KEY=secretref:upload-api-key" ] &&
-      [ "\${23}" = "PASSKEY_ENABLED=true" ] &&
-      [ "\${24}" = "PASSKEY_ORIGIN=https://bmo-deepagent-ui-testseed.env.example.test" ] &&
-      [ "\${25}" = "PASSKEY_PROXY_ID=web-bff" ] &&
-      [ "\${26}" = "PASSKEY_PROXY_SECRET=secretref:passkey-proxy-secret" ] &&
-      [ "\${27}" = "-o" ] && [ "\${28}" = "none" ] || argv_error
-    case "\${12}" in ui-[0-9]*t[0-9]*-[0-9]*) ;; *) argv_error ;; esac
-    printf 'bmo-deepagent-ui-testseed--%s\n' "\${12}" > "$EXPECTED_REVISION_NAME"
-    [ "$scenario" = "update-failure" ] && exit 44
+  rest:--method)
+    [ "$#" -eq 11 ] && [ "$2" = "--method" ] && [ "$3" = "patch" ] &&
+      [ "$4" = "--uri" ] && [ "$5" = "$EXPECTED_APP_RESOURCE_ID?api-version=2025-07-01" ] &&
+      [ "$6" = "--headers" ] && [ "$7" = "Content-Type=application/merge-patch+json" ] &&
+      [ "$8" = "--body" ] && [ "\${10}" = "--output" ] && [ "\${11}" = "none" ] || argv_error
+    case "$9" in @*) patch_path="\${9#@}" ;; *) argv_error ;; esac
+    node -e '
+const fs = require("node:fs");
+const [patchPath, capturePath, revisionPath] = process.argv.slice(1);
+const patch = JSON.parse(fs.readFileSync(patchPath, "utf8"));
+if ((fs.statSync(patchPath).mode & 0o777) !== 0o600) process.exit(86);
+fs.copyFileSync(patchPath, capturePath);
+if (typeof patch?.properties?.template?.revisionSuffix !== "string") process.exit(86);
+fs.writeFileSync(revisionPath, "bmo-deepagent-ui-testseed--" + patch.properties.template.revisionSuffix + "\\n");
+' "$patch_path" "$PATCH_CAPTURE" "$EXPECTED_REVISION_NAME" || argv_error
+    if [ "$scenario" = "rest-patch-failure" ]; then
+      printf 'sensitive-patch-response-canary\n'
+      printf 'sensitive-patch-error-canary\n' >&2
+      exit 44
+    fi
     :
     ;;
   containerapp:revision)
@@ -377,6 +429,11 @@ const runDeployment = async ({
   const commandLog = path.join(fixtureRoot, "commands.log");
   const revisionCount = path.join(fixtureRoot, "revision-count");
   const expectedRevisionName = path.join(fixtureRoot, "expected-revision-name");
+  const templateSnapshotCount = path.join(
+    fixtureRoot,
+    "template-snapshot-count"
+  );
+  const patchCapture = path.join(fixtureRoot, "update-patch.json");
   const resolverCallCount = path.join(fixtureRoot, "resolver-call-count");
   const curlCount = path.join(fixtureRoot, "curl-count");
   const controlSentinel = path.join(
@@ -412,6 +469,10 @@ const runDeployment = async ({
       copyFile(
         rbacEvaluatorPath,
         path.join(scriptsDir, "evaluate-keyvault-rbac.mjs")
+      ),
+      copyFile(
+        templatePatchPath,
+        path.join(scriptsDir, "containerapp-template-patch.mjs")
       ),
     ]);
     await writeFile(
@@ -511,6 +572,10 @@ exec ${process.execPath} "$@"
       AZ_SCENARIO: scenario,
       REVISION_COUNT: revisionCount,
       EXPECTED_REVISION_NAME: expectedRevisionName,
+      TEMPLATE_SNAPSHOT_COUNT: templateSnapshotCount,
+      PATCH_CAPTURE: patchCapture,
+      EXPECTED_APP_RESOURCE_ID: uiResourceId,
+      LIVE_APP_SNAPSHOT_JSON: JSON.stringify(liveAppSnapshot),
       RESOLVER_CALL_COUNT: resolverCallCount,
       CURL_COUNT: curlCount,
       HTTP_SCENARIO: httpScenario,
@@ -539,6 +604,9 @@ exec ${process.execPath} "$@"
       { cwd: outsideCwd ? outsideRoot : fixtureRoot, encoding: "utf8", env }
     );
     const log = await readFile(commandLog, "utf8").catch(() => "");
+    const patchBody = await readFile(patchCapture, "utf8")
+      .then((value) => JSON.parse(value))
+      .catch(() => null);
     const dockerEnvAfter = await readFile(dockerEnvPath).catch(() => null);
     const outsideAfter = await readFile(path.join(outsideRoot, ".env.docker"));
     const controlSentinelExists = await access(controlSentinel)
@@ -547,6 +615,7 @@ exec ${process.execPath} "$@"
     return {
       result,
       log,
+      patchBody,
       dockerEnvBefore,
       dockerEnvAfter,
       outsideSentinel,
@@ -562,6 +631,7 @@ const assertNoAppMutation = (log) => {
   assert.doesNotMatch(log, /az <containerapp> <secret> <set>/);
   assert.doesNotMatch(log, /az <containerapp> <update>/);
   assert.doesNotMatch(log, /az <containerapp> <create>/);
+  assert.doesNotMatch(log, /az <rest> <--method> <patch>/);
 };
 
 const assertNoPermissionMutation = (log) => {
@@ -760,44 +830,71 @@ test("manifest backend must match resolver before Azure or app mutation", async 
   assertNoAppMutation(log);
 });
 
-test("deployment configures managed passkey secret and runtime then records endpoints after exact health success", async () => {
-  const { result, log } = await runDeployment();
+test("deployment validates immutable secrets and patches only the preserved template before exact health success", async () => {
+  const { result, log, patchBody } = await runDeployment();
   assert.equal(result.status, 0, `${result.stderr}\n${log}`);
   const firstResolve = log.indexOf("resolver\n");
-  const secretSet = log.indexOf("az <containerapp> <secret> <set>");
-  const update = log.indexOf("az <containerapp> <update>");
+  const secretRead = log.indexOf("az <containerapp> <secret> <list>");
+  const patch = log.indexOf("az <rest> <--method> <patch>");
   const ready = log.indexOf("az <containerapp> <revision> <show>");
   const health = log.indexOf("curl <");
   const finalCompare = log.lastIndexOf("resolver\n");
   const record = log.lastIndexOf("resolver <--record-if-current> <");
   assert.ok(
     firstResolve >= 0 &&
-      firstResolve < secretSet &&
-      secretSet < update &&
-      update < ready &&
+      firstResolve < secretRead &&
+      secretRead < patch &&
+      patch < ready &&
       ready < health &&
       health < finalCompare &&
       finalCompare < record &&
       health < record,
     log
   );
-  assert.match(
-    log,
-    /<passkey-proxy-secret=keyvaultref:https:\/\/testvault\.vault\.azure\.net\/secrets\/PASSKEY-PROXY-SECRET,identityref:system>/
+  assert.deepEqual(Object.keys(patchBody).sort(), ["location", "properties"]);
+  assert.deepEqual(Object.keys(patchBody.properties), ["template"]);
+  assert.equal(patchBody.location, "Canada Central");
+  assert.equal(
+    patchBody.properties.template.initContainers[0].name,
+    "keep-init"
   );
-  const updateLine = log.match(/^az <containerapp> <update>.*$/m)?.[0] ?? "";
-  for (const value of [
-    "PASSKEY_ENABLED=true",
-    "PASSKEY_ORIGIN=https://bmo-deepagent-ui-testseed.env.example.test",
-    "PASSKEY_PROXY_ID=web-bff",
-    "PASSKEY_PROXY_SECRET=secretref:passkey-proxy-secret",
-    "AUTH_URL=https://bmo-deepagent-ui-testseed.env.example.test",
-    "NEXTAUTH_URL=https://bmo-deepagent-ui-testseed.env.example.test",
-    "NEXT_PUBLIC_LANGGRAPH_URL=https://deep-research-agent-testseed.env.example.test",
-    "BACKEND_API_URL=https://deep-research-agent-testseed.env.example.test",
-  ]) {
-    assert.match(updateLine, new RegExp(`<${value.replaceAll("/", "\\/")}>`));
-  }
+  assert.equal(patchBody.properties.template.volumes[0].name, "keep-volume");
+  assert.deepEqual(patchBody.properties.template.scale, liveTemplate.scale);
+  assert.deepEqual(
+    patchBody.properties.template.containers[0].resources,
+    liveTemplate.containers[0].resources
+  );
+  assert.deepEqual(
+    patchBody.properties.template.containers[0].probes,
+    liveTemplate.containers[0].probes
+  );
+  assert.equal(patchBody.properties.template.containers[0].image, pinnedImage);
+  assert.deepEqual(
+    Object.fromEntries(
+      patchBody.properties.template.containers[0].env.map((entry) => [
+        entry.name,
+        entry.secretRef ?? entry.value,
+      ])
+    ),
+    {
+      KEEP_ME: "untouched",
+      NEXT_TELEMETRY_DISABLED: "1",
+      NEXT_PUBLIC_LANGGRAPH_URL: resolvedBackendUrl,
+      BACKEND_API_URL: resolvedBackendUrl,
+      NEXT_PUBLIC_ASSISTANT_ID: "docker-assistant",
+      AUTH_URL: resolvedUiUrl,
+      NEXTAUTH_URL: resolvedUiUrl,
+      AUTH_TRUST_HOST: "true",
+      NODE_ENV: "production",
+      UPLOAD_API_KEY: "upload-api-key",
+      PASSKEY_ENABLED: "true",
+      PASSKEY_ORIGIN: resolvedUiUrl,
+      PASSKEY_PROXY_ID: "web-bff",
+      PASSKEY_PROXY_SECRET: "passkey-proxy-secret",
+    }
+  );
+  assert.doesNotMatch(log, /az <containerapp> <secret> <set>/);
+  assert.doesNotMatch(log, /az <containerapp> <update>/);
 });
 
 test("deployment reuses one existing user-assigned identity without changing Azure permissions or identities", async () => {
@@ -805,10 +902,8 @@ test("deployment reuses one existing user-assigned identity without changing Azu
     scenario: "user-assigned-identity",
   });
   assert.equal(result.status, 0, `${result.stderr}\n${log}`);
-  assert.match(
-    log,
-    /<upload-api-key=keyvaultref:https:\/\/testvault\.vault\.azure\.net\/secrets\/UPLOAD-API-KEY,identityref:\/subscriptions\/12345678-1234-1234-1234-123456789abc\/resourceGroups\/test-resource-group\/providers\/Microsoft\.ManagedIdentity\/userAssignedIdentities\/test-identity>/
-  );
+  assert.match(log, /az <containerapp> <secret> <list>/);
+  assert.doesNotMatch(log, /az <containerapp> <secret> <set>/);
   assert.match(log, /objectId=='user-principal-id'/);
   assertNoPermissionMutation(log);
 });
@@ -922,13 +1017,19 @@ const preflightFailures = [
   ["empty-upload-secret-id", /UPLOAD-API-KEY.*ID/i],
   ["docker-pat-missing", /DOCKER-HUB-PAT/i],
   ["empty-docker-pat-id", /DOCKER-HUB-PAT.*ID/i],
-  ["docker-secret-missing", /secret.*docker-hub-pat/i],
-  ["docker-secret-versioned", /unversioned.*DOCKER-HUB-PAT/i],
-  ["docker-secret-wrong-vault", /unversioned.*DOCKER-HUB-PAT/i],
-  ["docker-secret-wrong-identity", /selected managed identity/i],
-  ["docker-registry-missing", /Docker Hub registry/i],
-  ["docker-registry-wrong-username", /username.*jerryshao2013/i],
-  ["docker-registry-wrong-secret", /passwordSecretRef.*docker-hub-pat/i],
+  ["app-secret-metadata-malformed", /secret reference metadata/i],
+  ["upload-app-secret-missing", /secret reference metadata/i],
+  ["passkey-app-secret-missing", /secret reference metadata/i],
+  ["docker-app-secret-missing", /secret reference metadata/i],
+  ["upload-app-secret-duplicate", /secret reference metadata/i],
+  ["upload-app-secret-versioned", /secret reference metadata/i],
+  ["passkey-app-secret-wrong-vault", /secret reference metadata/i],
+  ["docker-app-secret-wrong-identity", /secret reference metadata/i],
+  ["docker-registry-malformed", /registry metadata/i],
+  ["docker-registry-missing", /registry metadata/i],
+  ["docker-registry-duplicate", /registry metadata/i],
+  ["docker-registry-wrong-username", /registry metadata/i],
+  ["docker-registry-wrong-secret", /registry metadata/i],
 ];
 
 for (const [scenario, error] of preflightFailures) {
@@ -1037,42 +1138,44 @@ NEXT_PUBLIC_LANGGRAPH_URL=https://${dockerEnvCanary}.invalid
   });
 }
 
-test("deployment validates prerequisites then performs narrow secret and image update", async () => {
-  const { result, log } = await runDeployment();
+test("deployment validates prerequisites, guards template drift, then performs one narrow ARM patch", async () => {
+  const { result, log, patchBody } = await runDeployment();
   assert.equal(result.status, 0, `${result.stderr}\n${log}`);
   const patRead = log.indexOf("<--name> <DOCKER-HUB-PAT>");
   const appSecrets = log.indexOf("az <containerapp> <secret> <list>");
   const registries = log.indexOf("az <containerapp> <registry> <list>");
-  const secretSet = log.indexOf("az <containerapp> <secret> <set>");
-  const update = log.indexOf("az <containerapp> <update>");
+  const firstTemplate = log.indexOf(
+    "<{id:id,location:location,template:properties.template}>"
+  );
+  const secondTemplate = log.lastIndexOf(
+    "<{id:id,location:location,template:properties.template}>"
+  );
+  const patch = log.indexOf("az <rest> <--method> <patch>");
   assert.ok(
     patRead >= 0 &&
       patRead < appSecrets &&
       appSecrets < registries &&
-      registries < secretSet &&
-      secretSet < update,
+      registries < firstTemplate &&
+      firstTemplate < secondTemplate &&
+      secondTemplate < patch,
     log
   );
   assert.match(
     log,
-    /^az <containerapp> <secret> <set>.*<upload-api-key=keyvaultref:https:\/\/testvault\.vault\.azure\.net\/secrets\/UPLOAD-API-KEY,identityref:system>/m
+    new RegExp(
+      `^az <rest> <--method> <patch> <--uri> <${uiResourceId.replaceAll(
+        "/",
+        "\\/"
+      )}\\?api-version=2025-07-01> <\\-\\-headers> <Content-Type=application/merge-patch\\+json>`,
+      "m"
+    )
   );
-  const updateLine = log.match(/^az <containerapp> <update>.*$/m)?.[0] ?? "";
-  assert.match(updateLine, /<--container-name> <deepagent-ui>/);
+  assert.equal(patchBody.properties.template.containers.length, 1);
   assert.match(
-    updateLine,
-    /<--image> <docker\.io\/jerryshao2013\/deepagent-ui:latest>/
+    patchBody.properties.template.revisionSuffix,
+    /^ui-20260812t101112-[0-9]+$/
   );
-  assert.match(updateLine, /<--revision-suffix> <ui-20260812t101112-[0-9]+>/);
-  assert.match(
-    updateLine,
-    /<NEXT_PUBLIC_LANGGRAPH_URL=https:\/\/deep-research-agent-testseed\.env\.example\.test>/
-  );
-  assert.match(updateLine, /<NEXT_PUBLIC_ASSISTANT_ID=docker-assistant>/);
-  assert.doesNotMatch(
-    updateLine,
-    /<--(?:ingress|target-port|scale|identity|registry|traffic|network|volume|dapr)[^>]*>/
-  );
+  assert.equal(patchBody.properties.template.containers[0].image, pinnedImage);
   assert.match(
     log,
     /^curl .*<https:\/\/bmo-deepagent-ui-testseed\.env\.example\.test\/deployment-version\.txt>$/m
@@ -1081,25 +1184,53 @@ test("deployment validates prerequisites then performs narrow secret and image u
 });
 
 for (const [scenario, status, forbidden] of [
-  ["secret-set-failure", 43, /az <containerapp> <update>/],
-  ["update-failure", 44, /az <containerapp> <revision> <show>/],
+  ["rest-patch-failure", 44, /az <containerapp> <revision> <show>/],
 ]) {
   test(`deployment propagates ${scenario}`, async () => {
     const { result, log } = await runDeployment({ scenario });
     assert.equal(result.status, status, result.stderr);
+    assert.doesNotMatch(
+      `${result.stdout}${result.stderr}`,
+      /sensitive-patch-(?:response|error)-canary/
+    );
     assert.doesNotMatch(log, forbidden);
   });
 }
 
 for (const [scenario, status] of [
   ["docker-pat-show-cli-failure", 48],
-  ["docker-secret-list-cli-failure", 49],
+  ["app-secret-list-cli-failure", 49],
   ["docker-registry-list-cli-failure", 50],
 ]) {
   test(`deployment preserves exact ${scenario} status`, async () => {
     const { result, log } = await runDeployment({ scenario });
     assert.equal(result.status, status, result.stderr);
+    assert.doesNotMatch(
+      `${result.stdout}${result.stderr}`,
+      /sensitive-(?:secret|registry)-(?:response|error)-canary/
+    );
     assertNoAppMutation(log);
+  });
+}
+
+for (const [scenario, status, error] of [
+  [
+    "template-read-cli-failure",
+    51,
+    /could not read current Container App template/i,
+  ],
+  ["template-malformed", 1, /template metadata is invalid/i],
+  ["template-drift", 1, /template changed during deployment/i],
+]) {
+  test(`deployment fails closed on ${scenario} before ARM patch`, async () => {
+    const { result, log } = await runDeployment({ scenario });
+    assert.equal(result.status, status, result.stderr);
+    assert.match(result.stderr, error);
+    assert.doesNotMatch(
+      `${result.stdout}${result.stderr}`,
+      /sensitive-template-(?:response|error)-canary/
+    );
+    assert.doesNotMatch(log, /az <rest> <--method> <patch>/);
   });
 }
 

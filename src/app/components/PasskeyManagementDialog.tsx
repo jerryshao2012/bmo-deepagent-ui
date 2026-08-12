@@ -37,6 +37,7 @@ import {
   PASSKEY_MANAGEMENT_RETURN_PATH,
   shouldOpenPasskeyManagement,
 } from "@/lib/oauth-login";
+import { rememberPasskeyEnrollment } from "@/lib/passkey-enrollment-state";
 import { isPasskeyCancellation } from "@/lib/passkey-client";
 import { isLoginProvider, type LoginProvider } from "@/lib/remembered-login";
 
@@ -69,6 +70,11 @@ type Operation =
 type LabelErrorTarget =
   | { kind: "enrollment" }
   | { kind: "rename"; credentialId: string };
+
+type ReauthenticationReason =
+  | "recent_auth"
+  | "invalid_session"
+  | "authentication_required";
 
 function providerName(provider: LoginProvider) {
   return provider === "google" ? "Google" : "GitHub";
@@ -104,6 +110,8 @@ export default function PasskeyManagementDialog({
   const [reauthProvider, setReauthProvider] = useState<LoginProvider | null>(
     null
   );
+  const [reauthReason, setReauthReason] =
+    useState<ReauthenticationReason | null>(null);
   const [confirmingCredentialId, setConfirmingCredentialId] = useState<
     string | null
   >(null);
@@ -124,6 +132,7 @@ export default function PasskeyManagementDialog({
     setLabelError(null);
     setAnnouncement(null);
     setReauthProvider(null);
+    setReauthReason(null);
     return true;
   }, []);
 
@@ -132,22 +141,51 @@ export default function PasskeyManagementDialog({
     setOperation(null);
   }, []);
 
-  const handleError = useCallback((caught: unknown) => {
-    if (
-      caught instanceof ManagementRequestError &&
-      caught.status === 403 &&
-      caught.code === "reauth_required" &&
-      caught.provider
-    ) {
-      setReauthProvider(caught.provider);
-      return;
-    }
-    if (!isPasskeyCancellation(caught)) {
-      setError(
-        "Passkey action failed. Please retry or sign in with your provider."
-      );
-    }
-  }, []);
+  const handleError = useCallback(
+    (caught: unknown) => {
+      if (caught instanceof ManagementRequestError) {
+        if (caught.status === 403 && caught.code === "reauth_required") {
+          setReauthProvider(caught.provider ?? provider);
+          setReauthReason("recent_auth");
+          return;
+        }
+        if (
+          caught.status === 401 &&
+          (caught.code === "invalid_session" ||
+            caught.code === "authentication_required")
+        ) {
+          setReauthProvider(provider);
+          setReauthReason(caught.code);
+          return;
+        }
+        if (caught.status === 429 && caught.code === "rate_limited") {
+          setError("Too many passkey requests. Wait one minute, then retry.");
+          return;
+        }
+        if (
+          caught.status === 502 &&
+          caught.code === "authentication_service_unavailable"
+        ) {
+          setError(
+            "Authentication service is temporarily unavailable. Use Google or GitHub, or retry later."
+          );
+          return;
+        }
+        if (caught.status === 503 && caught.code === "passkeys_unavailable") {
+          setError(
+            "Passkey service is temporarily unavailable. Use Google or GitHub, or retry later."
+          );
+          return;
+        }
+      }
+      if (!isPasskeyCancellation(caught)) {
+        setError(
+          "Passkey action failed. Please retry or sign in with your provider."
+        );
+      }
+    },
+    [provider]
+  );
 
   useEffect(() => {
     if (!open || !begin("load")) return;
@@ -155,6 +193,7 @@ export default function PasskeyManagementDialog({
     void loadManagedPasskeys(managementGateway)
       .then((next) => {
         if (!current) return;
+        if (next.length > 0) rememberPasskeyEnrollment();
         setPasskeys(next);
         setDrafts(
           Object.fromEntries(
@@ -212,6 +251,7 @@ export default function PasskeyManagementDialog({
         registrationAuthenticator,
         label
       );
+      rememberPasskeyEnrollment();
       setPasskeys((current) => [...current, enrolled]);
       setDrafts((current) => ({
         ...current,
@@ -369,8 +409,24 @@ export default function PasskeyManagementDialog({
             className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
           >
             <p>
-              Verify again with {providerName(reauthProvider)}, then retry this
-              action manually.
+              {reauthReason === "invalid_session" ? (
+                <>
+                  Your session expired. Verify with{" "}
+                  {providerName(reauthProvider)}, then retry this action
+                  manually.
+                </>
+              ) : reauthReason === "authentication_required" ? (
+                <>
+                  Authentication is required. Verify with{" "}
+                  {providerName(reauthProvider)}, then retry this action
+                  manually.
+                </>
+              ) : (
+                <>
+                  Verify again with {providerName(reauthProvider)}, then retry
+                  this action manually.
+                </>
+              )}
             </p>
             <Button
               className="mt-3"

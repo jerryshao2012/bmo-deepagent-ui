@@ -16,12 +16,16 @@ import userEvent from "@testing-library/user-event";
 import PasskeyManagementDialog, {
   PasskeyManagementQueryDialog,
 } from "../src/app/components/PasskeyManagementDialog";
+import { PASSKEY_ENROLLMENT_MARKER_KEY } from "../src/lib/passkey-enrollment-state";
 import {
   PASSKEY_MANAGEMENT_RETURN_PATH,
   shouldOpenPasskeyManagement,
 } from "../src/lib/oauth-login";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
 
 const source = (relativePath: string) =>
   readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
@@ -60,8 +64,10 @@ test("lists passkeys and keeps final credential revocable", async () => {
   );
 
   assert.ok(await screen.findByText("MacBook Touch ID"));
+  assert.equal(window.localStorage.getItem(PASSKEY_ENROLLMENT_MARKER_KEY), "1");
   assert.ok(screen.getByText("Synced passkey"));
   const add = screen.getByRole("button", { name: "Add passkey" });
+  window.localStorage.setItem(PASSKEY_ENROLLMENT_MARKER_KEY, "1");
   fireEvent.click(
     screen.getByRole("button", { name: "Revoke MacBook Touch ID" })
   );
@@ -97,7 +103,71 @@ test("lists passkeys and keeps final credential revocable", async () => {
     assert.equal(screen.queryByText("MacBook Touch ID"), null)
   );
   assert.ok(screen.getByRole("status", { name: "MacBook Touch ID revoked." }));
+  assert.equal(window.localStorage.getItem(PASSKEY_ENROLLMENT_MARKER_KEY), "1");
   await waitFor(() => assert.equal(document.activeElement === add, true));
+});
+
+test("empty passkey list neither creates nor clears the sticky marker", async () => {
+  const view = render(
+    <PasskeyManagementDialog
+      open
+      onOpenChange={() => {}}
+      provider="google"
+      oauthBackendUrl="https://backend.example.com"
+      fetchImpl={async () => json({ passkeys: [] })}
+    />
+  );
+
+  await screen.findByText("No passkeys enrolled yet.");
+  assert.equal(
+    window.localStorage.getItem(PASSKEY_ENROLLMENT_MARKER_KEY),
+    null
+  );
+
+  view.unmount();
+  window.localStorage.setItem(PASSKEY_ENROLLMENT_MARKER_KEY, "1");
+  render(
+    <PasskeyManagementDialog
+      open
+      onOpenChange={() => {}}
+      provider="github"
+      oauthBackendUrl="https://backend.example.com"
+      fetchImpl={async () => json({ passkeys: [] })}
+    />
+  );
+
+  await screen.findByText("No passkeys enrolled yet.");
+  assert.equal(window.localStorage.getItem(PASSKEY_ENROLLMENT_MARKER_KEY), "1");
+});
+
+test("blocked marker storage does not break a successful list", async () => {
+  const storagePrototype = Object.getPrototypeOf(
+    window.localStorage
+  ) as Storage;
+  const originalSetItem = storagePrototype.setItem;
+  let writeAttempts = 0;
+  storagePrototype.setItem = () => {
+    writeAttempts += 1;
+    throw new DOMException("Blocked", "SecurityError");
+  };
+
+  try {
+    render(
+      <PasskeyManagementDialog
+        open
+        onOpenChange={() => {}}
+        provider="google"
+        oauthBackendUrl="https://backend.example.com"
+        fetchImpl={async () => json({ passkeys: [passkey] })}
+      />
+    );
+
+    assert.ok(await screen.findByText("MacBook Touch ID"));
+    assert.equal(screen.queryByRole("alert"), null);
+    assert.equal(writeAttempts, 1);
+  } finally {
+    storagePrototype.setItem = originalSetItem;
+  }
 });
 
 test("canceling revoke restores focus to its original trigger", async () => {
@@ -224,6 +294,7 @@ test("enrolls a named passkey through registration ceremony", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Add passkey" }));
 
   await screen.findByText("Phone");
+  assert.equal(window.localStorage.getItem(PASSKEY_ENROLLMENT_MARKER_KEY), "1");
   assert.deepEqual(ceremonyOptions, options);
   const verify = calls.find(({ url }) => url.endsWith("/registration/verify"));
   assert.deepEqual(JSON.parse(String(verify?.init?.body)), {
@@ -574,7 +645,7 @@ test("offers manual OAuth reauthentication without replaying sensitive action", 
     <PasskeyManagementDialog
       open
       onOpenChange={() => {}}
-      provider="github"
+      provider="google"
       oauthBackendUrl="https://backend.example.com/"
       navigate={(url) => navigations.push(url)}
       fetchImpl={async (input) => {
@@ -617,6 +688,208 @@ test("offers manual OAuth reauthentication without replaying sensitive action", 
   );
 });
 
+test("falls back to authenticated provider when 403 provider is invalid", async () => {
+  const navigations: string[] = [];
+  render(
+    <PasskeyManagementDialog
+      open
+      onOpenChange={() => {}}
+      provider="google"
+      oauthBackendUrl="https://backend.example.com"
+      navigate={(url) => navigations.push(url)}
+      fetchImpl={async () =>
+        json(
+          { code: "reauth_required", provider: "untrusted" },
+          { status: 403 }
+        )
+      }
+    />
+  );
+
+  const verify = await screen.findByRole("button", {
+    name: "Verify with Google",
+  });
+  assert.match(
+    screen.getByRole("alert").textContent || "",
+    /Verify again with Google/
+  );
+  fireEvent.click(verify);
+  assert.equal(
+    navigations[0],
+    `https://backend.example.com/auth/login/google?return_path=${encodeURIComponent(
+      PASSKEY_MANAGEMENT_RETURN_PATH
+    )}`
+  );
+});
+
+for (const code of ["invalid_session", "authentication_required"]) {
+  test(`${code} uses authenticated provider despite conflicting backend provider`, async () => {
+    const navigations: string[] = [];
+    render(
+      <PasskeyManagementDialog
+        open
+        onOpenChange={() => {}}
+        provider="google"
+        oauthBackendUrl="https://backend.example.com"
+        navigate={(url) => navigations.push(url)}
+        fetchImpl={async () =>
+          json({ code, provider: "github" }, { status: 401 })
+        }
+      />
+    );
+
+    const verify = await screen.findByRole("button", {
+      name: "Verify with Google",
+    });
+    const alert = screen.getByRole("alert");
+    assert.match(
+      alert.textContent || "",
+      code === "invalid_session"
+        ? /session expired/i
+        : /authentication is required/i
+    );
+    assert.doesNotMatch(alert.textContent || "", /GitHub/);
+    fireEvent.click(verify);
+    assert.match(navigations[0] || "", /\/auth\/login\/google\?/);
+  });
+}
+
+const exactRecoveryCases = [
+  {
+    status: 429,
+    code: "rate_limited",
+    message: "Too many passkey requests. Wait one minute, then retry.",
+  },
+  {
+    status: 502,
+    code: "authentication_service_unavailable",
+    message:
+      "Authentication service is temporarily unavailable. Use Google or GitHub, or retry later.",
+  },
+  {
+    status: 503,
+    code: "passkeys_unavailable",
+    message:
+      "Passkey service is temporarily unavailable. Use Google or GitHub, or retry later.",
+  },
+] as const;
+
+for (const { status, code, message } of exactRecoveryCases) {
+  test(`${status} ${code} renders only its safe recovery message`, async () => {
+    render(
+      <PasskeyManagementDialog
+        open
+        onOpenChange={() => {}}
+        provider="github"
+        oauthBackendUrl="https://backend.example.com"
+        fetchImpl={async () =>
+          json(
+            {
+              code,
+              detail: "secret backend detail",
+              message: "untrusted backend message",
+              token: "session-token-value",
+            },
+            { status }
+          )
+        }
+      />
+    );
+
+    const alert = await screen.findByRole("alert");
+    assert.equal(alert.textContent, message);
+    assert.doesNotMatch(
+      document.body.textContent || "",
+      /secret backend detail|untrusted backend message|session-token-value/
+    );
+  });
+}
+
+const genericFailureCases = [
+  { status: 401, body: { code: "reauth_required" } },
+  { status: 403, body: { code: "invalid_session" } },
+  { status: 502, body: { code: "passkeys_unavailable" } },
+  {
+    status: 503,
+    body: { code: "authentication_service_unavailable" },
+  },
+  { status: 418, body: { code: "rate_limited" } },
+  { status: 500, body: { code: "unknown", detail: "do not render me" } },
+] as const;
+
+for (const { status, body } of genericFailureCases) {
+  test(`${status} ${body.code} mismatch remains generic`, async () => {
+    render(
+      <PasskeyManagementDialog
+        open
+        onOpenChange={() => {}}
+        provider="google"
+        oauthBackendUrl="https://backend.example.com"
+        fetchImpl={async () => json(body, { status })}
+      />
+    );
+
+    const alert = await screen.findByRole("alert");
+    assert.equal(
+      alert.textContent,
+      "Passkey action failed. Please retry or sign in with your provider."
+    );
+    assert.doesNotMatch(alert.textContent || "", /do not render me/);
+  });
+}
+
+test("malformed error response remains generic", async () => {
+  render(
+    <PasskeyManagementDialog
+      open
+      onOpenChange={() => {}}
+      provider="google"
+      oauthBackendUrl="https://backend.example.com"
+      fetchImpl={async () =>
+        new Response("not-json secret body", {
+          status: 500,
+          headers: { "content-type": "text/plain" },
+        })
+      }
+    />
+  );
+
+  const alert = await screen.findByRole("alert");
+  assert.equal(
+    alert.textContent,
+    "Passkey action failed. Please retry or sign in with your provider."
+  );
+  assert.doesNotMatch(document.body.textContent || "", /not-json secret body/);
+  assert.equal(
+    window.localStorage.getItem(PASSKEY_ENROLLMENT_MARKER_KEY),
+    null
+  );
+});
+
+test("failed enrollment does not remember passkey availability", async () => {
+  render(
+    <PasskeyManagementDialog
+      open
+      onOpenChange={() => {}}
+      provider="google"
+      oauthBackendUrl="https://backend.example.com"
+      fetchImpl={async (input) =>
+        String(input).endsWith("/registration/options")
+          ? json({ code: "invalid_request" }, { status: 400 })
+          : json({ passkeys: [] })
+      }
+    />
+  );
+
+  await screen.findByText("No passkeys enrolled yet.");
+  fireEvent.click(screen.getByRole("button", { name: "Add passkey" }));
+  assert.ok(await screen.findByRole("alert"));
+  assert.equal(
+    window.localStorage.getItem(PASSKEY_ENROLLMENT_MARKER_KEY),
+    null
+  );
+});
+
 test("treats registration cancellation neutrally and restores actions", async () => {
   const calls: string[] = [];
   render(
@@ -643,6 +916,10 @@ test("treats registration cancellation neutrally and restores actions", async ()
 
   await waitFor(() => assert.equal(add.hasAttribute("disabled"), false));
   assert.equal(screen.queryByRole("alert"), null);
+  assert.equal(
+    window.localStorage.getItem(PASSKEY_ENROLLMENT_MARKER_KEY),
+    null
+  );
   assert.equal(
     calls.some((url) => url.endsWith("/registration/verify")),
     false

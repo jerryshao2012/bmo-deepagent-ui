@@ -117,7 +117,7 @@ callback, session, and security details. To enable OAuth:
 Passkeys are disabled unless UI and backend both set `PASSKEY_ENABLED=true`.
 OAuth must remain available for initial enrollment, reauthentication, and recovery.
 
-Configure UI server:
+For local/explicit UI configuration:
 
 ```env
 PASSKEY_ENABLED=true
@@ -129,6 +129,11 @@ PASSKEY_PROXY_SECRET=<at-least-32-random-bytes>
 `PASSKEY_ORIGIN` must be exact browser origin without path or trailing slash.
 Configure backend with matching proxy ID and secret. Store secret in managed secret
 store and never expose it through `NEXT_PUBLIC_*` variable.
+
+Azure Container Apps runtime owns these UI values through resolved Azure origin and
+Key Vault reference; do not duplicate them in `.env.docker`. Backend canonical mode
+uses `FRONTEND_URLS` as sole multi-origin source with
+`PASSKEY_DERIVE_FROM_FRONTEND_URLS=true` and explicit `PASSKEY_ENABLED=true`.
 
 See [Passkey authentication](documents/authentication/passkey-authentication.md)
 for enrollment, identifier-free sign-in, trust boundaries, management flows, and
@@ -195,9 +200,14 @@ Inspect each script and its example secret files before running it.
 For existing Azure resources, choose one target:
 
 ```bash
-./deploy-azure-container-app.sh # Build/push image and update Azure Container App
-./deploy.sh                     # Build/ZIP-deploy to Azure App Service
+./build.sh                       # Build/push Docker Hub image; write .deployment-build.json
+./deploy-azure-container-app.sh  # Update existing ACA from pinned manifest; never builds
+./deploy.sh                      # Build/ZIP-deploy to Azure App Service
 ```
+
+Unified passkey cutover deploys backend first, then runs UI `./build.sh` once and
+UI `./deploy-azure-container-app.sh` once. Current rollout does not configure,
+build, deploy, or verify Vercel.
 
 ## Documentation
 

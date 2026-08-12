@@ -27,6 +27,8 @@ const sanitizerPath = path.join(
 const source = async (relativePath) =>
   readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
 
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const extractPasskeysSection = (readme) =>
   readme.match(/^### Passkeys\b[\s\S]*?(?=^#{1,3}\s|(?![\s\S]))/m)?.[0];
 
@@ -469,6 +471,48 @@ test("private dotenv example delegates production passkeys to runtime deployment
     hasRequiredOAuthRecoveryGuidance(passkeysSection),
     "Passkeys section must require OAuth to remain available for recovery"
   );
+});
+
+test("deployment docs describe unified Azure passkey cutover without Vercel activation", async () => {
+  const [readme, passkeys, azure, vercel, appService] = await Promise.all([
+    source("README.md"),
+    source("documents/authentication/passkey-authentication.md"),
+    source("documents/deployment/azure-container-apps.md"),
+    source("documents/deployment/vercel.md"),
+    source("documents/deployment/azure-app-service.md"),
+  ]);
+  const maintained = [readme, passkeys, azure, vercel, appService].join("\n");
+
+  for (const stale of [
+    "selected Azure Container Registry",
+    "pushes only `<acr-login-server>/deepagent-ui:latest`",
+    "./deploy-azure-container-app.sh # Build/push image",
+    'PASSKEY_RP_IDS="bmo-deepagent-ui-0312.azurewebsites.net,',
+    'PASSKEY_ORIGINS="https://bmo-deepagent-ui-0312.azurewebsites.net,',
+  ]) {
+    assert.doesNotMatch(maintained, new RegExp(escapeRegExp(stale)));
+  }
+
+  for (const required of [
+    "FRONTEND_URLS",
+    "PASSKEY_DERIVE_FROM_FRONTEND_URLS=true",
+    "PASSKEY_ENABLED=true",
+    ".deployment-build.json",
+    ".resolved-azure-endpoints.json",
+    "OAUTH_REDIRECTS_CONFIRMED=true",
+    "does not grant roles or access policies",
+    "current rollout does not configure, build, deploy, or verify Vercel",
+  ]) {
+    assert.match(maintained, new RegExp(escapeRegExp(required), "i"));
+  }
+
+  assert.ok(
+    azure.indexOf("./build.sh") <
+      azure.indexOf("./deploy-azure-container-app.sh")
+  );
+  assert.match(azure, /Backend.*before.*UI/is);
+  assert.match(vercel, /server-only.*PASSKEY_PROXY_SECRET/is);
+  assert.match(vercel, /ephemeral `VERCEL_URL`/);
 });
 
 test("Passkeys recovery guidance excludes content after a following H1", () => {

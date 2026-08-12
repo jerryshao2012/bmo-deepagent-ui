@@ -206,19 +206,55 @@ anonymous ceremony calls per minute per proxy.
 ## Multi-domain RP configuration
 
 One backend can serve multiple unrelated frontend domains, but each WebAuthn
-ceremony uses exactly one RP ID. Backend maps exact origin to most-specific
-compatible configured RP ID:
+ceremony uses exactly one RP ID. Canonical deployment uses `FRONTEND_URLS` as
+sole origin list and enables backend derivation explicitly:
 
 ```env
-PASSKEY_RP_IDS="bmo-deepagent-ui-0312.azurewebsites.net,bmo-deepagent-ui.vercel.app"
-PASSKEY_ORIGINS="https://bmo-deepagent-ui-0312.azurewebsites.net,https://bmo-deepagent-ui.vercel.app"
+FRONTEND_URLS=https://ui.example.com,https://bmo-deepagent-ui.vercel.app
+PASSKEY_DERIVE_FROM_FRONTEND_URLS=true
+PASSKEY_ENABLED=true
 ```
 
+Each entry must be exact origin: scheme and host with optional port, root path only,
+no credentials, query, fragment, or wildcard. Production requires HTTPS; loopback
+development may use HTTP. Backend rejects invalid hosts, empty entries, duplicate
+normalized origins, and any present `PASSKEY_RP_ID`, `PASSKEY_RP_IDS`, or
+`PASSKEY_ORIGINS` while derivation is enabled. Each accepted origin maps to own
+normalized hostname RP ID. Reserved mapping is exactly
+`("https://bmo-deepagent-ui.vercel.app", "bmo-deepagent-ui.vercel.app")`.
+
 Credentials are bound to selected RP ID. Unrelated domains therefore require
-separate enrollment, even for same provider account. Management lists account's
-credentials across configured RPs. For local development use singular
-`PASSKEY_RP_ID=localhost` and `PASSKEY_ORIGINS=http://localhost:3000`; do not set
-singular and plural RP variables together.
+separate enrollment even for same provider account; management lists account's
+credentials across RPs. Reserved Vercel mapping is covered by backend configuration
+and tests only during current Azure rollout.
+
+Legacy explicit mode remains when `PASSKEY_DERIVE_FROM_FRONTEND_URLS` is absent or
+`false`: configure `PASSKEY_ORIGINS` and exactly one of `PASSKEY_RP_IDS` or singular
+`PASSKEY_RP_ID`. Never mix canonical and explicit settings.
+
+## Azure rollout contract
+
+Container Apps environment `defaultDomain` is source of truth for Azure UI/backend
+URLs. Resolver validates environment resource ID/state/domain and app names using one
+environment query before builds; it never creates placeholder apps or queries app
+FQDNs. Scripts parse strict quoted assignments safely, including resource groups with
+parentheses. Metadata is recorded in `.resolved-azure-endpoints.json` only after
+deployment verification; `env.sh` is never rewritten.
+
+When endpoints change, update exact Google redirect URI, GitHub callback, and GitHub
+homepage printed by resolver, then set process-local
+`OAUTH_REDIRECTS_CONFIRMED=true`. Environment recreation may change provider values;
+update them before traffic.
+
+Backend deploys first. Then run UI `./build.sh` once to publish Docker Hub image and
+write `.deployment-build.json`; run `./deploy-azure-container-app.sh` once to consume
+that pinned image. UI deploy never builds. Current rollout does not configure, build,
+deploy, or verify Vercel.
+
+`PASSKEY_PROXY_SECRET` remains server-only Key Vault runtime secret shared by backend
+and UI BFF; `.env.docker` and image must not contain it or deployment-owned passkey
+keys. Sanitizer removes legacy private dotenv assignments atomically and reports a
+recovery backup if safe restore cannot finish; it never prints values.
 
 ## Persistence and deployment
 

@@ -5,6 +5,10 @@ The Vercel Hobby plan is intended for personal, non-commercial projects and has 
 limits. Review [current plan details](https://vercel.com/docs/plans/hobby) before
 choosing it for this application.
 
+> Current unified passkey rollout is Azure-only. It reserves Vercel origin in backend
+> derivation/tests but does not configure, build, deploy, or verify Vercel. Instructions
+> below describe separate future activation, not current cutover commands.
+
 ## Prerequisites
 
 - Repository hosted by Git provider supported by Vercel.
@@ -43,7 +47,10 @@ Never put server-side secrets in `NEXT_PUBLIC_*` variables.
 
 ### Optional passkey variables
 
-Add these only when backend is configured with matching passkey proxy credentials:
+Add these only during separately approved activation after backend is configured with
+matching canonical origin and proxy ID. Generate then-current server-only
+`PASSKEY_PROXY_SECRET` through approved secret workflow; never reuse a value captured
+from an image, dotenv, log, or old rollout:
 
 ```env
 PASSKEY_ENABLED=true
@@ -55,6 +62,11 @@ PASSKEY_PROXY_SECRET=<managed-secret>
 Use exact production origin without trailing slash. Preview deployments use different
 origins and need explicit backend relying-party/origin configuration before passkeys
 will work there.
+
+Do not use ephemeral `VERCEL_URL` as canonical passkey origin. Use stable promoted
+production origin, preserve RP ID for credentials already enrolled there, deploy both
+backend trust mapping and Vercel server runtime, and verify enrollment/sign-in/recovery
+before sending user traffic. A changed RP ID makes existing credentials ineligible.
 
 ## 3. Deploy
 
@@ -72,7 +84,10 @@ After production domain is known:
    [backend OAuth guide](https://github.com/jerryshao2012/deep-research/blob/main/README.md#-oauth-authentication).
 4. If passkeys are enabled, add final UI origin/RP ID to backend passkey config and
    ensure `PASSKEY_ORIGIN` matches it exactly.
-5. Redeploy affected services and test sign-in, callback, sign-out, and recovery.
+5. Confirm backend `FRONTEND_URLS` canonical list derives exact production origin to
+   own-host RP ID and uses same proxy ID/secret as Vercel server runtime.
+6. Redeploy affected services and test sign-in, callback, sign-out, passkey enrollment,
+   passkey sign-in, Manage passkeys, and OAuth recovery before traffic.
 
 ## 5. Verify deployment
 

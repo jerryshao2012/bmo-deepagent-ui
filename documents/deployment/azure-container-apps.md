@@ -1,185 +1,132 @@
 # Deploy to Azure Container Apps
 
-Build and deploy UI image to an existing Azure Container App with
-[`deploy-azure-container-app.sh`](../../deploy-azure-container-app.sh). This workflow
-does not provision Azure infrastructure. For Linux Azure App Service ZIP deployment,
-use [`deploy.sh`](../../deploy.sh) and the
+Build UI image and update existing Azure Container App using separate scripts. This
+workflow is update-only managed passkey cutover; it does not provision Azure
+infrastructure. For Linux App Service ZIP deployment, use
 [App Service guide](azure-app-service.md).
 
-> Operator owns resource provisioning, access control, persistent storage,
-> availability, cost management, rollback, and cleanup.
+> Operator owns resource provisioning, access control, storage, availability, cost,
+> rollback, and cleanup.
 
-## Existing environment
+## Existing prerequisites
 
-Deployment requires:
+- resource group and Container Apps environment named by `env.sh`;
+- existing backend and UI Container Apps in same environment, external ingress, and
+  expected ports (`2024` backend, `3000` UI);
+- UI `Single` revision mode, exactly one application container, and existing
+  system-assigned identity;
+- Key Vault with `UPLOAD-API-KEY`, `DOCKER-HUB-PAT`, and
+  `PASSKEY-PROXY-SECRET`;
+- effective UI system-identity secret read through current authorization model
+  (RBAC role dataActions or access policy);
+- existing Docker Hub registry entry using `docker.io`, expected username,
+  `passwordSecretRef: docker-hub-pat`, and `identityref:system` Key Vault secret;
+- operator read access for preflight, permission to update existing UI app, Docker
+  Hub publish credential for build, and local Node.js plus supported container runtime.
 
-- resource group, Azure Container Registry, Key Vault, and Container Apps
-  environment;
-- UI Container App named by `CONTAINER_APP_NAME`, default
-  `bmo-deepagent-ui-$SEED`;
-- backend Container App named `deep-research-agent-$SEED`;
-- external ingress and public FQDN on both apps;
-- UI ingress target port `3000`, `Single` revision mode, system-assigned identity,
-  and exactly one application container;
-- UI registry configuration for selected ACR login server using identity `system`;
-- Key Vault secret `UPLOAD-API-KEY`;
-- system identity permissions to pull from ACR and resolve Key Vault secret; and
-- operator permissions to read resources and secret ID, acquire ACR push token, push
-  image, set Container App secret, and update app.
+Deployment does not grant roles or access policies, create/assign identities, or
+create infrastructure. Run read-only preflight; if effective identity access or any
+prerequisite is missing, stop and contact Azure administrator. Do not suggest or run
+automatic permission mutation.
 
-Script verifies resource shape and registry identity configuration, but does not
-enumerate RBAC. Grant UI identity `AcrPull` on registry and `Key Vault Secrets User`
-or equivalent secret-read access. Effective permissions are proven only when new
-revision pulls image and resolves secret.
+## Resolve endpoints and OAuth values
 
-## Local prerequisites
-
-- Azure CLI authenticated to intended tenant.
-- `az`, `curl`, `rsync`, and Node.js on `PATH`.
-- One supported container runtime: Apple Container, Podman, or Docker.
-- Repository `Dockerfile`, `.dockerignore`, local `.env`, and readable sibling
-  `../deep-research/env.sh`.
-- Optional ignored `.env.docker` for intended runtime settings such as
-  `NEXT_PUBLIC_ASSISTANT_ID`.
-
-Runtime auto-selection order is Apple Container, daemonless Podman, then Docker.
-Set `CONTAINER_CLI=container`, `CONTAINER_CLI=podman`, or `CONTAINER_CLI=docker` in
-calling environment to choose explicitly. Podman must already be usable without a
-managed machine/daemon; Docker daemon must be running. Script may start Apple
-Container system and configures its builder to at least 8 GiB when needed.
-
-## Configure
-
-[`env.sh`](../../env.sh) supplies Azure defaults, including:
-
-- `AZURE_SUBSCRIPTION_ID`
-- `SEED`
-- `RESOURCE_GROUP`
-- `ACR_NAME`
-- `KV_NAME`
-- `CONTAINER_APP_NAME`
-
-Review values before every deployment. Put private local overrides in ignored
-`.env`, which `env.sh` sources last. Deployment selects and confirms exact
-`AZURE_SUBSCRIPTION_ID` before querying resources.
-
-Deployment reads optional `.env.docker` without rewriting it. Protected deployment
-and shell controls, including subscription/resource names, `CONTAINER_CLI`, polling
-controls, and `PATH`, cannot be set there. `NEXT_PUBLIC_ASSISTANT_ID` may come from
-`.env` or `.env.docker` and defaults to `research`. Backend URL from local files is
-not authoritative: script discovers backend public FQDN and uses
-`https://<backend-fqdn>` for build and Container App environment.
-
-Private `secrets.sh` is ignored and untracked. Never inspect, copy, or force-add an
-operator's local copy. [`secrets.sh.example`](../../secrets.sh.example) is tracked
-source; operators review it, update placeholders, and regenerate their private local
-copy when secret rotation is explicitly authorized.
-
-## Deploy
-
-Run from any directory:
+Review `env.sh`, then resolve URLs before builds:
 
 ```bash
-/path/to/bmo-deepagent-ui/deploy-azure-container-app.sh
+source ./env.sh
+./scripts/resolve-azure-endpoints.sh
 ```
 
-From repository root:
+Resolver makes one `az containerapp env show` query for resource ID,
+`properties.defaultDomain`, and `Succeeded` state. It derives
+`https://<app>.<defaultDomain>` from validated app names; it never creates placeholder
+apps or queries app FQDNs. Machine stdout contains strict single-quoted assignments,
+which scripts parse without `eval`; parenthesized resource-group names remain safe.
+
+Stderr prints exact provider settings:
+
+```text
+Google authorized redirect URI: https://<backend-app>.<default-domain>/auth/callback/google
+GitHub authorization callback URL: https://<backend-app>.<default-domain>/auth/callback/github
+GitHub homepage / frontend origin: https://<ui-app>.<default-domain>
+```
+
+Update Google/GitHub before traffic, then pass process-local
+`OAUTH_REDIRECTS_CONFIRMED=true` when endpoints are new/changed. Environment
+recreation may change `defaultDomain`; repeat provider update. Never persist
+confirmation. After verified deploy, metadata is atomically recorded in ignored
+`.resolved-azure-endpoints.json`; neither script rewrites endpoints in `env.sh`.
+
+## Sanitize private build configuration
+
+Optional ignored `.env.docker` may contain non-secret assistant/default settings only.
+Production origins and proxy settings are deployment-owned. Build/deploy reject
+`FRONTEND_URLS`, passkey origin/RP settings, proxy ID/secret, or enabled flag there.
+
+For approved cleanup of older private file:
 
 ```bash
-./deploy-azure-container-app.sh
+node scripts/sanitize-passkey-dotenv.mjs --input .env.docker --check
+node scripts/sanitize-passkey-dotenv.mjs --input .env.docker --sanitize
 ```
 
-Script performs this sequence:
+Sanitizer strictly parses dotenv, preserves unrelated bytes/mode, uses atomic safe
+replacement, and prints no values. If automatic restore cannot complete, it reports
+exact recovery backup path; inspect/preserve newer pathname and restore prior original
+manually before retrying. Secret remains runtime-only Key Vault reference and never
+belongs in dotenv or image.
 
-1. Loads configuration without changing `.env.docker`, validates local commands and
-   runtime, then selects configured Azure subscription.
-2. Validates existing resource group, ACR, UI/backend apps, UI registry/identity,
-   Key Vault, and `UPLOAD-API-KEY` secret ID.
-3. Discovers canonical UI and backend URLs. Discovered backend overrides loaded
-   `NEXT_PUBLIC_LANGGRAPH_URL`.
-4. Creates temporary build context honoring `.dockerignore`, adds exact deployment
-   marker, and builds Linux AMD64 image with backend URL and assistant ID.
-5. Gets short-lived ACR token, authenticates runtime over stdin, and pushes only
-   `<acr-login-server>/deepagent-ui:latest`.
-6. Sets unversioned Key Vault reference
-   `<vault-uri>/secrets/UPLOAD-API-KEY` as `upload-api-key` using system identity.
-7. Updates existing application container image and deployment-owned environment
-   variables with unique lowercase revision suffix.
-8. Waits for new revision to report `Provisioned|Running`, then requires HTTP 200
-   and complete `/deployment-version.txt` body to equal exact new marker.
+## Build once, then deploy once
 
-Revision polling defaults to 60 attempts at 5 seconds. HTTP polling defaults to 36
-attempts at 5 seconds, with 10-second connect and 30-second request timeouts.
+Backend must be built, deployed, and verified first. For UI:
 
-## Mutation boundaries
+```bash
+./build.sh
+OAUTH_REDIRECTS_CONFIRMED=true ./deploy-azure-container-app.sh
+```
 
-Deployment changes only:
+Run each exactly once for cutover. `build.sh` is sole image-production owner: resolve
+backend URL, stage clean context, build `linux/amd64`, log in/push
+`docker.io/jerryshao2013/deepagent-ui:latest`, then atomically write ignored
+`.deployment-build.json` with image, backend URL, assistant ID, and marker.
 
-- mutable image tag `deepagent-ui:latest` in ACR;
-- Container App secret `upload-api-key` Key Vault reference;
-- selected application container image, revision suffix, and these environment
-  variables: backend URLs, assistant ID, Auth.js URLs, telemetry, trust-host,
-  production mode, and secret reference.
+Deployment never invokes runtime, build, login, push, or `rsync`. It requires manifest
+to match current resolved endpoints/config, validates existing Key Vault/identity and
+Docker Hub registry prerequisites before app mutation, uses pinned manifest image,
+adds versionless Key Vault references, updates deployment-owned runtime values while
+preserving unrelated configuration, waits for named revision, and requires exact
+marker over HTTP before recording endpoint metadata.
 
-It does not create resources or pass options that change ingress, target port,
-revision mode, identity, registry configuration, scaling, traffic, networking,
-volumes, or resource limits. Existing unrelated app settings remain operator-owned.
-Single-revision mode activates new revision according to existing Container Apps
-behavior; script does not edit traffic.
+Runtime passkey values are `PASSKEY_ENABLED=true`, exact Azure `PASSKEY_ORIGIN`,
+`PASSKEY_PROXY_ID=web-bff`, and `PASSKEY_PROXY_SECRET` secret reference. Backend uses
+`FRONTEND_URLS` as sole multi-origin source with
+`PASSKEY_DERIVE_FROM_FRONTEND_URLS=true` and includes reserved Vercel origin mapping.
 
-## Verify
+## Verify Azure only
 
-Successful exit proves new revision serves exact marker. Also verify:
+- backend health/revision succeeded before UI build;
+- UI root and `/login` return 200 and marker matches manifest;
+- UI Key Vault references resolve via existing system identity with zero restarts;
+- `/api/auth/passkeys` reaches backend and returns backend auth rejection, not
+  `passkeys_unavailable`;
+- OAuth login returns to exact Azure UI;
+- **Manage passkeys** opens, lists keys, and start/cancel registration works;
+- OAuth recovery remains available; do not delete credentials during cutover.
 
-- UI loads and Settings show discovered backend and intended assistant;
-- chat starts, streams, uploads, and file routes authenticate;
-- OAuth callback returns to UI FQDN;
-- Container App secret resolves through system identity; and
-- persistent data survives revision replacement.
+Current rollout does not configure, build, deploy, or verify Vercel. Future activation
+requires then-current server-only secret, canonical stable origin/proxy ID, deployment,
+and verification before traffic; never use ephemeral `VERCEL_URL`, and preserve RP
+continuity for enrolled credentials.
 
-Script does not add storage. Container filesystem is ephemeral across revisions.
-For synchronized Markdown persistence, retain an existing durable volume mount and
-set `MARKDOWN_STORAGE_DIR` to mounted path.
+## Rollback, security, and cleanup
 
-## Troubleshooting
+Record prior active revision/image and `.deployment-build.json` before update. Script
+does not auto-rollback. Rollback must use known-good pinned artifact and repeat marker
+and functional checks; do not rebuild accidentally during deploy.
 
-| Failure                       | Check                                                                                                                            |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Subscription selection fails  | `AZURE_SUBSCRIPTION_ID`, `az login`, tenant access, and subscription visibility.                                                 |
-| Resource preflight fails      | Resource names, selected subscription/group, external ingress, UI port `3000`, `Single` mode, identity, and one-container shape. |
-| ACR configuration fails       | ACR login server, registry entry identity `system`, operator push rights, and UI identity `AcrPull`.                             |
-| Key Vault check/set fails     | Vault name/networking, secret ID visibility, operator app-update rights, and UI identity secret-read role.                       |
-| Runtime readiness/build fails | Selected runtime, Docker daemon/Podman usability, Apple builder memory, disk, Dockerfile, and build logs.                        |
-| Token/login/push fails        | Azure CLI identity, ACR permissions, token output, registry reachability, and runtime credential store.                          |
-| Revision fails or times out   | Container App revision/system logs, image pull, Key Vault resolution, startup, port `3000`, and resource limits.                 |
-| Marker times out              | UI FQDN/DNS/TLS, ingress reachability, revision logs, HTTP status, and stale proxy/cache response.                               |
-
-Script stops on failure and does not automatically roll back.
-
-## Update and rollback
-
-Every run overwrites only `latest`; no immutable release tag is retained. Unique
-revision suffix identifies deployment attempt but cannot restore overwritten image.
-
-Before deploy, record Git revision and current ready Container App revision. To roll
-back, check out known-good Git source, restore compatible local configuration, and
-rerun `./deploy-azure-container-app.sh` to rebuild and push old source as `latest`.
-Verify exact marker and functional checklist. Do not assume changing revision traffic
-can recover old bytes after mutable tag has been replaced.
-
-## Security, cost, and cleanup
-
-- Never print/store ACR token, Key Vault value, `.env` content, or private secret
-  script in logs/version control.
-- Use least privilege for operator and managed identity; review Key Vault/ACR network
-  restrictions and audit logs.
-- Review Container Apps, Log Analytics, ACR storage/egress, Key Vault, and persistent
-  storage pricing before use. Script does not set budgets or scaling policy.
-- Remove app/environment, registry images, vault/secret, role assignments, logs, and
-  persistent data manually when environment is retired. Script performs no cleanup.
-
-See [Azure Container Apps revisions](https://learn.microsoft.com/en-us/azure/container-apps/revisions),
-[Container Apps secrets](https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets),
-and [managed identity image pulls from ACR](https://learn.microsoft.com/en-us/azure/container-apps/managed-identity-image-pull).
+Never print Key Vault values, Docker Hub PAT, `.env.docker`, or secret-bearing exports.
+Retain single-revision/storage constraints, review logs/networking/cost, and have
+administrator remove resources only through approved cleanup workflow.
 
 Return to [deployment documentation](../README.md#deployment).

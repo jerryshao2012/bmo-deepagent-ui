@@ -3,10 +3,12 @@
 Deploy UI as prebuilt standalone Next.js ZIP to existing Linux Azure App Service by
 running [`deploy.sh`](../../deploy.sh).
 
-This is App Service workflow. To build, push, and update an existing Azure Container
-App instead, use [`deploy-azure-container-app.sh`](../../deploy-azure-container-app.sh)
-and [Azure Container Apps guide](azure-container-apps.md). Neither workflow provisions
-Azure infrastructure.
+This is App Service workflow. Azure Container Apps uses split workflow: run
+[`build.sh`](../../build.sh), then
+[`deploy-azure-container-app.sh`](../../deploy-azure-container-app.sh), following
+[Azure Container Apps guide](azure-container-apps.md). Container Apps deploy never
+builds and consumes `.deployment-build.json`. Neither workflow provisions Azure
+infrastructure.
 
 > This guide documents repository automation, not complete production hardening.
 > Operator owns Azure resource provisioning, access control, backups, availability,
@@ -75,7 +77,9 @@ Register missing provider only with subscription-owner approval.
 
 1. sources `../deep-research/env.sh`;
 2. derives backend URL;
-3. updates `NEXT_PUBLIC_LANGGRAPH_URL` in `.env.docker` when file exists;
+3. may update `NEXT_PUBLIC_LANGGRAPH_URL` in `.env.docker` for legacy App Service
+   workflow only; Container Apps build/deploy set `ENV_SH_SKIP_DOCKER_SYNC=true` and
+   never rewrite endpoint there;
 4. sources local `.env` last.
 
 Use ignored `.env` to override placeholders without committing account-specific names:
@@ -102,9 +106,10 @@ Replace placeholders. `env.sh` rewrites backend URL in this ignored file when it
 Never commit `.env`, `.env.docker`, copied secret scripts, or credentials.
 
 Only settings listed in `deploy.sh` `desired_app_settings` are written to App Service.
-Passkey variables loaded from `.env.docker` are not currently propagated by script;
-configure them separately as protected App Service settings/Key Vault references when
-passkeys are enabled, then verify exact origin and proxy values.
+Unified managed passkey cutover targets Container Apps, not this legacy App Service
+path. Do not infer Container Apps Key Vault/runtime behavior from App Service script.
+If App Service passkeys are enabled separately, configure protected settings/Key Vault
+references and verify exact origin/proxy values through approved platform workflow.
 
 ### 3. Populate Key Vault
 

@@ -1186,7 +1186,7 @@ const resolverExpectedStdout = [
   "CHANGED='true'",
 ].join("\n");
 const resolverGoldenSha256 =
-  "d6785f7791fd81149b1bed20260b082d8f32ab4725bdb76d9d7ad36d4d2ee3a0";
+  "7f459aee2b2edf425411d2dd448af2c7c48b84f667c7f1851deb10636b80d8e4";
 
 const resolverExpectedMetadata = {
   azure_environment_id: resolverEnvironmentId,
@@ -1321,6 +1321,22 @@ test("endpoint resolver queries environment once and emits deterministic schema"
         .catch(() => false),
       false
     );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("endpoint resolver accepts newline-separated TSV arrays from containerapp extension", async () => {
+  const fixture = await createResolverFixture();
+  try {
+    const result = runResolver(resolverPath, fixture, {
+      azStdout: `${resolverEnvironmentId}\n${resolverDomain}\nSucceeded\n`,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, `${resolverExpectedStdout}\n`);
+    assert.deepEqual(await readResolverAzCalls(fixture), [
+      resolverExpectedAzCall.join(" "),
+    ]);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }

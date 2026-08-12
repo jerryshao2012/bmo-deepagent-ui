@@ -50,8 +50,21 @@ ensure_container_cli_ready() {
       ;;
     podman)
       if ! command podman info >/dev/null 2>&1; then
-        echo "Error: Podman is installed but unavailable; this script will not start a Podman service or machine." >&2
-        return 1
+        echo "Podman is unavailable. Starting the default Podman machine..."
+        if command podman machine start; then
+          :
+        else
+          local start_status=$?
+          echo "Error: Podman machine failed to start." >&2
+          return "$start_status"
+        fi
+        if command podman info >/dev/null 2>&1; then
+          :
+        else
+          local info_status=$?
+          echo "Error: Podman machine started but Podman remains unavailable." >&2
+          return "$info_status"
+        fi
       fi
       ;;
     docker)
@@ -80,8 +93,8 @@ ensure_container_cli_build_ready() {
       ;;
   esac
 
-  # Yarn installs both build and runtime dependencies during this multi-stage build.
-  # Apple Container's 2 GiB default builder is too small for those concurrent steps.
+  # Dependency installation and the Next.js build exceed Apple Container's
+  # 2 GiB default builder memory.
   local MIN_CONTAINER_BUILDER_MEMORY_BYTES=8589934592
   local BUILDER_STATUS_JSON
   local BUILDER_DETAILS

@@ -17,7 +17,9 @@ ENV NEXT_PRIVATE_SKIP_CANARY_CHECK=1
 # Disable SWC for cross-platform stability if needed, though swcMinify: false in next.config.ts is better.
 # Some versions of Next.js also benefit from this:
 ENV NEXT_DISABLE_SWC_MINIFY=1
-RUN NEXT_TELEMETRY_DISABLED=1 yarn build && rm -rf .next/cache
+RUN NEXT_TELEMETRY_DISABLED=1 yarn build && \
+    rm -rf .next/cache && \
+    touch /app/.builder-complete
 
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
@@ -31,7 +33,10 @@ COPY .yarn/releases ./.yarn/releases
 #RUN sed -i 's|https://bmostaging.jfrog.io/artifactory/api/npm/bmoai-npm-virtual/|https://registry.npmjs.org/|g' yarn.lock
 
 # Install only production dependencies
-RUN yarn workspaces focus --all --production && yarn cache clean --all
+COPY --from=builder /app/.builder-complete /tmp/.builder-complete
+RUN yarn workspaces focus --all --production && \
+    yarn cache clean --all && \
+    rm /tmp/.builder-complete
 
 # Copy pre-compiled production build and public files
 COPY --from=builder /app/.next ./.next

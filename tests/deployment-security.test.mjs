@@ -436,6 +436,23 @@ test("container image includes custom server runtime modules", async () => {
   );
 });
 
+test("container image serializes memory-heavy dependency installs", async () => {
+  const dockerfile = await source("Dockerfile");
+  const builderInstall = dockerfile.indexOf("yarn install --immutable");
+  const builderComplete = dockerfile.indexOf("touch /app/.builder-complete");
+  const runnerBarrier = dockerfile.indexOf(
+    "COPY --from=builder /app/.builder-complete /tmp/.builder-complete"
+  );
+  const runnerInstall = dockerfile.indexOf(
+    "yarn workspaces focus --all --production"
+  );
+
+  assert.ok(builderInstall >= 0);
+  assert.ok(builderComplete > builderInstall);
+  assert.ok(runnerBarrier > builderComplete);
+  assert.ok(runnerInstall > runnerBarrier);
+});
+
 test("deployment never exposes server API keys through NEXT_PUBLIC variables", async () => {
   const deployScript = await source("deploy.sh");
 
@@ -621,7 +638,7 @@ test("local container build provisions enough builder memory", async () => {
 
   assert.match(runtimeHelper, /MIN_CONTAINER_BUILDER_MEMORY_BYTES=8589934592/);
   assert.match(runtimeHelper, /container builder status --format json/);
-  assert.match(runtimeHelper, /container builder start --memory 8G/);
+  assert.match(runtimeHelper, /container builder start --memory 8g/);
   assert.match(buildScript, /ensure_container_cli_build_ready/);
   assert.doesNotMatch(buildScript, /container builder/);
 });

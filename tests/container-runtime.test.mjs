@@ -24,6 +24,8 @@ const runHelper = async ({
   body = "",
   containerStatus = 0,
   podmanInfoStatus = 0,
+  podmanInfoStatusAfterStart = 0,
+  podmanMachineStartStatus = 0,
   dockerInfoStatus = 0,
   containerStartStatus = 0,
   builderStatus = 0,
@@ -92,7 +94,16 @@ case "\${0##*/}:$1:$2" in
   "container:builder:stop") exit "$BUILDER_STOP_STATUS" ;;
   "container:builder:delete") exit "$BUILDER_DELETE_STATUS" ;;
   "container:builder:start") exit "$BUILDER_START_STATUS" ;;
-  "podman:info:"*) exit "$PODMAN_INFO_STATUS" ;;
+  "podman:info:"*)
+    if [ -e "$PODMAN_STARTED_MARKER" ]; then
+      exit "$PODMAN_INFO_STATUS_AFTER_START"
+    fi
+    exit "$PODMAN_INFO_STATUS"
+    ;;
+  "podman:machine:start")
+    : > "$PODMAN_STARTED_MARKER"
+    exit "$PODMAN_MACHINE_START_STATUS"
+    ;;
   "docker:info:"*) exit "$DOCKER_INFO_STATUS" ;;
   container:build:*|podman:build:*|docker:build:*) exit "$BUILD_STATUS" ;;
   "container:registry:login"|podman:login:*|docker:login:*)
@@ -120,6 +131,9 @@ exit 0
       RUNTIME_STDIN_LOG: stdinLogPath,
       CONTAINER_STATUS: String(containerStatus),
       PODMAN_INFO_STATUS: String(podmanInfoStatus),
+      PODMAN_INFO_STATUS_AFTER_START: String(podmanInfoStatusAfterStart),
+      PODMAN_MACHINE_START_STATUS: String(podmanMachineStartStatus),
+      PODMAN_STARTED_MARKER: path.join(tempRoot, "podman-started"),
       DOCKER_INFO_STATUS: String(dockerInfoStatus),
       CONTAINER_START_STATUS: String(containerStartStatus),
       BUILDER_STATUS: String(builderStatus),
@@ -304,7 +318,7 @@ test("Apple container does not start its system when already ready", async () =>
   assert.equal(log, "container system status\n");
 });
 
-test("Podman readiness is daemonless", async () => {
+test("Podman readiness does not start an already-ready machine", async () => {
   const { result, log } = await runHelper({
     runtimes: ["podman"],
     body: "select_container_cli && ensure_container_cli_ready",
@@ -315,16 +329,42 @@ test("Podman readiness is daemonless", async () => {
   assert.doesNotMatch(log, /system start|machine start/);
 });
 
-test("unavailable Podman fails without starting anything", async () => {
+test("unavailable Podman starts its default machine and retries readiness", async () => {
   const { result, log } = await runHelper({
     runtimes: ["podman"],
     podmanInfoStatus: 1,
     body: "select_container_cli && ensure_container_cli_ready",
   });
 
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Starting.*Podman/i);
+  assert.equal(log, "podman info\npodman machine start\npodman info\n");
+});
+
+test("Podman readiness preserves machine start failure status", async () => {
+  const { result, log } = await runHelper({
+    runtimes: ["podman"],
+    podmanInfoStatus: 1,
+    podmanMachineStartStatus: 47,
+    body: "select_container_cli && ensure_container_cli_ready",
+  });
+
+  assert.equal(result.status, 47);
+  assert.match(result.stderr, /Podman machine.*failed to start/i);
+  assert.equal(log, "podman info\npodman machine start\n");
+});
+
+test("Podman readiness fails when machine starts without becoming ready", async () => {
+  const { result, log } = await runHelper({
+    runtimes: ["podman"],
+    podmanInfoStatus: 1,
+    podmanInfoStatusAfterStart: 48,
+    body: "select_container_cli && ensure_container_cli_ready",
+  });
+
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Podman.*unavailable.*will not start/i);
-  assert.equal(log, "podman info\n");
+  assert.match(result.stderr, /started.*unavailable/i);
+  assert.equal(log, "podman info\npodman machine start\npodman info\n");
 });
 
 test("Docker readiness succeeds with a running daemon", async () => {

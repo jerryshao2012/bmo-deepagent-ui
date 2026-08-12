@@ -147,7 +147,7 @@ process.stdout.write(output);
     if [ "$BUILDER_STATE" != "missing" ]; then
       command container builder delete || return $?
     fi
-    command container builder start --memory 8G || return $?
+    command container builder start --memory 8g || return $?
   elif [ "$BUILDER_STATE" != "running" ]; then
     command container builder start || return $?
   fi

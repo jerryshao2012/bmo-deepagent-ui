@@ -384,7 +384,7 @@ test("Apple build readiness creates an 8 GiB builder when missing", async () => 
     log,
     "container system status\n" +
       "container builder status --format json\n" +
-      "container builder start --memory 8G\n"
+      "container builder start --memory 8g\n"
   );
 });
 
@@ -401,7 +401,7 @@ test("Apple build readiness treats an empty builder list as missing", async () =
     log,
     "container system status\n" +
       "container builder status --format json\n" +
-      "container builder start --memory 8G\n"
+      "container builder start --memory 8g\n"
   );
   assert.doesNotMatch(
     log,
@@ -471,7 +471,7 @@ test("Apple build readiness replaces an undersized running builder", async () =>
       "container builder status --format json\n" +
       "container builder stop\n" +
       "container builder delete\n" +
-      "container builder start --memory 8G\n"
+      "container builder start --memory 8g\n"
   );
 });
 
@@ -493,7 +493,7 @@ test("Apple build readiness replaces an undersized stopped builder without stopp
     "container system status\n" +
       "container builder status --format json\n" +
       "container builder delete\n" +
-      "container builder start --memory 8G\n"
+      "container builder start --memory 8g\n"
   );
   assert.doesNotMatch(log, /container builder stop/);
 });
@@ -600,7 +600,7 @@ test("Apple build readiness propagates exact builder start failure", async () =>
     log,
     "container system status\n" +
       "container builder status --format json\n" +
-      "container builder start --memory 8G\n"
+      "container builder start --memory 8g\n"
   );
 });
 

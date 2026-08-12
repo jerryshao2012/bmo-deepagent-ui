@@ -22,6 +22,22 @@ const dockerEnvExample = await readFile(
   "utf8"
 );
 const pinnedImage = "docker.io/jerryshao2013/deepagent-ui:latest";
+const resolvedBackendUrl =
+  "https://deep-research-agent-testseed.env.example.test";
+const resolvedUiUrl = "https://bmo-deepagent-ui-testseed.env.example.test";
+const resolverOutput = [
+  "AZURE_ENVIRONMENT_ID='/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.App/managedEnvironments/test-environment'",
+  "AZURE_ENVIRONMENT_DEFAULT_DOMAIN='env.example.test'",
+  "BACKEND_APP_NAME='deep-research-agent-testseed'",
+  "UI_APP_NAME='bmo-deepagent-ui-testseed'",
+  `BACKEND_URL='${resolvedBackendUrl}'`,
+  `AZURE_UI_URL='${resolvedUiUrl}'`,
+  `FRONTEND_URLS='${resolvedUiUrl},https://bmo-deepagent-ui.vercel.app'`,
+  `GOOGLE_CALLBACK_URL='${resolvedBackendUrl}/auth/callback/google'`,
+  `GITHUB_CALLBACK_URL='${resolvedBackendUrl}/auth/callback/github'`,
+  `GITHUB_HOMEPAGE_URL='${resolvedUiUrl}'`,
+  "CHANGED='true'",
+].join("\n");
 const priorManifest = Buffer.from(
   "PRIOR MANIFEST BYTES\n\u0000unchanged",
   "utf8"
@@ -88,6 +104,8 @@ const runBuild = async ({
   inheritedEnv = {},
   allexport = false,
   cleanupRmStatus = 0,
+  endpointResolverOutput = resolverOutput,
+  endpointResolverStatus = 0,
 } = {}) => {
   const tempRoot = await mkdtemp(path.join(tmpdir(), "docker-hub-build-test-"));
   const fixtureRoot = path.join(tempRoot, "ui");
@@ -136,7 +154,22 @@ const runBuild = async ({
         path.join(repoRoot, "scripts/container-runtime.sh"),
         path.join(scriptsDir, "container-runtime.sh")
       ),
+      copyFile(
+        path.join(repoRoot, "scripts/sanitize-passkey-dotenv.mjs"),
+        path.join(scriptsDir, "sanitize-passkey-dotenv.mjs")
+      ),
     ]);
+    await writeFile(
+      path.join(scriptsDir, "resolve-azure-endpoints.sh"),
+      `#!/bin/bash
+printf 'resolver' >> "$COMMAND_LOG"
+for argument in "$@"; do printf ' <%s>' "$argument" >> "$COMMAND_LOG"; done
+printf '\n' >> "$COMMAND_LOG"
+printf '%s\n' "$ENDPOINT_RESOLVER_OUTPUT"
+exit "$ENDPOINT_RESOLVER_STATUS"
+`
+    );
+    await chmod(path.join(scriptsDir, "resolve-azure-endpoints.sh"), 0o755);
     await writeFile(path.join(fixtureRoot, "public", "keep.txt"), "keep\n");
     await writeFile(
       path.join(backendRoot, "env.sh"),
@@ -148,6 +181,10 @@ const runBuild = async ({
 export RESOURCE_GROUP="test-resource-group"
 export LOCATION="test-location"
 export KV_NAME="test-vault"
+export AZURE_SUBSCRIPTION_ID="12345678-1234-1234-1234-123456789abc"
+export ENV_NAME="test-environment"
+export BACKEND_APP_NAME="deep-research-agent-testseed"
+export UI_APP_NAME="bmo-deepagent-ui-testseed"
 export NEXT_PUBLIC_ASSISTANT_ID="env-assistant"
 [ -z "\${DOCKER_HUB_PAT-}" ] || return 76
 [ -z "\${DOCKER_HUB_PAT_VALUE-}" ] || return 77
@@ -265,6 +302,8 @@ exec /bin/mv "$@"
       MANIFEST_WRITE_STATUS: String(manifestWriteStatus),
       RENAME_STATUS: String(renameStatus),
       CLEANUP_RM_STATUS: String(cleanupRmStatus),
+      ENDPOINT_RESOLVER_OUTPUT: endpointResolverOutput,
+      ENDPOINT_RESOLVER_STATUS: String(endpointResolverStatus),
       CONTAINER_CLI: "docker",
       ...Object.fromEntries(
         Object.entries(inheritedEnv).map(([key, value]) => [
@@ -361,13 +400,21 @@ test("build then Docker Hub login then push writes exact atomic manifest", async
 
   assert.equal(result.status, 0, `${result.stderr}\n${log}`);
   const build = log.indexOf("docker <build>");
+  const resolve = log.indexOf("resolver");
   const login = log.indexOf("docker <login>");
   const push = log.indexOf("docker <push>");
   const rename = log.indexOf("mv <");
-  assert.ok(build >= 0 && build < login && login < push && push < rename, log);
+  assert.ok(
+    resolve >= 0 &&
+      resolve < build &&
+      build < login &&
+      login < push &&
+      push < rename,
+    log
+  );
   assert.match(
     log,
-    /^docker <build> <--platform> <linux\/amd64> <--build-arg> <NEXT_PUBLIC_LANGGRAPH_URL=https:\/\/backend\.example\.test> <--build-arg> <NEXT_PUBLIC_ASSISTANT_ID=docker-assistant> <-t> <docker\.io\/jerryshao2013\/deepagent-ui:latest> <.+>$/m
+    /^docker <build> <--platform> <linux\/amd64> <--build-arg> <NEXT_PUBLIC_LANGGRAPH_URL=https:\/\/deep-research-agent-testseed\.env\.example\.test> <--build-arg> <NEXT_PUBLIC_ASSISTANT_ID=docker-assistant> <-t> <docker\.io\/jerryshao2013\/deepagent-ui:latest> <.+>$/m
   );
   assert.match(
     log,
@@ -387,7 +434,7 @@ test("build then Docker Hub login then push writes exact atomic manifest", async
         .split("-")
         .at(-1),
     image: pinnedImage,
-    backendUrl: "https://backend.example.test",
+    backendUrl: resolvedBackendUrl,
     assistantId: "docker-assistant",
   });
   const stagedMarker = audit.match(/^marker:(.+)$/m)?.[1];
@@ -396,6 +443,42 @@ test("build then Docker Hub login then push writes exact atomic manifest", async
   assert.match(audit, /^excluded:manifest$/m);
   assert.equal(contextExistsAfter, false);
   assert.deepEqual(tempManifestFiles, []);
+});
+
+test("build rejects unsafe resolver output before container runtime and preserves manifest bytes", async () => {
+  for (const output of [
+    `${resolverOutput}\nUNKNOWN='value'`,
+    resolverOutput.replace(
+      "BACKEND_URL=",
+      "BACKEND_URL='duplicate'\nBACKEND_URL="
+    ),
+    resolverOutput.replace("CHANGED='true'", "CHANGED=true"),
+    resolverOutput.replace(
+      `BACKEND_URL='${resolvedBackendUrl}'`,
+      "BACKEND_URL='unterminated"
+    ),
+  ]) {
+    const { result, log, manifest } = await runBuild({
+      exportedPat: "unused-pat",
+      existingManifest: priorManifest,
+      endpointResolverOutput: output,
+    });
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, /resolver.*(?:invalid|unknown|duplicate)/i);
+    assert.doesNotMatch(log, /^docker\b/m);
+    assert.deepEqual(manifest, priorManifest);
+  }
+});
+
+test("build preserves resolver failure status and bytes before container runtime", async () => {
+  const { result, log, manifest } = await runBuild({
+    exportedPat: "unused-pat",
+    existingManifest: priorManifest,
+    endpointResolverStatus: 74,
+  });
+  assert.equal(result.status, 74, result.stderr);
+  assert.doesNotMatch(log, /^docker\b/m);
+  assert.deepEqual(manifest, priorManifest);
 });
 
 for (const [name, options, status] of [
@@ -649,7 +732,7 @@ trap 'touch "__TRAP_SENTINEL__"' EXIT
         .split("-")
         .at(-1),
     image: pinnedImage,
-    backendUrl: "https://backend.example.test",
+    backendUrl: resolvedBackendUrl,
     assistantId: "docker-assistant",
   });
   assert.doesNotMatch(

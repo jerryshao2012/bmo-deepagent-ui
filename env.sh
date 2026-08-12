@@ -7,6 +7,8 @@ export RESOURCE_GROUP="resource-group-deep-agents-$SEED"
 export LOCATION="canadacentral"
 export ENV_NAME="env-name-deep-agents-$SEED"
 export CONTAINER_APP_NAME="${CONTAINER_APP_NAME:-bmo-deepagent-ui-$SEED}"
+export BACKEND_APP_NAME="${BACKEND_APP_NAME:-deep-research-agent-$SEED}"
+export UI_APP_NAME="${UI_APP_NAME:-$CONTAINER_APP_NAME}"
 
 # Source the deep research agent URL
 source ../deep-research/env.sh

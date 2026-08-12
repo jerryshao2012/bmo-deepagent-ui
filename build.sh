@@ -43,11 +43,14 @@ fi
 set +x
 builtin trap - EXIT ERR DEBUG RETURN
 builtin printf "SEED=%s\n" "${SEED-}"
+builtin printf "AZURE_SUBSCRIPTION_ID=%s\n" "${AZURE_SUBSCRIPTION_ID-}"
 builtin printf "RESOURCE_GROUP=%s\n" "${RESOURCE_GROUP-}"
 builtin printf "LOCATION=%s\n" "${LOCATION-}"
 builtin printf "KV_NAME=%s\n" "${KV_NAME-}"
+builtin printf "ENV_NAME=%s\n" "${ENV_NAME-}"
+builtin printf "BACKEND_APP_NAME=%s\n" "${BACKEND_APP_NAME-}"
+builtin printf "UI_APP_NAME=%s\n" "${UI_APP_NAME-}"
 builtin printf "CONTAINER_APP_NAME=%s\n" "${CONTAINER_APP_NAME-}"
-builtin printf "NEXT_PUBLIC_LANGGRAPH_URL=%s\n" "${NEXT_PUBLIC_LANGGRAPH_URL-}"
 builtin printf "NEXT_PUBLIC_ASSISTANT_ID=%s\n" "${NEXT_PUBLIC_ASSISTANT_ID-}"
 ' build-env "$SCRIPT_DIR/env.sh" 2>/dev/null); then
   :
@@ -62,19 +65,22 @@ while IFS= read -r config_line || [ -n "$config_line" ]; do
   CONFIG_LINE_COUNT=$((CONFIG_LINE_COUNT + 1))
   case "$CONFIG_LINE_COUNT:$config_line" in
     1:SEED=*) SEED="${config_line#SEED=}" ;;
-    2:RESOURCE_GROUP=*) RESOURCE_GROUP="${config_line#RESOURCE_GROUP=}" ;;
-    3:LOCATION=*) LOCATION="${config_line#LOCATION=}" ;;
-    4:KV_NAME=*) KV_NAME="${config_line#KV_NAME=}" ;;
-    5:CONTAINER_APP_NAME=*) CONTAINER_APP_NAME="${config_line#CONTAINER_APP_NAME=}" ;;
-    6:NEXT_PUBLIC_LANGGRAPH_URL=*) NEXT_PUBLIC_LANGGRAPH_URL="${config_line#NEXT_PUBLIC_LANGGRAPH_URL=}" ;;
-    7:NEXT_PUBLIC_ASSISTANT_ID=*) NEXT_PUBLIC_ASSISTANT_ID="${config_line#NEXT_PUBLIC_ASSISTANT_ID=}" ;;
+    2:AZURE_SUBSCRIPTION_ID=*) AZURE_SUBSCRIPTION_ID="${config_line#AZURE_SUBSCRIPTION_ID=}" ;;
+    3:RESOURCE_GROUP=*) RESOURCE_GROUP="${config_line#RESOURCE_GROUP=}" ;;
+    4:LOCATION=*) LOCATION="${config_line#LOCATION=}" ;;
+    5:KV_NAME=*) KV_NAME="${config_line#KV_NAME=}" ;;
+    6:ENV_NAME=*) ENV_NAME="${config_line#ENV_NAME=}" ;;
+    7:BACKEND_APP_NAME=*) BACKEND_APP_NAME="${config_line#BACKEND_APP_NAME=}" ;;
+    8:UI_APP_NAME=*) UI_APP_NAME="${config_line#UI_APP_NAME=}" ;;
+    9:CONTAINER_APP_NAME=*) CONTAINER_APP_NAME="${config_line#CONTAINER_APP_NAME=}" ;;
+    10:NEXT_PUBLIC_ASSISTANT_ID=*) NEXT_PUBLIC_ASSISTANT_ID="${config_line#NEXT_PUBLIC_ASSISTANT_ID=}" ;;
     *)
       echo "Error: env.sh returned invalid configuration." >&2
       exit 1
       ;;
   esac
 done <<< "$ENV_CONFIG_OUTPUT"
-[ "$CONFIG_LINE_COUNT" -eq 7 ] || {
+[ "$CONFIG_LINE_COUNT" -eq 10 ] || {
   echo "Error: env.sh returned incomplete configuration." >&2
   exit 1
 }
@@ -229,6 +235,69 @@ load_sibling_docker_hub_pat() {
   done < "$backend_env_path"
 }
 
+decode_resolver_output() {
+  local line key value
+  local assignment_count=0
+  local seen_keys="|"
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ "$line" =~ ^([A-Z][A-Z0-9_]*)=\'([^\']*)\'$ ]]; then
+      key="${BASH_REMATCH[1]}"
+      value="${BASH_REMATCH[2]}"
+    else
+      fail "endpoint resolver returned invalid output."
+    fi
+    case "$seen_keys" in
+      *"|$key|"*) fail "endpoint resolver returned duplicate key '$key'." ;;
+    esac
+    seen_keys="${seen_keys}${key}|"
+    assignment_count=$((assignment_count + 1))
+    case "$key" in
+      AZURE_ENVIRONMENT_ID) AZURE_ENVIRONMENT_ID="$value" ;;
+      AZURE_ENVIRONMENT_DEFAULT_DOMAIN) AZURE_ENVIRONMENT_DEFAULT_DOMAIN="$value" ;;
+      BACKEND_APP_NAME) RESOLVED_BACKEND_APP_NAME="$value" ;;
+      UI_APP_NAME) RESOLVED_UI_APP_NAME="$value" ;;
+      BACKEND_URL) NEXT_PUBLIC_LANGGRAPH_URL="$value" ;;
+      AZURE_UI_URL) AZURE_UI_URL="$value" ;;
+      FRONTEND_URLS) FRONTEND_URLS="$value" ;;
+      GOOGLE_CALLBACK_URL) GOOGLE_CALLBACK_URL="$value" ;;
+      GITHUB_CALLBACK_URL) GITHUB_CALLBACK_URL="$value" ;;
+      GITHUB_HOMEPAGE_URL) GITHUB_HOMEPAGE_URL="$value" ;;
+      CHANGED) RESOLVED_ENDPOINTS_CHANGED="$value" ;;
+      *) fail "endpoint resolver returned unknown key '$key'." ;;
+    esac
+  done <<< "$RESOLVER_OUTPUT"
+  [ "$assignment_count" -eq 11 ] || fail "endpoint resolver returned incomplete output."
+  [ "$RESOLVED_BACKEND_APP_NAME" = "$BACKEND_APP_NAME" ] || fail "endpoint resolver backend app mismatch."
+  [ "$RESOLVED_UI_APP_NAME" = "$UI_APP_NAME" ] || fail "endpoint resolver UI app mismatch."
+  case "$RESOLVED_ENDPOINTS_CHANGED" in true|false) ;; *) fail "endpoint resolver returned invalid CHANGED value." ;; esac
+  [ -n "$NEXT_PUBLIC_LANGGRAPH_URL" ] || fail "endpoint resolver returned an empty BACKEND_URL."
+}
+
+if RESOLVER_OUTPUT=$(AZURE_SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID" \
+  RESOURCE_GROUP="$RESOURCE_GROUP" ENV_NAME="$ENV_NAME" \
+  BACKEND_APP_NAME="$BACKEND_APP_NAME" UI_APP_NAME="$UI_APP_NAME" \
+  "$SCRIPT_DIR/scripts/resolve-azure-endpoints.sh"); then
+  :
+else
+  status=$?
+  echo "Error: endpoint resolver failed." >&2
+  exit "$status"
+fi
+decode_resolver_output
+unset RESOLVER_OUTPUT
+
+if [ -f "$SCRIPT_DIR/.env.docker" ]; then
+  command -v node >/dev/null 2>&1 || fail "required command not found: node"
+  if node "$SCRIPT_DIR/scripts/sanitize-passkey-dotenv.mjs" \
+    --input "$SCRIPT_DIR/.env.docker" --check; then
+    :
+  else
+    status=$?
+    echo "Error: private dotenv contains deployment-owned passkey configuration." >&2
+    exit "$status"
+  fi
+fi
+
 load_docker_env
 unset LANGCHAIN_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE
 
@@ -238,7 +307,6 @@ if [ -n "${DOCKER_HUB_USERNAME-}" ] && [ "$DOCKER_HUB_USERNAME" != "$APPROVED_DO
 fi
 DOCKER_HUB_USERNAME="$APPROVED_DOCKER_HUB_USERNAME"
 ASSISTANT_ID="${NEXT_PUBLIC_ASSISTANT_ID:-research}"
-[ -n "${NEXT_PUBLIC_LANGGRAPH_URL:-}" ] || fail "NEXT_PUBLIC_LANGGRAPH_URL is required."
 [ -n "$ASSISTANT_ID" ] || fail "NEXT_PUBLIC_ASSISTANT_ID is required."
 
 source "$SCRIPT_DIR/scripts/container-runtime.sh"

@@ -1,10 +1,28 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import {
+  chmod,
+  link,
+  lstat,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+const sanitizerPath = path.join(
+  repoRoot,
+  "scripts/sanitize-passkey-dotenv.mjs"
+);
 
 const source = async (relativePath) =>
   readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
@@ -24,6 +42,369 @@ const hasRequiredOAuthRecoveryGuidance = (section) => {
     !/\b(?:no|not|never|without|except|unavailable)\b/i.test(guidance[1])
   );
 };
+
+const runSanitizer = (args) =>
+  spawnSync(process.execPath, [sanitizerPath, ...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+const withTempDir = async (callback) => {
+  const root = await mkdtemp(path.join(tmpdir(), "ui-passkey-dotenv-test-"));
+  try {
+    return await callback(root);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+};
+
+test("passkey dotenv check accepts clean bytes and rejects every deployment-owned key without leakage", async () => {
+  await withTempDir(async (root) => {
+    const input = path.join(root, "private.env");
+    const clean = Buffer.from("OTHER=kept\r\n# comment\r\nEMPTY=\r\n");
+    await writeFile(input, clean);
+
+    const accepted = runSanitizer(["--input", input, "--check"]);
+    assert.equal(accepted.status, 0, accepted.stderr);
+    assert.equal(accepted.stdout, "");
+    assert.equal(accepted.stderr, "");
+    assert.deepEqual(await readFile(input), clean);
+
+    for (const key of [
+      "PASSKEY_PROXY_SECRET",
+      "PASSKEY_ORIGIN",
+      "PASSKEY_PROXY_ID",
+      "PASSKEY_ENABLED",
+      "FRONTEND_URLS",
+      "PASSKEY_ORIGINS",
+      "PASSKEY_RP_ID",
+      "PASSKEY_RP_IDS",
+      "PASSKEY_DERIVE_FROM_FRONTEND_URLS",
+    ]) {
+      const canary = `never-print-${key.toLowerCase()}`;
+      const original = Buffer.from(`${key}='${canary}'\nOTHER=ok\n`);
+      await writeFile(input, original);
+      const rejected = runSanitizer(["--input", input, "--check"]);
+      assert.equal(rejected.status, 2, `${key}: ${rejected.stderr}`);
+      assert.match(rejected.stderr, new RegExp(key));
+      assert.doesNotMatch(
+        `${rejected.stdout}${rejected.stderr}`,
+        new RegExp(canary)
+      );
+      assert.deepEqual(await readFile(input), original);
+    }
+  });
+});
+
+test("passkey dotenv sanitize preserves unrelated bytes, newline style, mode, and cleans temp files", async () => {
+  await withTempDir(async (root) => {
+    const input = path.join(root, "private.env");
+    const original = Buffer.from(
+      "# private\r\nUNCHANGED = ' spaced # value ' # keep\r\nPASSKEY_ORIGIN=https://old.example\r\nPASSKEY_PROXY_SECRET=private-canary\r\nLAST=kept"
+    );
+    const expected = Buffer.from(
+      "# private\r\nUNCHANGED = ' spaced # value ' # keep\r\nLAST=kept"
+    );
+    await writeFile(input, original);
+    await chmod(input, 0o640);
+
+    const result = runSanitizer(["--input", input, "--sanitize"]);
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "");
+    assert.deepEqual(await readFile(input), expected);
+    assert.equal((await stat(input)).mode & 0o777, 0o640);
+    assert.deepEqual(
+      (await readdir(root)).filter((name) => name.includes(".sanitize.")),
+      []
+    );
+  });
+});
+
+test("passkey dotenv rejects duplicate, malformed, and ambiguous syntax without changing bytes", async () => {
+  await withTempDir(async (root) => {
+    const input = path.join(root, "private.env");
+    for (const content of [
+      "OTHER=one\nOTHER=two\n",
+      "PASSKEY_PROXY_SECRET=one\nPASSKEY_PROXY_SECRET=two\n",
+      "PASSKEY_ORIGIN\nOTHER=kept\n",
+      "OTHER=$(unsafe-command)\n",
+      "PASSKEY_ORIGIN=one\\\ntwo\n",
+      'OTHER="unterminated\n',
+    ]) {
+      const original = Buffer.from(content);
+      await writeFile(input, original);
+      const result = runSanitizer(["--input", input, "--sanitize"]);
+      assert.equal(
+        result.status,
+        2,
+        `${JSON.stringify(content)}: ${result.stderr}`
+      );
+      assert.equal(result.stdout, "");
+      assert.deepEqual(await readFile(input), original);
+      assert.deepEqual(
+        (await readdir(root)).filter((name) => name.includes(".sanitize.")),
+        []
+      );
+    }
+  });
+});
+
+test("passkey dotenv treats missing input as valid no-private-config state", async () => {
+  await withTempDir(async (root) => {
+    const input = path.join(root, "missing.env");
+
+    for (const action of ["--check", "--sanitize"]) {
+      const result = runSanitizer(["--input", input, action]);
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, "");
+      assert.equal(result.stderr, "");
+      await assert.rejects(lstat(input), { code: "ENOENT" });
+      assert.deepEqual(await readdir(root), []);
+    }
+  });
+});
+
+test("passkey dotenv refuses symlink and hard-linked inputs", async () => {
+  await withTempDir(async (root) => {
+    const input = path.join(root, "private.env");
+    const alias = path.join(root, "alias.env");
+    const linked = path.join(root, "linked.env");
+    const original = Buffer.from("PASSKEY_ORIGIN=https://old.example\n");
+    await writeFile(input, original);
+    await symlink(input, alias);
+
+    const symlinkResult = runSanitizer(["--input", alias, "--sanitize"]);
+    assert.equal(symlinkResult.status, 2);
+    await link(input, linked);
+    const hardlinkResult = runSanitizer(["--input", input, "--sanitize"]);
+    assert.equal(hardlinkResult.status, 2);
+    assert.deepEqual(await readFile(input), original);
+    assert.deepEqual(await readFile(linked), original);
+    assert.equal((await lstat(alias)).isSymbolicLink(), true);
+  });
+});
+
+test("passkey dotenv injected move failure preserves bytes with no residue", async () => {
+  const { sanitizePasskeyDotenv } = await import(sanitizerPath);
+  await withTempDir(async (root) => {
+    const input = path.join(root, "private.env");
+    const original = Buffer.from(
+      "PASSKEY_PROXY_SECRET=private-canary\nOTHER=old\n"
+    );
+    await writeFile(input, original);
+
+    const failed = await sanitizePasskeyDotenv(
+      ["--input", input, "--sanitize"],
+      {
+        moveOriginal: async () => {
+          const error = new Error("injected move failure");
+          error.code = "EIO";
+          throw error;
+        },
+      }
+    );
+    assert.equal(failed, 2);
+    assert.deepEqual(await readFile(input), original);
+    assert.deepEqual(
+      (await readdir(root)).filter((name) => name.includes(".sanitize")),
+      []
+    );
+  });
+});
+
+test("passkey dotenv replacement after final check is restored and never overwritten", async () => {
+  const { sanitizePasskeyDotenv } = await import(sanitizerPath);
+  await withTempDir(async (root) => {
+    const input = path.join(root, "private.env");
+    const original = Buffer.from(
+      "PASSKEY_PROXY_SECRET=private-canary\nOTHER=old\n"
+    );
+    const replacement = Buffer.from("OTHER=new-after-check\n");
+    await writeFile(input, original);
+
+    const raced = await sanitizePasskeyDotenv(
+      ["--input", input, "--sanitize"],
+      {
+        afterCheckBeforeMove: async () => {
+          const concurrent = path.join(root, "concurrent.env");
+          await writeFile(concurrent, replacement);
+          await rename(concurrent, input);
+        },
+      }
+    );
+    assert.equal(raced, 2);
+    assert.deepEqual(await readFile(input), replacement);
+    assert.deepEqual(
+      (await readdir(root)).filter((name) => name.includes(".sanitize")),
+      []
+    );
+  });
+});
+
+test("passkey dotenv newer pathname wins while prior original remains recoverable", async () => {
+  const { sanitizePasskeyDotenv } = await import(sanitizerPath);
+  await withTempDir(async (root) => {
+    const input = path.join(root, "private.env");
+    const original = Buffer.from(
+      "PASSKEY_PROXY_SECRET=private-canary\nOTHER=old\n"
+    );
+    const replacement = Buffer.from("OTHER=new-after-move\n");
+    await writeFile(input, original);
+    await chmod(input, 0o640);
+    const diagnostics = [];
+
+    const raced = await sanitizePasskeyDotenv(
+      ["--input", input, "--sanitize"],
+      {
+        afterOriginalMove: async () => {
+          await writeFile(input, replacement, { mode: 0o600 });
+        },
+        report: (message) => diagnostics.push(message),
+      }
+    );
+
+    assert.equal(raced, 2);
+    assert.deepEqual(await readFile(input), replacement);
+    assert.equal((await stat(input)).mode & 0o777, 0o600);
+    assert.equal(diagnostics.length, 1);
+    assert.doesNotMatch(diagnostics[0], /private-canary/);
+    const recoveryPath = diagnostics[0].match(/Recovery backup: (.+)$/m)?.[1];
+    assert.ok(recoveryPath, diagnostics[0]);
+    assert.deepEqual(await readFile(recoveryPath), original);
+    assert.equal((await stat(recoveryPath)).mode & 0o777, 0o640);
+    assert.match(diagnostics[0], /newer input pathname.*preserved/i);
+    assert.deepEqual(
+      (await readdir(root)).filter((name) => name.includes(".sanitize.")),
+      []
+    );
+    assert.equal(
+      (await readdir(root)).filter((name) => name.includes(".sanitize-backup."))
+        .length,
+      1
+    );
+  });
+});
+
+test("passkey dotenv install-link failure atomically restores original with bytes and mode", async () => {
+  const { sanitizePasskeyDotenv } = await import(sanitizerPath);
+  await withTempDir(async (root) => {
+    const input = path.join(root, "private.env");
+    const original = Buffer.from(
+      "PASSKEY_PROXY_SECRET=private-canary\nOTHER=old\n"
+    );
+    await writeFile(input, original);
+    await chmod(input, 0o640);
+    let linkAttempts = 0;
+
+    const failed = await sanitizePasskeyDotenv(
+      ["--input", input, "--sanitize"],
+      {
+        exclusiveLink: async (source, destination) => {
+          linkAttempts += 1;
+          if (linkAttempts === 1) {
+            const error = new Error("injected install link failure");
+            error.code = "EPERM";
+            throw error;
+          }
+          await link(source, destination);
+        },
+      }
+    );
+
+    assert.equal(failed, 2);
+    assert.deepEqual(await readFile(input), original);
+    assert.equal((await stat(input)).mode & 0o777, 0o640);
+    assert.deepEqual(
+      (await readdir(root)).filter((name) => name.includes(".sanitize")),
+      []
+    );
+  });
+});
+
+test("passkey dotenv persistent install and restore failure retains exact recovery backup safely", async () => {
+  const { sanitizePasskeyDotenv } = await import(sanitizerPath);
+  await withTempDir(async (root) => {
+    const input = path.join(root, "private.env");
+    const original = Buffer.from(
+      "PASSKEY_PROXY_SECRET=never-print-private-canary\nOTHER=old\n"
+    );
+    const diagnostics = [];
+    await writeFile(input, original);
+    await chmod(input, 0o640);
+
+    const failed = await sanitizePasskeyDotenv(
+      ["--input", input, "--sanitize"],
+      {
+        exclusiveLink: async () => {
+          const error = new Error("injected persistent link failure");
+          error.code = "EPERM";
+          throw error;
+        },
+        report: (message) => diagnostics.push(message),
+      }
+    );
+
+    assert.equal(failed, 2);
+    await assert.rejects(lstat(input), { code: "ENOENT" });
+    assert.equal(diagnostics.length, 1);
+    assert.doesNotMatch(diagnostics[0], /never-print-private-canary/);
+    const recoveryPath = diagnostics[0].match(/Recovery backup: (.+)$/m)?.[1];
+    assert.ok(recoveryPath, diagnostics[0]);
+    assert.equal(path.dirname(path.dirname(recoveryPath)), root);
+    assert.deepEqual(await readFile(recoveryPath), original);
+    assert.equal((await stat(recoveryPath)).mode & 0o777, 0o640);
+    assert.match(diagnostics[0], /move it back to/i);
+    assert.deepEqual(
+      (await readdir(root)).filter((name) => name.includes(".sanitize.")),
+      []
+    );
+    assert.equal(
+      (await readdir(root)).filter((name) => name.includes(".sanitize-backup."))
+        .length,
+      1
+    );
+  });
+});
+
+test("passkey dotenv persistent link failure preserves newer input and prior backup", async () => {
+  const { sanitizePasskeyDotenv } = await import(sanitizerPath);
+  await withTempDir(async (root) => {
+    const input = path.join(root, "private.env");
+    const original = Buffer.from(
+      "PASSKEY_PROXY_SECRET=private-canary\nOTHER=old\n"
+    );
+    const replacement = Buffer.from("OTHER=newer-wins\n");
+    const diagnostics = [];
+    await writeFile(input, original);
+
+    const failed = await sanitizePasskeyDotenv(
+      ["--input", input, "--sanitize"],
+      {
+        afterOriginalMove: async () => {
+          await writeFile(input, replacement);
+        },
+        exclusiveLink: async () => {
+          const error = new Error("injected persistent link failure");
+          error.code = "EPERM";
+          throw error;
+        },
+        report: (message) => diagnostics.push(message),
+      }
+    );
+
+    assert.equal(failed, 2);
+    assert.deepEqual(await readFile(input), replacement);
+    const recoveryPath = diagnostics[0].match(/Recovery backup: (.+)$/m)?.[1];
+    assert.ok(recoveryPath, diagnostics[0]);
+    assert.deepEqual(await readFile(recoveryPath), original);
+    assert.deepEqual(
+      (await readdir(root)).filter((name) => name.includes(".sanitize.")),
+      []
+    );
+  });
+});
 
 test("App Service deployment script has valid Bash syntax", () => {
   const result = spawnSync("bash", ["-n", "deploy.sh"], {
@@ -62,22 +443,26 @@ test("deployment never exposes server API keys through NEXT_PUBLIC variables", a
   );
 });
 
-test("passkey BFF example stays disabled and documents matched trusted-proxy settings", async () => {
+test("private dotenv example delegates production passkeys to runtime deployment", async () => {
   const [envExample, readme] = await Promise.all([
     source(".env.docker.example"),
     source("README.md"),
   ]);
   const passkeysSection = extractPasskeysSection(readme);
 
-  assert.match(envExample, /^PASSKEY_ENABLED=false$/m);
   for (const setting of [
+    "PASSKEY_ENABLED",
     "PASSKEY_ORIGIN",
     "PASSKEY_PROXY_ID",
     "PASSKEY_PROXY_SECRET",
   ]) {
-    assert.match(envExample, new RegExp(`^${setting}=`, "m"));
+    assert.doesNotMatch(envExample, new RegExp(`^${setting}=`, "m"));
     assert.match(readme, new RegExp(setting));
   }
+  assert.match(
+    envExample,
+    /production passkey settings.*runtime deployment.*Key Vault/is
+  );
   assert.match(readme, /same.*PASSKEY_PROXY_(?:ID|SECRET)/is);
   assert.ok(passkeysSection, "README must include a Passkeys section");
   assert.ok(

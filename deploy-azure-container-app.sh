@@ -10,6 +10,8 @@ esac
 
 set -eo pipefail
 unset LANGCHAIN_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE
+CALLER_OAUTH_REDIRECTS_CONFIRMED="${OAUTH_REDIRECTS_CONFIRMED-}"
+unset OAUTH_REDIRECTS_CONFIRMED
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -40,6 +42,8 @@ if [ "$ENV_SH_SOURCE_STATUS" -ne 0 ]; then
 fi
 unset ENV_SH_SOURCE_STATUS
 unset LANGCHAIN_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE
+OAUTH_REDIRECTS_CONFIRMED="$CALLER_OAUTH_REDIRECTS_CONFIRMED"
+unset CALLER_OAUTH_REDIRECTS_CONFIRMED
 
 source "$SCRIPT_DIR/scripts/azure-subscription.sh"
 
@@ -48,13 +52,74 @@ fail() {
   exit 1
 }
 
+decode_resolver_output() {
+  local line key value
+  local assignment_count=0
+  local seen_keys="|"
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ "$line" =~ ^([A-Z][A-Z0-9_]*)=\'([^\']*)\'$ ]]; then
+      key="${BASH_REMATCH[1]}"
+      value="${BASH_REMATCH[2]}"
+    else
+      fail "endpoint resolver returned invalid output."
+    fi
+    case "$seen_keys" in
+      *"|$key|"*) fail "endpoint resolver returned duplicate key '$key'." ;;
+    esac
+    seen_keys="${seen_keys}${key}|"
+    assignment_count=$((assignment_count + 1))
+    case "$key" in
+      AZURE_ENVIRONMENT_ID) AZURE_ENVIRONMENT_ID="$value" ;;
+      AZURE_ENVIRONMENT_DEFAULT_DOMAIN) AZURE_ENVIRONMENT_DEFAULT_DOMAIN="$value" ;;
+      BACKEND_APP_NAME) RESOLVED_BACKEND_APP_NAME="$value" ;;
+      UI_APP_NAME) RESOLVED_UI_APP_NAME="$value" ;;
+      BACKEND_URL) BACKEND_URL="$value" ;;
+      AZURE_UI_URL) AZURE_UI_URL="$value" ;;
+      FRONTEND_URLS) FRONTEND_URLS="$value" ;;
+      GOOGLE_CALLBACK_URL) GOOGLE_CALLBACK_URL="$value" ;;
+      GITHUB_CALLBACK_URL) GITHUB_CALLBACK_URL="$value" ;;
+      GITHUB_HOMEPAGE_URL) GITHUB_HOMEPAGE_URL="$value" ;;
+      CHANGED) RESOLVED_ENDPOINTS_CHANGED="$value" ;;
+      *) fail "endpoint resolver returned unknown key '$key'." ;;
+    esac
+  done <<< "$RESOLVER_OUTPUT"
+  [ "$assignment_count" -eq 11 ] || fail "endpoint resolver returned incomplete output."
+  [ "$RESOLVED_BACKEND_APP_NAME" = "$BACKEND_APP_NAME" ] || fail "endpoint resolver backend app mismatch."
+  [ "$RESOLVED_UI_APP_NAME" = "$UI_APP_NAME" ] || fail "endpoint resolver UI app mismatch."
+  case "$RESOLVED_ENDPOINTS_CHANGED" in true|false) ;; *) fail "endpoint resolver returned invalid CHANGED value." ;; esac
+  [ -n "$BACKEND_URL" ] && [ -n "$AZURE_UI_URL" ] || fail "endpoint resolver returned empty URLs."
+}
+
 dotenv_fail() {
   local line_number="$1"
   local message="$2"
   fail "$SCRIPT_DIR/.env.docker line $line_number: $message"
 }
 
+if RESOLVER_OUTPUT=$(AZURE_SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID" \
+  RESOURCE_GROUP="$RESOURCE_GROUP" ENV_NAME="$ENV_NAME" \
+  BACKEND_APP_NAME="$BACKEND_APP_NAME" UI_APP_NAME="$UI_APP_NAME" \
+  "$SCRIPT_DIR/scripts/resolve-azure-endpoints.sh"); then
+  :
+else
+  status=$?
+  echo "Error: endpoint resolver failed." >&2
+  exit "$status"
+fi
+decode_resolver_output
+INITIAL_RESOLVER_OUTPUT="$RESOLVER_OUTPUT"
+unset RESOLVER_OUTPUT
+
 if [ -f "$SCRIPT_DIR/.env.docker" ]; then
+  command -v node >/dev/null 2>&1 || fail "required command not found: node"
+  if node "$SCRIPT_DIR/scripts/sanitize-passkey-dotenv.mjs" \
+    --input "$SCRIPT_DIR/.env.docker" --check; then
+    :
+  else
+    status=$?
+    echo "Error: private dotenv contains deployment-owned passkey configuration." >&2
+    exit "$status"
+  fi
   docker_env_line_number=0
   while IFS= read -r docker_env_line || [ -n "$docker_env_line" ]; do
     docker_env_line_number=$((docker_env_line_number + 1))
@@ -99,6 +164,7 @@ fi
 
 ASSISTANT_ID="${NEXT_PUBLIC_ASSISTANT_ID:-research}"
 CONTAINER_APP_NAME="${CONTAINER_APP_NAME:-bmo-deepagent-ui-$SEED}"
+[ "$UI_APP_NAME" = "$CONTAINER_APP_NAME" ] || fail "UI_APP_NAME must match CONTAINER_APP_NAME."
 DOCKER_HUB_USERNAME="jerryshao2013"
 EXPECTED_IMAGE="docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest"
 MANIFEST_PATH="$SCRIPT_DIR/.deployment-build.json"
@@ -151,6 +217,11 @@ unset MANIFEST_VALUES
 [ "$MANIFEST_SCHEMA" = 1 ] || fail "deployment build manifest schema is invalid."
 [ "$MANIFEST_IMAGE" = "$EXPECTED_IMAGE" ] || fail "manifest image '$MANIFEST_IMAGE' does not match pinned image '$EXPECTED_IMAGE'."
 [ "$MANIFEST_ASSISTANT_ID" = "$ASSISTANT_ID" ] || fail "manifest assistant ID drift: built '$MANIFEST_ASSISTANT_ID', configured '$ASSISTANT_ID'."
+[ "$MANIFEST_BACKEND_URL" = "$BACKEND_URL" ] || fail "manifest backend URL drift: built '$MANIFEST_BACKEND_URL', canonical '$BACKEND_URL'."
+
+if [ "$RESOLVED_ENDPOINTS_CHANGED" = true ] && [ "$OAUTH_REDIRECTS_CONFIRMED" != true ]; then
+  fail "OAUTH_REDIRECTS_CONFIRMED=true is required for changed OAuth endpoints."
+fi
 
 REVISION_POLL_ATTEMPTS="${CONTAINER_APP_REVISION_POLL_ATTEMPTS:-60}"
 HTTP_POLL_ATTEMPTS="${CONTAINER_APP_HTTP_POLL_ATTEMPTS:-36}"
@@ -174,38 +245,72 @@ fi
 if UI_DETAILS=$(az containerapp show \
   --name "$CONTAINER_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --query "join('|', [to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])" \
+  --query "join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(identity.principalId), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])" \
   -o tsv); then :; else
   fail "UI Container App '$CONTAINER_APP_NAME' does not exist or is not readable."
 fi
-IFS='|' read -r UI_EXTERNAL UI_FQDN UI_TARGET_PORT UI_REVISIONS_MODE UI_IDENTITY_TYPE UI_CONTAINER_COUNT TARGET_CONTAINER_NAME <<< "$UI_DETAILS"
+IFS='|' read -r UI_ENVIRONMENT_ID UI_EXTERNAL UI_FQDN UI_TARGET_PORT UI_REVISIONS_MODE UI_IDENTITY_TYPE UI_PRINCIPAL_ID UI_CONTAINER_COUNT TARGET_CONTAINER_NAME <<< "$UI_DETAILS"
+[ "$UI_ENVIRONMENT_ID" = "$AZURE_ENVIRONMENT_ID" ] || fail "UI Container App must use the resolved managed environment."
 case "$UI_EXTERNAL" in true|True|TRUE) ;; *) fail "UI Container App '$CONTAINER_APP_NAME' must use external ingress." ;; esac
 case "$UI_FQDN" in ""|null|Null|NULL) fail "UI Container App '$CONTAINER_APP_NAME' must have a public FQDN." ;; esac
+[ "https://$UI_FQDN" = "$AZURE_UI_URL" ] || fail "UI Container App FQDN must match the resolved Azure UI URL."
 [ "$UI_TARGET_PORT" = 3000 ] || fail "UI Container App '$CONTAINER_APP_NAME' target port must be exactly 3000."
 case "$UI_REVISIONS_MODE" in [Ss][Ii][Nn][Gg][Ll][Ee]) ;; *) fail "UI Container App '$CONTAINER_APP_NAME' must use single-revision mode." ;; esac
 case "$UI_IDENTITY_TYPE" in *SystemAssigned*|*systemassigned*|*SYSTEMASSIGNED*) ;; *) fail "UI Container App '$CONTAINER_APP_NAME' must have a system-assigned identity." ;; esac
+case "$UI_PRINCIPAL_ID" in ""|null|Null|NULL) fail "UI Container App '$CONTAINER_APP_NAME' system-assigned identity principal is missing." ;; esac
 [ "$UI_CONTAINER_COUNT" = 1 ] && [ -n "$TARGET_CONTAINER_NAME" ] || fail "UI Container App '$CONTAINER_APP_NAME' must have exactly one application container."
+UI_URL="$AZURE_UI_URL"
 
-BACKEND_APP_NAME="deep-research-agent-$SEED"
 if BACKEND_DETAILS=$(az containerapp show \
   --name "$BACKEND_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --query "join('|', [to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn)])" \
+  --query "join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn)])" \
   -o tsv); then :; else
   fail "backend Container App '$BACKEND_APP_NAME' does not exist or is not readable."
 fi
-IFS='|' read -r BACKEND_EXTERNAL BACKEND_FQDN <<< "$BACKEND_DETAILS"
+IFS='|' read -r BACKEND_ENVIRONMENT_ID BACKEND_EXTERNAL BACKEND_FQDN <<< "$BACKEND_DETAILS"
+[ "$BACKEND_ENVIRONMENT_ID" = "$AZURE_ENVIRONMENT_ID" ] || fail "backend Container App must use the resolved managed environment."
 case "$BACKEND_EXTERNAL" in true|True|TRUE) ;; *) fail "backend Container App '$BACKEND_APP_NAME' must use external ingress." ;; esac
 case "$BACKEND_FQDN" in ""|null|Null|NULL) fail "backend Container App '$BACKEND_APP_NAME' must have a public FQDN." ;; esac
-UI_URL="https://$UI_FQDN"
-BACKEND_URL="https://$BACKEND_FQDN"
-[ "$MANIFEST_BACKEND_URL" = "$BACKEND_URL" ] || fail "manifest backend URL drift: built '$MANIFEST_BACKEND_URL', canonical '$BACKEND_URL'."
+[ "https://$BACKEND_FQDN" = "$BACKEND_URL" ] || fail "backend Container App FQDN must match the resolved backend URL."
 
-if VAULT_URI=$(az keyvault show --name "$KV_NAME" --resource-group "$RESOURCE_GROUP" --query properties.vaultUri -o tsv); then :; else
+if VAULT_DETAILS=$(az keyvault show --name "$KV_NAME" --resource-group "$RESOURCE_GROUP" --query "join('|', [properties.vaultUri, id, to_string(properties.enableRbacAuthorization), to_string(length(properties.accessPolicies[?objectId=='$UI_PRINCIPAL_ID' && (contains(permissions.secrets, 'get') || contains(permissions.secrets, 'all'))]))])" -o tsv); then :; else
   fail "Key Vault '$KV_NAME' does not exist or is not readable."
 fi
+IFS='|' read -r VAULT_URI VAULT_ID VAULT_RBAC_ENABLED VAULT_POLICY_ACCESS_COUNT <<< "$VAULT_DETAILS"
 [ -n "$VAULT_URI" ] || fail "Key Vault '$KV_NAME' returned an empty vault URI."
+[ -n "$VAULT_ID" ] || fail "Key Vault '$KV_NAME' returned an empty resource ID."
 VAULT_URI="${VAULT_URI%/}/"
+
+KEY_VAULT_ACCESS=false
+case "$VAULT_RBAC_ENABLED" in
+  false|False|FALSE)
+    case "$VAULT_POLICY_ACCESS_COUNT" in ""|*[!0-9]*) fail "Key Vault access policy response is invalid." ;; esac
+    [ "$VAULT_POLICY_ACCESS_COUNT" -gt 0 ] && KEY_VAULT_ACCESS=true
+    ;;
+  true|True|TRUE)
+    if ROLE_DEFINITION_IDS=$(az role assignment list \
+      --assignee-object-id "$UI_PRINCIPAL_ID" --scope "$VAULT_ID" --include-inherited \
+      --query "[].roleDefinitionId" -o tsv); then :; else
+      status=$?; echo "Error: could not validate system identity Key Vault access." >&2; exit "$status"
+    fi
+    while IFS= read -r role_definition_id; do
+      [ -n "$role_definition_id" ] || continue
+      if ROLE_DEFINITION_JSON=$(az role definition list --name "$role_definition_id" -o json); then :; else
+        status=$?; echo "Error: could not inspect Key Vault role capabilities." >&2; exit "$status"
+      fi
+      if ROLE_HAS_SECRET_READ=$(printf '%s' "$ROLE_DEFINITION_JSON" | \
+        node "$SCRIPT_DIR/scripts/evaluate-keyvault-rbac.mjs"); then :; else
+        status=$?; exit "$status"
+      fi
+      [ "$ROLE_HAS_SECRET_READ" = true ] && KEY_VAULT_ACCESS=true
+    done <<EOF
+$ROLE_DEFINITION_IDS
+EOF
+    ;;
+  *) fail "Key Vault authorization mode is invalid." ;;
+esac
+[ "$KEY_VAULT_ACCESS" = true ] || fail "existing system identity Key Vault secret read access is a deployment prerequisite; this deployment does not grant permissions."
 
 if UPLOAD_SECRET_ID=$(az keyvault secret show --vault-name "$KV_NAME" --name UPLOAD-API-KEY --query id -o tsv); then :; else
   fail "Key Vault secret '$KV_NAME/UPLOAD-API-KEY' is unavailable."
@@ -215,6 +320,10 @@ if DOCKER_PAT_SECRET_ID=$(az keyvault secret show --vault-name "$KV_NAME" --name
   status=$?; echo "Error: Key Vault secret '$KV_NAME/DOCKER-HUB-PAT' is unavailable." >&2; exit "$status"
 fi
 [ -n "$DOCKER_PAT_SECRET_ID" ] || fail "Key Vault secret '$KV_NAME/DOCKER-HUB-PAT' returned an empty ID."
+if PASSKEY_SECRET_ID=$(az keyvault secret show --vault-name "$KV_NAME" --name PASSKEY-PROXY-SECRET --query id -o tsv); then :; else
+  status=$?; echo "Error: Key Vault secret '$KV_NAME/PASSKEY-PROXY-SECRET' is unavailable." >&2; exit "$status"
+fi
+[ -n "$PASSKEY_SECRET_ID" ] || fail "Key Vault secret '$KV_NAME/PASSKEY-PROXY-SECRET' returned an empty ID."
 
 if APP_SECRETS=$(az containerapp secret list \
   --name "$CONTAINER_APP_NAME" \
@@ -267,15 +376,19 @@ fi
 [ -n "$PREVIOUS_REVISION" ] || fail "previous ready Container App revision is empty."
 
 UPLOAD_SECRET_URI="${VAULT_URI}secrets/UPLOAD-API-KEY"
+PASSKEY_SECRET_URI="${VAULT_URI}secrets/PASSKEY-PROXY-SECRET"
 if az containerapp secret set \
   --name "$CONTAINER_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
   --secrets "upload-api-key=keyvaultref:$UPLOAD_SECRET_URI,identityref:system" \
+  "passkey-proxy-secret=keyvaultref:$PASSKEY_SECRET_URI,identityref:system" \
   -o none; then :; else
   status=$?; echo "Error: Container App Key Vault secret configuration failed." >&2; exit "$status"
 fi
 
 REVISION_SUFFIX="ui-$(date -u +%Y%m%dt%H%M%S)-$$"
+NEW_REVISION="${UI_APP_NAME}--${REVISION_SUFFIX}"
+[ "$NEW_REVISION" != "$PREVIOUS_REVISION" ] || fail "new revision must be different from previous ready revision '$PREVIOUS_REVISION'."
 if az containerapp update \
   --name "$CONTAINER_APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
@@ -292,18 +405,17 @@ if az containerapp update \
   "AUTH_TRUST_HOST=true" \
   "NODE_ENV=production" \
   "UPLOAD_API_KEY=secretref:upload-api-key" \
+  "PASSKEY_ENABLED=true" \
+  "PASSKEY_ORIGIN=$AZURE_UI_URL" \
+  "PASSKEY_PROXY_ID=web-bff" \
+  "PASSKEY_PROXY_SECRET=secretref:passkey-proxy-secret" \
   -o none; then :; else
   status=$?; echo "Error: Container App update failed." >&2; exit "$status"
 fi
 
-if NEW_REVISION=$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query properties.latestRevisionName -o tsv); then :; else
-  status=$?; echo "Error: could not discover new Container App revision." >&2; exit "$status"
-fi
-[ -n "$NEW_REVISION" ] || fail "new Container App revision is empty."
-[ "$NEW_REVISION" != "$PREVIOUS_REVISION" ] || fail "new revision must be different from previous ready revision '$PREVIOUS_REVISION'."
-
 LAST_PROVISIONING_STATE=""
 LAST_RUNNING_STATE=""
+LAST_HEALTH_STATE=""
 revision_ready=false
 attempt=1
 while [ "$attempt" -le "$REVISION_POLL_ATTEMPTS" ]; do
@@ -311,22 +423,22 @@ while [ "$attempt" -le "$REVISION_POLL_ATTEMPTS" ]; do
     --name "$CONTAINER_APP_NAME" \
     --revision "$NEW_REVISION" \
     --resource-group "$RESOURCE_GROUP" \
-    --query "join('|', [properties.provisioningState, properties.runningState])" \
+    --query "join('|', [properties.provisioningState, properties.runningState, properties.healthState])" \
     -o tsv); then :; else
     status=$?; echo "Error: could not read revision '$NEW_REVISION' readiness." >&2; exit "$status"
   fi
-  IFS='|' read -r LAST_PROVISIONING_STATE LAST_RUNNING_STATE <<< "$REVISION_STATUS"
-  case "$LAST_PROVISIONING_STATE|$LAST_RUNNING_STATE" in
-    *Failed*|*failed*|*FAILED*|*Degraded*|*degraded*|*DEGRADED*|*ActivationFailed*|*activationfailed*|*ACTIVATIONFAILED*)
-      fail "revision '$NEW_REVISION' failed readiness: provisioning=$LAST_PROVISIONING_STATE running=$LAST_RUNNING_STATE."
+  IFS='|' read -r LAST_PROVISIONING_STATE LAST_RUNNING_STATE LAST_HEALTH_STATE <<< "$REVISION_STATUS"
+  case "$LAST_PROVISIONING_STATE|$LAST_RUNNING_STATE|$LAST_HEALTH_STATE" in
+    *Failed*|*failed*|*FAILED*|*Degraded*|*degraded*|*DEGRADED*|*ActivationFailed*|*activationfailed*|*ACTIVATIONFAILED*|*Unhealthy*|*unhealthy*|*UNHEALTHY*)
+      fail "revision '$NEW_REVISION' failed readiness: provisioning=$LAST_PROVISIONING_STATE running=$LAST_RUNNING_STATE health=$LAST_HEALTH_STATE."
       ;;
-    [Pp][Rr][Oo][Vv][Ii][Ss][Ii][Oo][Nn][Ee][Dd]'|'[Rr][Uu][Nn][Nn][Ii][Nn][Gg])
+    [Pp][Rr][Oo][Vv][Ii][Ss][Ii][Oo][Nn][Ee][Dd]'|'[Rr][Uu][Nn][Nn][Ii][Nn][Gg]'|'[Hh][Ee][Aa][Ll][Tt][Hh][Yy])
       revision_ready=true; break ;;
   esac
   [ "$attempt" -ge "$REVISION_POLL_ATTEMPTS" ] || sleep "$POLL_INTERVAL_SECONDS"
   attempt=$((attempt + 1))
 done
-[ "$revision_ready" = true ] || fail "timed out waiting for revision '$NEW_REVISION': provisioning=$LAST_PROVISIONING_STATE running=$LAST_RUNNING_STATE."
+[ "$revision_ready" = true ] || fail "timed out waiting for revision '$NEW_REVISION': provisioning=$LAST_PROVISIONING_STATE running=$LAST_RUNNING_STATE health=$LAST_HEALTH_STATE."
 
 HEALTH_RESPONSE_PATH=$(mktemp "${TMPDIR:-/tmp}/deployment-version-response.XXXXXX")
 trap 'rm -f -- "$HEALTH_RESPONSE_PATH"' EXIT
@@ -356,6 +468,30 @@ while [ "$attempt" -le "$HTTP_POLL_ATTEMPTS" ]; do
     fi
   done < "$HEALTH_RESPONSE_PATH"
   if [ "$LAST_CURL_STATUS" -eq 0 ] && [ "$HTTP_STATUS" = 200 ] && [ "$HTTP_RESPONSE_BODY" = "$EXPECTED_HTTP_BODY" ]; then
+    if RESOLVER_OUTPUT=$(AZURE_SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID" \
+      RESOURCE_GROUP="$RESOURCE_GROUP" ENV_NAME="$ENV_NAME" \
+      BACKEND_APP_NAME="$BACKEND_APP_NAME" UI_APP_NAME="$UI_APP_NAME" \
+      "$SCRIPT_DIR/scripts/resolve-azure-endpoints.sh"); then :; else
+      status=$?; echo "Error: final endpoint comparison failed." >&2; exit "$status"
+    fi
+    [ "$RESOLVER_OUTPUT" = "$INITIAL_RESOLVER_OUTPUT" ] || fail "endpoint resolver changed during deployment."
+    RESOLVER_EXPECTED_PATH=$(umask 077; mktemp "${TMPDIR:-/tmp}/resolved-endpoints-expected.XXXXXX")
+    printf '%s\n' "$INITIAL_RESOLVER_OUTPUT" > "$RESOLVER_EXPECTED_PATH"
+    if RESOLVER_OUTPUT=$(AZURE_SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID" \
+      RESOURCE_GROUP="$RESOURCE_GROUP" ENV_NAME="$ENV_NAME" \
+      BACKEND_APP_NAME="$BACKEND_APP_NAME" UI_APP_NAME="$UI_APP_NAME" \
+      "$SCRIPT_DIR/scripts/resolve-azure-endpoints.sh" --record-if-current "$RESOLVER_EXPECTED_PATH"); then
+      :
+    else
+      status=$?
+      rm -f -- "$RESOLVER_EXPECTED_PATH"
+      echo "Error: endpoint metadata recording failed." >&2
+      exit "$status"
+    fi
+    rm -f -- "$RESOLVER_EXPECTED_PATH"
+    [ "$RESOLVER_OUTPUT" = "$INITIAL_RESOLVER_OUTPUT" ] || fail "endpoint resolver changed during deployment."
+    decode_resolver_output
+    unset RESOLVER_OUTPUT INITIAL_RESOLVER_OUTPUT
     echo "Azure Container Apps deployment complete: $UI_URL"
     exit 0
   fi

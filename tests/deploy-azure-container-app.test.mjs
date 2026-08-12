@@ -22,6 +22,10 @@ import { fileURLToPath } from "node:url";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const scriptPath = path.join(repoRoot, "deploy-azure-container-app.sh");
 const resolverPath = path.join(repoRoot, "scripts/resolve-azure-endpoints.sh");
+const rbacEvaluatorPath = path.join(
+  repoRoot,
+  "scripts/evaluate-keyvault-rbac.mjs"
+);
 const dockerEnvExample = await readFile(
   path.join(repoRoot, ".env.docker.example"),
   "utf8"
@@ -29,6 +33,22 @@ const dockerEnvExample = await readFile(
 const subscriptionId = "subscription-container-app-test";
 const pinnedImage = "docker.io/jerryshao2013/deepagent-ui:latest";
 const deploymentMarker = "20260812T101112Z-4242";
+const resolvedBackendUrl =
+  "https://deep-research-agent-testseed.env.example.test";
+const resolvedUiUrl = "https://bmo-deepagent-ui-testseed.env.example.test";
+const deploymentResolverOutput = [
+  "AZURE_ENVIRONMENT_ID='/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.App/managedEnvironments/test-environment'",
+  "AZURE_ENVIRONMENT_DEFAULT_DOMAIN='env.example.test'",
+  "BACKEND_APP_NAME='deep-research-agent-testseed'",
+  "UI_APP_NAME='bmo-deepagent-ui-testseed'",
+  `BACKEND_URL='${resolvedBackendUrl}'`,
+  `AZURE_UI_URL='${resolvedUiUrl}'`,
+  `FRONTEND_URLS='${resolvedUiUrl},https://bmo-deepagent-ui.vercel.app'`,
+  `GOOGLE_CALLBACK_URL='${resolvedBackendUrl}/auth/callback/google'`,
+  `GITHUB_CALLBACK_URL='${resolvedBackendUrl}/auth/callback/github'`,
+  `GITHUB_HOMEPAGE_URL='${resolvedUiUrl}'`,
+  "CHANGED='true'",
+].join("\n");
 const defaultDockerEnv = `# Values loaded after env.sh
 
 NEXT_PUBLIC_ASSISTANT_ID='docker-assistant'
@@ -38,7 +58,7 @@ const defaultManifest = {
   schemaVersion: 1,
   deploymentMarker,
   image: pinnedImage,
-  backendUrl: "https://backend.example.test",
+  backendUrl: resolvedBackendUrl,
   assistantId: "docker-assistant",
 };
 
@@ -81,39 +101,46 @@ case "$command" in
     name="$4"
     query="$8"
     if [ "$name" = "bmo-deepagent-ui-testseed" ]; then
-      details_query="join('|', [to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])"
+      details_query="join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn), to_string(properties.configuration.ingress.targetPort), to_string(properties.configuration.activeRevisionsMode), to_string(identity.type), to_string(identity.principalId), to_string(length(properties.template.containers)), to_string(properties.template.containers[0].name)])"
       case "$query" in
         "$details_query")
           [ "$scenario" = "ui-app-missing" ] && exit 5
-          external=true; fqdn=ui.example.test; target_port=3000; mode=Single
-          identity=SystemAssigned; count=1; container_name=deepagent-ui
+          environment_id=/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.App/managedEnvironments/test-environment
+          external=true; fqdn=bmo-deepagent-ui-testseed.env.example.test; target_port=3000; mode=Single
+          identity=SystemAssigned; principal_id=system-principal-id; count=1; container_name=deepagent-ui
           case "$scenario" in
             ui-internal-ingress) external=false ;;
             ui-missing-fqdn) fqdn=null ;;
+            ui-fqdn-drift) fqdn=other-ui.env.example.test ;;
+            ui-environment-drift) environment_id=/subscriptions/other/resourceGroups/test-resource-group/providers/Microsoft.App/managedEnvironments/test-environment ;;
             wrong-target-port) target_port=8080 ;;
             multiple-revision-mode) mode=Multiple ;;
             missing-system-identity) identity=UserAssigned ;;
+            missing-system-principal) principal_id=null ;;
             zero-containers) count=0; container_name= ;;
             multiple-containers) count=2 ;;
           esac
-          printf '%s|%s|%s|%s|%s|%s|%s\n' "$external" "$fqdn" "$target_port" "$mode" "$identity" "$count" "$container_name"
+          printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$environment_id" "$external" "$fqdn" "$target_port" "$mode" "$identity" "$principal_id" "$count" "$container_name"
           ;;
         properties.latestReadyRevisionName)
-          [ "$scenario" = "empty-previous-revision" ] || printf 'ui--previous\n'
-          ;;
-        properties.latestRevisionName)
-          [ "$scenario" = "unchanged-revision" ] && printf 'ui--previous\n' || printf 'ui--new\n'
+          case "$scenario" in
+            empty-previous-revision) ;;
+            unchanged-revision) printf 'bmo-deepagent-ui-testseed--ui-20260812t101112-%s\n' "$PPID" ;;
+            *) printf 'ui--previous\n' ;;
+          esac
           ;;
         *) argv_error ;;
       esac
     elif [ "$name" = "deep-research-agent-testseed" ]; then
-      [ "$query" = "join('|', [to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn)])" ] || argv_error
+      [ "$query" = "join('|', [to_string(properties.managedEnvironmentId), to_string(properties.configuration.ingress.external), to_string(properties.configuration.ingress.fqdn)])" ] || argv_error
       [ "$scenario" = "backend-missing" ] && exit 6
-      external=true; fqdn=backend.example.test
+      environment_id=/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.App/managedEnvironments/test-environment
+      external=true; fqdn=deep-research-agent-testseed.env.example.test
       [ "$scenario" = "backend-internal-ingress" ] && external=false
       [ "$scenario" = "backend-missing-fqdn" ] && fqdn=null
       [ "$scenario" = "backend-drift" ] && fqdn=changed-backend.example.test
-      printf '%s|%s\n' "$external" "$fqdn"
+      [ "$scenario" = "backend-environment-drift" ] && environment_id=/subscriptions/other/resourceGroups/test-resource-group/providers/Microsoft.App/managedEnvironments/test-environment
+      printf '%s|%s|%s\n' "$environment_id" "$external" "$fqdn"
     else
       argv_error
     fi
@@ -139,11 +166,12 @@ case "$command" in
         esac
         ;;
       set)
-        [ "$#" -eq 11 ] && [ "$4" = "--name" ] && [ "$5" = "bmo-deepagent-ui-testseed" ] &&
+        [ "$#" -eq 12 ] && [ "$4" = "--name" ] && [ "$5" = "bmo-deepagent-ui-testseed" ] &&
           [ "$6" = "--resource-group" ] && [ "$7" = "test-resource-group" ] &&
           [ "$8" = "--secrets" ] &&
           [ "$9" = "upload-api-key=keyvaultref:https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY,identityref:system" ] &&
-          [ "\${10}" = "-o" ] && [ "\${11}" = "none" ] || argv_error
+          [ "\${10}" = "passkey-proxy-secret=keyvaultref:https://testvault.vault.azure.net/secrets/PASSKEY-PROXY-SECRET,identityref:system" ] &&
+          [ "\${11}" = "-o" ] && [ "\${12}" = "none" ] || argv_error
         [ "$scenario" = "secret-set-failure" ] && exit 43
         :
         ;;
@@ -168,48 +196,56 @@ case "$command" in
     esac
     ;;
   containerapp:update)
-    [ "$#" -eq 24 ] && [ "$3" = "--name" ] && [ "$4" = "bmo-deepagent-ui-testseed" ] &&
+    [ "$#" -eq 28 ] && [ "$3" = "--name" ] && [ "$4" = "bmo-deepagent-ui-testseed" ] &&
       [ "$5" = "--resource-group" ] && [ "$6" = "test-resource-group" ] &&
       [ "$7" = "--container-name" ] && [ "$8" = "deepagent-ui" ] &&
       [ "$9" = "--image" ] && [ "\${10}" = "docker.io/jerryshao2013/deepagent-ui:latest" ] &&
       [ "\${11}" = "--revision-suffix" ] && [ "\${13}" = "--set-env-vars" ] &&
       [ "\${14}" = "NEXT_TELEMETRY_DISABLED=1" ] &&
-      [ "\${15}" = "NEXT_PUBLIC_LANGGRAPH_URL=https://backend.example.test" ] &&
-      [ "\${16}" = "BACKEND_API_URL=https://backend.example.test" ] &&
+      [ "\${15}" = "NEXT_PUBLIC_LANGGRAPH_URL=https://deep-research-agent-testseed.env.example.test" ] &&
+      [ "\${16}" = "BACKEND_API_URL=https://deep-research-agent-testseed.env.example.test" ] &&
       [ "\${17}" = "NEXT_PUBLIC_ASSISTANT_ID=docker-assistant" ] &&
-      [ "\${18}" = "AUTH_URL=https://ui.example.test" ] &&
-      [ "\${19}" = "NEXTAUTH_URL=https://ui.example.test" ] &&
+      [ "\${18}" = "AUTH_URL=https://bmo-deepagent-ui-testseed.env.example.test" ] &&
+      [ "\${19}" = "NEXTAUTH_URL=https://bmo-deepagent-ui-testseed.env.example.test" ] &&
       [ "\${20}" = "AUTH_TRUST_HOST=true" ] && [ "\${21}" = "NODE_ENV=production" ] &&
       [ "\${22}" = "UPLOAD_API_KEY=secretref:upload-api-key" ] &&
-      [ "\${23}" = "-o" ] && [ "\${24}" = "none" ] || argv_error
+      [ "\${23}" = "PASSKEY_ENABLED=true" ] &&
+      [ "\${24}" = "PASSKEY_ORIGIN=https://bmo-deepagent-ui-testseed.env.example.test" ] &&
+      [ "\${25}" = "PASSKEY_PROXY_ID=web-bff" ] &&
+      [ "\${26}" = "PASSKEY_PROXY_SECRET=secretref:passkey-proxy-secret" ] &&
+      [ "\${27}" = "-o" ] && [ "\${28}" = "none" ] || argv_error
     case "\${12}" in ui-[0-9]*t[0-9]*-[0-9]*) ;; *) argv_error ;; esac
+    printf 'bmo-deepagent-ui-testseed--%s\n' "\${12}" > "$EXPECTED_REVISION_NAME"
     [ "$scenario" = "update-failure" ] && exit 44
     :
     ;;
   containerapp:revision)
     [ "$#" -eq 13 ] && [ "$3" = "show" ] &&
       [ "$4" = "--name" ] && [ "$5" = "bmo-deepagent-ui-testseed" ] &&
-      [ "$6" = "--revision" ] && [ "$7" = "ui--new" ] &&
+      [ "$6" = "--revision" ] && IFS= read -r expected_revision < "$EXPECTED_REVISION_NAME" && [ "$7" = "$expected_revision" ] &&
       [ "$8" = "--resource-group" ] && [ "$9" = "test-resource-group" ] &&
       [ "\${10}" = "--query" ] &&
-      [ "\${11}" = "join('|', [properties.provisioningState, properties.runningState])" ] &&
+      [ "\${11}" = "join('|', [properties.provisioningState, properties.runningState, properties.healthState])" ] &&
       [ "\${12}" = "-o" ] && [ "\${13}" = "tsv" ] || argv_error
     count=0; [ ! -f "$REVISION_COUNT" ] || IFS= read -r count < "$REVISION_COUNT"
     count=$((count + 1)); printf '%s\n' "$count" > "$REVISION_COUNT"
     case "$scenario" in
-      revision-failed) printf 'Failed|Degraded\n' ;;
-      revision-timeout) printf 'Provisioning|Processing\n' ;;
-      revision-sequence) [ "$count" -eq 1 ] && printf 'Provisioning|Processing\n' || printf 'Provisioned|Running\n' ;;
-      *) printf 'Provisioned|Running\n' ;;
+      revision-failed) printf 'Failed|Degraded|Unhealthy\n' ;;
+      revision-timeout) printf 'Provisioning|Processing|Unknown\n' ;;
+      revision-unhealthy) printf 'Provisioned|Running|Unhealthy\n' ;;
+      revision-sequence) [ "$count" -eq 1 ] && printf 'Provisioning|Processing|Unknown\n' || printf 'Provisioned|Running|Healthy\n' ;;
+      *) printf 'Provisioned|Running|Healthy\n' ;;
     esac
     ;;
   keyvault:show)
     [ "$#" -eq 10 ] && [ "$3" = "--name" ] && [ "$4" = "testvault" ] &&
       [ "$5" = "--resource-group" ] && [ "$6" = "test-resource-group" ] &&
-      [ "$7" = "--query" ] && [ "$8" = "properties.vaultUri" ] &&
+      [ "$7" = "--query" ] && [ "$8" = "join('|', [properties.vaultUri, id, to_string(properties.enableRbacAuthorization), to_string(length(properties.accessPolicies[?objectId=='system-principal-id' && (contains(permissions.secrets, 'get') || contains(permissions.secrets, 'all'))]))])" ] &&
       [ "$9" = "-o" ] && [ "\${10}" = "tsv" ] || argv_error
     [ "$scenario" = "vault-missing" ] && exit 7
-    [ "$scenario" = "empty-vault-uri" ] || printf 'https://testvault.vault.azure.net/\n'
+    rbac=true; policy_count=0
+    [ "$scenario" = "access-policy-secret-get" ] && rbac=false && policy_count=1
+    [ "$scenario" = "empty-vault-uri" ] || printf 'https://testvault.vault.azure.net/|/subscriptions/test/resourceGroups/test-resource-group/providers/Microsoft.KeyVault/vaults/testvault|%s|%s\n' "$rbac" "$policy_count"
     ;;
   keyvault:secret)
     [ "$#" -eq 11 ] && [ "$3" = "show" ] &&
@@ -218,11 +254,35 @@ case "$command" in
       [ "\${10}" = "-o" ] && [ "\${11}" = "tsv" ] || argv_error
     case "$7:$scenario" in
       DOCKER-HUB-PAT:docker-pat-show-cli-failure) exit 48 ;;
-      UPLOAD-API-KEY:upload-secret-missing|DOCKER-HUB-PAT:docker-pat-missing) exit 8 ;;
-      UPLOAD-API-KEY:empty-upload-secret-id|DOCKER-HUB-PAT:empty-docker-pat-id) ;;
+      UPLOAD-API-KEY:upload-secret-missing|DOCKER-HUB-PAT:docker-pat-missing|PASSKEY-PROXY-SECRET:passkey-secret-missing) exit 8 ;;
+      UPLOAD-API-KEY:empty-upload-secret-id|DOCKER-HUB-PAT:empty-docker-pat-id|PASSKEY-PROXY-SECRET:empty-passkey-secret-id) ;;
       UPLOAD-API-KEY:*) printf 'https://testvault.vault.azure.net/secrets/UPLOAD-API-KEY/version\n' ;;
       DOCKER-HUB-PAT:*) printf 'https://testvault.vault.azure.net/secrets/DOCKER-HUB-PAT/version\n' ;;
+      PASSKEY-PROXY-SECRET:*) printf 'https://testvault.vault.azure.net/secrets/PASSKEY-PROXY-SECRET/version\n' ;;
       *) argv_error ;;
+    esac
+    ;;
+  role:assignment)
+    [ "$#" -eq 12 ] && [ "$3" = "list" ] &&
+      [ "$4" = "--assignee-object-id" ] && [ "$5" = "system-principal-id" ] &&
+      [ "$6" = "--scope" ] && [ "$7" = "/subscriptions/test/resourceGroups/test-resource-group/providers/Microsoft.KeyVault/vaults/testvault" ] &&
+      [ "$8" = "--include-inherited" ] && [ "$9" = "--query" ] &&
+      [ "\${10}" = "[].roleDefinitionId" ] &&
+      [ "\${11}" = "-o" ] && [ "\${12}" = "tsv" ] || argv_error
+    [ "$scenario" = "missing-keyvault-access" ] || printf '/subscriptions/test/providers/Microsoft.Authorization/roleDefinitions/custom-secret-reader\n'
+    ;;
+  role:definition)
+    [ "$#" -eq 7 ] && [ "$3" = "list" ] &&
+      [ "$4" = "--name" ] && [ "$5" = "/subscriptions/test/providers/Microsoft.Authorization/roleDefinitions/custom-secret-reader" ] &&
+      [ "$6" = "-o" ] && [ "$7" = "json" ] || argv_error
+    case "$scenario" in
+      role-owner-actions-only) printf '[{"permissions":[{"actions":["*"],"notActions":[],"dataActions":[],"notDataActions":[]}]}]\n' ;;
+      role-contributor) printf '[{"permissions":[{"actions":["Microsoft.KeyVault/vaults/*"],"notActions":[],"dataActions":[],"notDataActions":[]}]}]\n' ;;
+      role-data-action-excluded) printf '[{"permissions":[{"actions":[],"notActions":[],"dataActions":["Microsoft.KeyVault/vaults/secrets/*"],"notDataActions":["Microsoft.KeyVault/vaults/secrets/read"]}]}]\n' ;;
+      role-data-actions-wildcard) printf '[{"permissions":[{"actions":[],"notActions":[],"dataActions":["*"],"notDataActions":[]}]}]\n' ;;
+      role-malformed) printf '[{"permissions":"unknown"}]\n' ;;
+      role-secrets-user) printf '[{"permissions":[{"actions":[],"notActions":[],"dataActions":["Microsoft.KeyVault/vaults/secrets/readMetadata/action","Microsoft.KeyVault/vaults/secrets/read"],"notDataActions":[]}]}]\n' ;;
+      *) printf '[{"permissions":[{"actions":[],"notActions":[],"dataActions":["Microsoft.KeyVault/vaults/secrets/read"],"notDataActions":[]}]}]\n' ;;
     esac
     ;;
   *) argv_error ;;
@@ -243,7 +303,7 @@ done
   [ "$3" = "--connect-timeout" ] && [ "$4" = "10" ] &&
   [ "$5" = "--max-time" ] && [ "$6" = "30" ] && [ "$7" = "--output" ] &&
   [ "$9" = "--write-out" ] && [ "\${10}" = "%{http_code}" ] &&
-  [ "\${11}" = "https://ui.example.test/deployment-version.txt" ] || exit 86
+  [ "\${11}" = "https://bmo-deepagent-ui-testseed.env.example.test/deployment-version.txt" ] || exit 86
 count=0; [ ! -f "$CURL_COUNT" ] || IFS= read -r count < "$CURL_COUNT"
 count=$((count + 1)); printf '%s\n' "$count" > "$CURL_COUNT"
 [ "$HTTP_SCENARIO" = "curl-failure" ] && exit 47
@@ -269,6 +329,9 @@ const runDeployment = async ({
   inheritedEnv = {},
   uiEnvExtra = "",
   xtrace = false,
+  endpointResolverOutput = deploymentResolverOutput,
+  endpointResolverStatus = 0,
+  oauthRedirectsConfirmed = true,
 } = {}) => {
   const tempRoot = await mkdtemp(
     path.join(tmpdir(), "container-app-deploy-test-")
@@ -280,6 +343,8 @@ const runDeployment = async ({
   const scriptsDir = path.join(fixtureRoot, "scripts");
   const commandLog = path.join(fixtureRoot, "commands.log");
   const revisionCount = path.join(fixtureRoot, "revision-count");
+  const expectedRevisionName = path.join(fixtureRoot, "expected-revision-name");
+  const resolverCallCount = path.join(fixtureRoot, "resolver-call-count");
   const curlCount = path.join(fixtureRoot, "curl-count");
   const controlSentinel = path.join(
     fixtureRoot,
@@ -307,7 +372,44 @@ const runDeployment = async ({
         path.join(repoRoot, "scripts/azure-subscription.sh"),
         path.join(scriptsDir, "azure-subscription.sh")
       ),
+      copyFile(
+        path.join(repoRoot, "scripts/sanitize-passkey-dotenv.mjs"),
+        path.join(scriptsDir, "sanitize-passkey-dotenv.mjs")
+      ),
+      copyFile(
+        rbacEvaluatorPath,
+        path.join(scriptsDir, "evaluate-keyvault-rbac.mjs")
+      ),
     ]);
+    await writeFile(
+      path.join(scriptsDir, "resolve-azure-endpoints.sh"),
+      `#!/bin/bash
+printf 'resolver' >> "$COMMAND_LOG"
+for argument in "$@"; do printf ' <%s>' "$argument" >> "$COMMAND_LOG"; done
+printf '\n' >> "$COMMAND_LOG"
+count=0
+[ ! -f "$RESOLVER_CALL_COUNT" ] || IFS= read -r count < "$RESOLVER_CALL_COUNT"
+count=$((count + 1)); printf '%s\n' "$count" > "$RESOLVER_CALL_COUNT"
+output="$ENDPOINT_RESOLVER_OUTPUT"
+if [ -n "\${RESOLVER_DRIFT_AFTER_CALL:-}" ] && [ "$count" -ge "$RESOLVER_DRIFT_AFTER_CALL" ]; then
+  output="\${output//env.example.test/drift.example.test}"
+fi
+changed=false
+case "$output" in *"CHANGED='true'"*) changed=true ;; esac
+if [ "$changed" = true ]; then
+  printf '%s\n' 'ACTION REQUIRED: update and verify Google/GitHub OAuth provider settings before deployment.' >&2
+else
+  printf '%s\n' 'OAuth provider reminder: verify the following URLs remain configured.' >&2
+fi
+printf '%s\n' \
+  'Google authorized redirect URI: https://deep-research-agent-testseed.env.example.test/auth/callback/google' \
+  'GitHub authorization callback URL: https://deep-research-agent-testseed.env.example.test/auth/callback/github' \
+  'GitHub homepage / frontend origin: https://bmo-deepagent-ui-testseed.env.example.test' >&2
+printf '%s\n' "$output"
+exit "$ENDPOINT_RESOLVER_STATUS"
+`
+    );
+    await chmod(path.join(scriptsDir, "resolve-azure-endpoints.sh"), 0o755);
     await writeFile(
       path.join(backendRoot, "env.sh"),
       'export DEEP_RESEARCH_AGENT_URL="https://env-backend.invalid"\n'
@@ -318,7 +420,10 @@ const runDeployment = async ({
 export SEED="testseed"
 export RESOURCE_GROUP="test-resource-group"
 export KV_NAME="testvault"
+export ENV_NAME="test-environment"
 export CONTAINER_APP_NAME="bmo-deepagent-ui-testseed"
+export BACKEND_APP_NAME="deep-research-agent-testseed"
+export UI_APP_NAME="bmo-deepagent-ui-testseed"
 export NEXT_PUBLIC_ASSISTANT_ID="env-assistant"
 ${uiEnvExtra}
 `
@@ -372,9 +477,13 @@ exec ${process.execPath} "$@"
       COMMAND_LOG: commandLog,
       AZ_SCENARIO: scenario,
       REVISION_COUNT: revisionCount,
+      EXPECTED_REVISION_NAME: expectedRevisionName,
+      RESOLVER_CALL_COUNT: resolverCallCount,
       CURL_COUNT: curlCount,
       HTTP_SCENARIO: httpScenario,
       EXPECTED_MARKER: deploymentMarker,
+      ENDPOINT_RESOLVER_OUTPUT: endpointResolverOutput,
+      ENDPOINT_RESOLVER_STATUS: String(endpointResolverStatus),
       CONTAINER_APP_REVISION_POLL_ATTEMPTS: revisionPollAttempts,
       CONTAINER_APP_HTTP_POLL_ATTEMPTS: httpPollAttempts,
       CONTAINER_APP_POLL_INTERVAL_SECONDS: pollIntervalSeconds,
@@ -385,6 +494,7 @@ exec ${process.execPath} "$@"
         ])
       ),
     };
+    if (oauthRedirectsConfirmed) env.OAUTH_REDIRECTS_CONFIRMED = "true";
     const result = spawnSync(
       "/bin/bash",
       [
@@ -421,9 +531,293 @@ const assertNoAppMutation = (log) => {
   assert.doesNotMatch(log, /az <containerapp> <create>/);
 };
 
+const assertNoPermissionMutation = (log) => {
+  assert.doesNotMatch(log, /az <role> <assignment> <(?:create|delete)>/);
+  assert.doesNotMatch(log, /az <keyvault> <(?:set-policy|delete-policy)>/);
+  assert.doesNotMatch(log, /az <containerapp> <identity> <(?:assign|remove)>/);
+};
+
+for (const [name, permissions, expected] of [
+  [
+    "Key Vault Secrets User",
+    [
+      {
+        actions: [],
+        notActions: [],
+        dataActions: [
+          "Microsoft.KeyVault/vaults/secrets/readMetadata/action",
+          "Microsoft.KeyVault/vaults/secrets/read",
+        ],
+        notDataActions: [],
+      },
+    ],
+    true,
+  ],
+  [
+    "custom exact data action",
+    [
+      {
+        actions: [],
+        notActions: [],
+        dataActions: ["Microsoft.KeyVault/vaults/secrets/read"],
+        notDataActions: [],
+      },
+    ],
+    true,
+  ],
+  [
+    "custom exact get data action",
+    [
+      {
+        actions: [],
+        notActions: [],
+        dataActions: ["Microsoft.KeyVault/vaults/secrets/get"],
+        notDataActions: [],
+      },
+    ],
+    true,
+  ],
+  [
+    "data action wildcard",
+    [
+      {
+        actions: [],
+        notActions: [],
+        dataActions: ["*"],
+        notDataActions: [],
+      },
+    ],
+    true,
+  ],
+  [
+    "Owner management actions",
+    [
+      {
+        actions: ["*"],
+        notActions: [],
+        dataActions: [],
+        notDataActions: [],
+      },
+    ],
+    false,
+  ],
+  [
+    "Contributor management actions",
+    [
+      {
+        actions: ["Microsoft.KeyVault/vaults/*"],
+        notActions: [],
+        dataActions: [],
+        notDataActions: [],
+      },
+    ],
+    false,
+  ],
+  [
+    "excluded broad data action",
+    [
+      {
+        actions: [],
+        notActions: [],
+        dataActions: ["Microsoft.KeyVault/vaults/secrets/*"],
+        notDataActions: ["Microsoft.KeyVault/vaults/secrets/read"],
+      },
+    ],
+    false,
+  ],
+]) {
+  test(`RBAC evaluator treats ${name} as secret-read=${expected}`, () => {
+    const result = spawnSync(process.execPath, [rbacEvaluatorPath], {
+      input: JSON.stringify([{ permissions }]),
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    assert.equal(result.stdout, `${expected}\n`);
+  });
+}
+
+test("RBAC evaluator fails closed for malformed role definitions", () => {
+  const result = spawnSync(process.execPath, [rbacEvaluatorPath], {
+    input: JSON.stringify([{ permissions: "unknown" }]),
+    encoding: "utf8",
+  });
+  assert.notEqual(result.status, 0);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /invalid role definition response/i);
+});
+
 test("Azure Container Apps deployment entry point is executable", async () => {
   await access(scriptPath, constants.X_OK);
 });
+
+test("changed endpoints print exact OAuth values and block mutation without process-local confirmation", async () => {
+  const { result, log } = await runDeployment({
+    oauthRedirectsConfirmed: false,
+  });
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(
+    result.stderr,
+    /ACTION REQUIRED: update and verify Google\/GitHub OAuth provider settings before deployment\./
+  );
+  assert.match(
+    result.stderr,
+    /Google authorized redirect URI: https:\/\/deep-research-agent-testseed\.env\.example\.test\/auth\/callback\/google/
+  );
+  assert.match(
+    result.stderr,
+    /GitHub authorization callback URL: https:\/\/deep-research-agent-testseed\.env\.example\.test\/auth\/callback\/github/
+  );
+  assert.match(
+    result.stderr,
+    /GitHub homepage \/ frontend origin: https:\/\/bmo-deepagent-ui-testseed\.env\.example\.test/
+  );
+  assert.match(result.stderr, /OAUTH_REDIRECTS_CONFIRMED=true/);
+  assertNoAppMutation(log);
+});
+
+test("unchanged endpoint reminder is nonblocking without OAuth confirmation", async () => {
+  const { result, log } = await runDeployment({
+    oauthRedirectsConfirmed: false,
+    endpointResolverOutput: deploymentResolverOutput.replace(
+      "CHANGED='true'",
+      "CHANGED='false'"
+    ),
+  });
+  assert.equal(result.status, 0, `${result.stderr}\n${log}`);
+  assert.match(
+    result.stderr,
+    /OAuth provider reminder: verify the following URLs remain configured\./
+  );
+});
+
+test("deployment strictly decodes resolver output and preserves resolver status", async () => {
+  for (const output of [
+    `${deploymentResolverOutput}\nUNKNOWN='value'`,
+    deploymentResolverOutput.replace(
+      "BACKEND_URL=",
+      "BACKEND_URL='duplicate'\nBACKEND_URL="
+    ),
+    deploymentResolverOutput.replace("CHANGED='true'", "CHANGED=true"),
+  ]) {
+    const { result, log } = await runDeployment({
+      endpointResolverOutput: output,
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /resolver.*(?:invalid|unknown|duplicate)/i);
+    assert.doesNotMatch(log, /^az\b/m);
+    assertNoAppMutation(log);
+  }
+  const failed = await runDeployment({ endpointResolverStatus: 73 });
+  assert.equal(failed.result.status, 73, failed.result.stderr);
+  assert.doesNotMatch(failed.log, /^az\b/m);
+});
+
+test("manifest backend must match resolver before Azure or app mutation", async () => {
+  const output = deploymentResolverOutput.replaceAll(
+    resolvedBackendUrl,
+    "https://changed-backend.example.test"
+  );
+  const { result, log } = await runDeployment({
+    endpointResolverOutput: output,
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /manifest backend URL drift/i);
+  assert.doesNotMatch(log, /^az\b/m);
+  assertNoAppMutation(log);
+});
+
+test("deployment configures managed passkey secret and runtime then records endpoints after exact health success", async () => {
+  const { result, log } = await runDeployment();
+  assert.equal(result.status, 0, `${result.stderr}\n${log}`);
+  const firstResolve = log.indexOf("resolver\n");
+  const secretSet = log.indexOf("az <containerapp> <secret> <set>");
+  const update = log.indexOf("az <containerapp> <update>");
+  const ready = log.indexOf("az <containerapp> <revision> <show>");
+  const health = log.indexOf("curl <");
+  const finalCompare = log.lastIndexOf("resolver\n");
+  const record = log.lastIndexOf("resolver <--record-if-current> <");
+  assert.ok(
+    firstResolve >= 0 &&
+      firstResolve < secretSet &&
+      secretSet < update &&
+      update < ready &&
+      ready < health &&
+      health < finalCompare &&
+      finalCompare < record &&
+      health < record,
+    log
+  );
+  assert.match(
+    log,
+    /<passkey-proxy-secret=keyvaultref:https:\/\/testvault\.vault\.azure\.net\/secrets\/PASSKEY-PROXY-SECRET,identityref:system>/
+  );
+  const updateLine = log.match(/^az <containerapp> <update>.*$/m)?.[0] ?? "";
+  for (const value of [
+    "PASSKEY_ENABLED=true",
+    "PASSKEY_ORIGIN=https://bmo-deepagent-ui-testseed.env.example.test",
+    "PASSKEY_PROXY_ID=web-bff",
+    "PASSKEY_PROXY_SECRET=secretref:passkey-proxy-secret",
+    "AUTH_URL=https://bmo-deepagent-ui-testseed.env.example.test",
+    "NEXTAUTH_URL=https://bmo-deepagent-ui-testseed.env.example.test",
+    "NEXT_PUBLIC_LANGGRAPH_URL=https://deep-research-agent-testseed.env.example.test",
+    "BACKEND_API_URL=https://deep-research-agent-testseed.env.example.test",
+  ]) {
+    assert.match(updateLine, new RegExp(`<${value.replaceAll("/", "\\/")}>`));
+  }
+});
+
+test("deployment rejects endpoint drift after health without recording metadata", async () => {
+  const { result, log } = await runDeployment({
+    endpointResolverOutput: deploymentResolverOutput,
+    inheritedEnv: { RESOLVER_DRIFT_AFTER_CALL: "2" },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /endpoint resolver changed during deployment/i);
+  assert.doesNotMatch(log, /resolver <--record-if-current>/);
+});
+
+for (const [scenario, error] of [
+  ["missing-system-principal", /system-assigned.*principal/i],
+  ["missing-keyvault-access", /Key Vault secret read access/i],
+  ["role-owner-actions-only", /Key Vault secret read access/i],
+  ["role-contributor", /Key Vault secret read access/i],
+  ["role-data-action-excluded", /Key Vault secret read access/i],
+  ["role-malformed", /role definition response/i],
+  ["passkey-secret-missing", /PASSKEY-PROXY-SECRET/i],
+  ["empty-passkey-secret-id", /PASSKEY-PROXY-SECRET.*ID/i],
+]) {
+  test(`passkey preflight rejects ${scenario} before app mutation`, async () => {
+    const { result, log } = await runDeployment({ scenario });
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, error);
+    assertNoAppMutation(log);
+    assertNoPermissionMutation(log);
+  });
+}
+
+for (const scenario of ["role-secrets-user", "role-data-actions-wildcard"]) {
+  test(`RBAC preflight accepts ${scenario}`, async () => {
+    const { result, log } = await runDeployment({ scenario });
+    assert.equal(result.status, 0, `${result.stderr}\n${log}`);
+  });
+}
+
+test("existing Key Vault access policy with secret get is accepted without role lookup", async () => {
+  const { result, log } = await runDeployment({
+    scenario: "access-policy-secret-get",
+  });
+  assert.equal(result.status, 0, `${result.stderr}\n${log}`);
+  assert.doesNotMatch(log, /^az <role>/m);
+});
+
+for (const httpScenario of ["marker-timeout", "curl-failure"]) {
+  test(`endpoint metadata is not recorded after ${httpScenario}`, async () => {
+    const { result, log } = await runDeployment({ httpScenario });
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(log, /resolver <--record>/);
+  });
+}
 
 for (const [name, options, error] of [
   ["missing manifest", { manifest: false }, /manifest.*required/i],
@@ -457,18 +851,13 @@ for (const [name, options, error] of [
   });
 }
 
-test("deployment rejects backend drift before app mutation", async () => {
-  const { result, log } = await runDeployment({ scenario: "backend-drift" });
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /backend.*drift/i);
-  assertNoAppMutation(log);
-});
-
 const preflightFailures = [
   ["resource-group-missing", /resource group/i],
   ["ui-app-missing", /UI Container App/i],
   ["ui-internal-ingress", /external ingress/i],
   ["ui-missing-fqdn", /public FQDN/i],
+  ["ui-fqdn-drift", /UI.*FQDN.*resolved/i],
+  ["ui-environment-drift", /UI.*managed environment/i],
   ["wrong-target-port", /target port.*3000/i],
   ["multiple-revision-mode", /single-revision/i],
   ["missing-system-identity", /system-assigned identity/i],
@@ -477,6 +866,8 @@ const preflightFailures = [
   ["backend-missing", /backend Container App/i],
   ["backend-internal-ingress", /backend.*external ingress/i],
   ["backend-missing-fqdn", /backend.*public FQDN/i],
+  ["backend-drift", /backend.*FQDN.*resolved/i],
+  ["backend-environment-drift", /backend.*managed environment/i],
   ["vault-missing", /Key Vault/i],
   ["empty-vault-uri", /vault URI/i],
   ["upload-secret-missing", /UPLOAD-API-KEY/i],
@@ -627,7 +1018,7 @@ test("deployment validates prerequisites then performs narrow secret and image u
   assert.match(updateLine, /<--revision-suffix> <ui-20260812t101112-[0-9]+>/);
   assert.match(
     updateLine,
-    /<NEXT_PUBLIC_LANGGRAPH_URL=https:\/\/backend\.example\.test>/
+    /<NEXT_PUBLIC_LANGGRAPH_URL=https:\/\/deep-research-agent-testseed\.env\.example\.test>/
   );
   assert.match(updateLine, /<NEXT_PUBLIC_ASSISTANT_ID=docker-assistant>/);
   assert.doesNotMatch(
@@ -636,7 +1027,7 @@ test("deployment validates prerequisites then performs narrow secret and image u
   );
   assert.match(
     log,
-    /^curl .*<https:\/\/ui\.example\.test\/deployment-version\.txt>$/m
+    /^curl .*<https:\/\/bmo-deepagent-ui-testseed\.env\.example\.test\/deployment-version\.txt>$/m
   );
   assert.match(result.stdout, /deployment complete/i);
 });
@@ -669,6 +1060,7 @@ for (const [scenario, error] of [
   ["unchanged-revision", /new revision.*different/i],
   ["revision-failed", /Failed.*Degraded/i],
   ["revision-timeout", /timed out.*revision/i],
+  ["revision-unhealthy", /Unhealthy/i],
 ]) {
   test(`deployment rejects ${scenario}`, async () => {
     const { result, log } = await runDeployment({ scenario });
@@ -794,7 +1186,7 @@ const resolverExpectedStdout = [
   "CHANGED='true'",
 ].join("\n");
 const resolverGoldenSha256 =
-  "ecc920b9938fab7d0af9bfa15ca0df3f4c441897e1e7971d76d1be37ca2d4e2c";
+  "d6785f7791fd81149b1bed20260b082d8f32ab4725bdb76d9d7ad36d4d2ee3a0";
 
 const resolverExpectedMetadata = {
   azure_environment_id: resolverEnvironmentId,
@@ -975,6 +1367,48 @@ test("endpoint resolver records atomically then compares without writes", async 
       (await readFile(fixture.azLog, "utf8")).trim().split("\n"),
       [resolverExpectedAzCall.join(" "), resolverExpectedAzCall.join(" ")]
     );
+    assert.deepEqual(
+      (await readdir(fixture.root)).filter((name) =>
+        name.startsWith(`${resolverMetadataName}.tmp.`)
+      ),
+      []
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("endpoint resolver guarded record writes only when current assignments exactly match", async () => {
+  const fixture = await createResolverFixture();
+  try {
+    const metadataPath = path.join(fixture.root, resolverMetadataName);
+    const expectedPath = path.join(fixture.root, "expected-assignments");
+    await writeFile(expectedPath, `${resolverExpectedStdout}\n`);
+
+    const recorded = runResolver(resolverPath, fixture, {
+      args: ["--record-if-current", expectedPath],
+    });
+    assert.equal(recorded.status, 0, recorded.stderr);
+    assert.deepEqual(
+      JSON.parse(await readFile(metadataPath, "utf8")),
+      resolverExpectedMetadata
+    );
+
+    const prior = Buffer.from(await readFile(metadataPath));
+    await writeFile(
+      expectedPath,
+      `${resolverExpectedStdout.replace(
+        resolverDomain,
+        "drift.example.test"
+      )}\n`
+    );
+    const rejected = runResolver(resolverPath, fixture, {
+      args: ["--record-if-current", expectedPath],
+    });
+    assert.equal(rejected.status, 2);
+    assert.match(rejected.stderr, /current endpoints.*expected/i);
+    assert.equal(rejected.stdout, "");
+    assert.deepEqual(await readFile(metadataPath), prior);
     assert.deepEqual(
       (await readdir(fixture.root)).filter((name) =>
         name.startsWith(`${resolverMetadataName}.tmp.`)

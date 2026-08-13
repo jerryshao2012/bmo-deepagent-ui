@@ -140,6 +140,32 @@ test("empty passkey list neither creates nor clears the sticky marker", async ()
   assert.equal(window.localStorage.getItem(PASSKEY_ENROLLMENT_MARKER_KEY), "1");
 });
 
+test("binds browser fetch to the global receiver", async () => {
+  const calls: string[] = [];
+  const browserFetch = function (
+    this: unknown,
+    input: RequestInfo | URL
+  ): Promise<Response> {
+    if (this !== globalThis) throw new TypeError("Illegal invocation");
+    calls.push(String(input));
+    return Promise.resolve(json({ passkeys: [] }));
+  } as typeof fetch;
+
+  render(
+    <PasskeyManagementDialog
+      open
+      onOpenChange={() => {}}
+      provider="google"
+      oauthBackendUrl="https://backend.example.com"
+      fetchImpl={browserFetch}
+    />
+  );
+
+  assert.ok(await screen.findByText("No passkeys enrolled yet."));
+  assert.deepEqual(calls, ["/api/auth/passkeys"]);
+  assert.equal(screen.queryByRole("alert"), null);
+});
+
 test("blocked marker storage does not break a successful list", async () => {
   const storagePrototype = Object.getPrototypeOf(
     window.localStorage

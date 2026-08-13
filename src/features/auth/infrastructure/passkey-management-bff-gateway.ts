@@ -67,10 +67,12 @@ async function responseJson(response: Response): Promise<unknown> {
   }
 }
 
-export class PasskeyManagementBffGateway
-  implements PasskeyManagementGateway
-{
-  constructor(private readonly fetchImpl: typeof fetch) {}
+export class PasskeyManagementBffGateway implements PasskeyManagementGateway {
+  private readonly fetchImpl: typeof fetch;
+
+  constructor(fetchImpl: typeof fetch) {
+    this.fetchImpl = fetchImpl.bind(globalThis);
+  }
 
   private async request(url: string, init?: RequestInit): Promise<unknown> {
     const response = await this.fetchImpl(url, {

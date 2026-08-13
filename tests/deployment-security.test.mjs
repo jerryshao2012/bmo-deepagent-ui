@@ -688,7 +688,7 @@ test("Container Apps deployment keeps secret values and configuration immutable"
   assert.doesNotMatch(deployScript, /show-values|listSecrets|list-secrets/i);
   assert.match(deployScript, /az rest --method patch/);
   assert.match(deployScript, /api-version=2025-07-01/);
-  assert.match(deployScript, /application\/merge-patch\+json/);
+  assert.match(deployScript, /Content-Type=application\/json/);
   assert.doesNotMatch(templatePatch, /configuration|secrets|registries/);
 });
 

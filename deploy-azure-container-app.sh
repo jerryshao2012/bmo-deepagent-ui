@@ -573,7 +573,7 @@ fi
 unset GUARDED_READY_REVISION
 if az rest --method patch \
   --uri "${APP_RESOURCE_ID}?api-version=2025-07-01" \
-  --headers Content-Type=application/merge-patch+json \
+  --headers Content-Type=application/json \
   --body "@$UPDATE_PATCH_JSON" \
   --output none >/dev/null 2>/dev/null; then :; else
   status=$?; echo "Error: Container App template update failed." >&2; exit "$status"

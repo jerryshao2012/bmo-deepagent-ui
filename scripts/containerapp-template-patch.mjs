@@ -128,6 +128,15 @@ if (mode === "capture") {
     process.exit(2);
   }
   const template = structuredClone(baseline.template);
+  delete template.customMetricsSettings;
+  for (const field of ["containers", "initContainers"]) {
+    if (template[field] === undefined || template[field] === null) continue;
+    if (!Array.isArray(template[field])) process.exit(2);
+    for (const item of template[field]) {
+      if (!isObject(item)) process.exit(2);
+      delete item.imageType;
+    }
+  }
   const containers = template.containers.filter(
     (container) => isObject(container) && container.name === targetContainer
   );

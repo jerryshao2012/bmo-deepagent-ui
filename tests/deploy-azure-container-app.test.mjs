@@ -43,10 +43,12 @@ const resolvedUiUrl = "https://bmo-deepagent-ui-testseed.env.example.test";
 const uiResourceId = `/subscriptions/${subscriptionId}/resourceGroups/test-resource-group/providers/Microsoft.App/containerApps/bmo-deepagent-ui-testseed`;
 const liveTemplate = {
   revisionSuffix: "prior",
+  customMetricsSettings: null,
   containers: [
     {
       name: "deepagent-ui",
       image: "docker.io/jerryshao2013/deepagent-ui:old",
+      imageType: "ContainerImage",
       env: [
         { name: "KEEP_ME", value: "untouched" },
         { name: "PASSKEY_ENABLED", value: "false" },
@@ -296,7 +298,7 @@ case "$command" in
   rest:--method)
     [ "$#" -eq 11 ] && [ "$2" = "--method" ] && [ "$3" = "patch" ] &&
       [ "$4" = "--uri" ] && [ "$5" = "$EXPECTED_APP_RESOURCE_ID?api-version=2025-07-01" ] &&
-      [ "$6" = "--headers" ] && [ "$7" = "Content-Type=application/merge-patch+json" ] &&
+      [ "$6" = "--headers" ] && [ "$7" = "Content-Type=application/json" ] &&
       [ "$8" = "--body" ] && [ "\${10}" = "--output" ] && [ "\${11}" = "none" ] || argv_error
     case "$9" in @*) patch_path="\${9#@}" ;; *) argv_error ;; esac
     node -e '
@@ -1049,6 +1051,7 @@ test("deployment validates immutable secrets and patches only the preserved temp
   assert.deepEqual(Object.keys(patchBody).sort(), ["location", "properties"]);
   assert.deepEqual(Object.keys(patchBody.properties), ["template"]);
   assert.equal(patchBody.location, "Canada Central");
+  assert.equal("customMetricsSettings" in patchBody.properties.template, false);
   assert.equal(
     patchBody.properties.template.initContainers[0].name,
     "keep-init"
@@ -1064,6 +1067,10 @@ test("deployment validates immutable secrets and patches only the preserved temp
     liveTemplate.containers[0].probes
   );
   assert.equal(patchBody.properties.template.containers[0].image, pinnedImage);
+  assert.equal(
+    "imageType" in patchBody.properties.template.containers[0],
+    false
+  );
   assert.deepEqual(
     Object.fromEntries(
       patchBody.properties.template.containers[0].env.map((entry) => [
@@ -1371,7 +1378,7 @@ test("deployment validates prerequisites, guards template drift, then performs o
       `^az <rest> <--method> <patch> <--uri> <${uiResourceId.replaceAll(
         "/",
         "\\/"
-      )}\\?api-version=2025-07-01> <\\-\\-headers> <Content-Type=application/merge-patch\\+json>`,
+      )}\\?api-version=2025-07-01> <\\-\\-headers> <Content-Type=application\\/json>`,
       "m"
     )
   );

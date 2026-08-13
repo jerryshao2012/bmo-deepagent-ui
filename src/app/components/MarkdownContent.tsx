@@ -7,8 +7,13 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { cn } from "@/lib/utils";
 import { normalizeDocumentCitationPath } from "@/app/components/viewers/documentUtils";
+import { SyncedMarkdownAttachment } from "@/app/components/SyncedMarkdownAttachment";
 import { SyncedMarkdownImage } from "@/app/components/SyncedMarkdownImage";
-import { parseSyncedImageSource } from "@/lib/markdown-images";
+import {
+  parseSyncedAttachmentHref,
+  parseSyncedAttachmentSize,
+  parseSyncedImageSource,
+} from "@/lib/markdown-images";
 import { useEffect, useState } from "react";
 
 interface MermaidProps {
@@ -331,7 +336,7 @@ interface MarkdownContentProps {
   content: string;
   className?: string;
   light?: boolean;
-  syncedImageContext?: {
+  syncedAssetContext?: {
     markdownId: string;
     allowDownload: boolean;
   };
@@ -448,7 +453,7 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
     className = "",
     light = false,
     onDocumentClick,
-    syncedImageContext,
+    syncedAssetContext,
   }) => {
     // Capture-phase click handler: intercepts ALL anchor clicks inside this
     // container before the browser (or Next.js router) can navigate.
@@ -669,13 +674,13 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
             img({ src, alt, className, ...props }) {
               const assetId =
                 typeof src === "string" ? parseSyncedImageSource(src) : null;
-              if (assetId && syncedImageContext) {
+              if (assetId && syncedAssetContext) {
                 return (
                   <SyncedMarkdownImage
-                    markdownId={syncedImageContext.markdownId}
+                    markdownId={syncedAssetContext.markdownId}
                     assetId={assetId}
                     alt={alt}
-                    allowDownload={syncedImageContext.allowDownload}
+                    allowDownload={syncedAssetContext.allowDownload}
                     light={light}
                   />
                 );
@@ -789,20 +794,44 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
             },
             a({
               href,
+              title,
               className,
               children,
               ...props
             }: {
               href?: string;
+              title?: string;
               className?: string;
               children?: React.ReactNode;
             }) {
+              const attachmentId = parseSyncedAttachmentHref(href);
+              if (attachmentId && syncedAssetContext) {
+                const filename =
+                  React.Children.toArray(children)
+                    .filter(
+                      (child): child is string | number =>
+                        typeof child === "string" || typeof child === "number"
+                    )
+                    .join("") || "Attachment";
+                return (
+                  <SyncedMarkdownAttachment
+                    markdownId={syncedAssetContext.markdownId}
+                    assetId={attachmentId}
+                    filename={filename}
+                    size={parseSyncedAttachmentSize(title)}
+                    allowDownload={syncedAssetContext.allowDownload}
+                    light={light}
+                  />
+                );
+              }
+
               // Document links (/path.pdf) are intercepted by the container's
               // onClickCapture handler — no special handling needed here.
               // Just render all links normally; external ones open in a new tab.
               return (
                 <a
                   href={href}
+                  title={title}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={cn(

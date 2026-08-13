@@ -347,6 +347,7 @@ fs.writeFileSync(revisionPath, "bmo-deepagent-ui-testseed--" + patch.properties.
       fi
       case "$scenario" in
         revision-not-found-sequence) [ "$count" -le 2 ] && exit 3 || printf 'Provisioned|Running|Healthy\n' ;;
+        revision-not-found-one-sequence) [ "$count" -le 2 ] && exit 1 || printf 'Provisioned|Running|Healthy\n' ;;
         revision-not-found-timeout) exit 3 ;;
         revision-not-found-four-sequence) [ "$count" -le 2 ] && exit 4 || printf 'Provisioned|Running|Healthy\n' ;;
         revision-failed) printf 'Failed|Degraded|Unhealthy\n' ;;
@@ -1531,6 +1532,14 @@ test("deployment tolerates several transient missing-revision reads after asynch
 test("deployment tolerates Azure CLI not-found status four before revision appears", async () => {
   const { result, log } = await runDeployment({
     scenario: "revision-not-found-four-sequence",
+    revisionPollAttempts: "4",
+  });
+  assert.equal(result.status, 0, `${result.stderr}\n${log}`);
+});
+
+test("deployment tolerates Azure CLI status one while a new revision is not yet visible", async () => {
+  const { result, log } = await runDeployment({
+    scenario: "revision-not-found-one-sequence",
     revisionPollAttempts: "4",
   });
   assert.equal(result.status, 0, `${result.stderr}\n${log}`);

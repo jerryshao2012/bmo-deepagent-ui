@@ -609,7 +609,7 @@ while [ "$attempt" -le "$REVISION_POLL_ATTEMPTS" ]; do
     IFS='|' read -r LAST_PROVISIONING_STATE LAST_RUNNING_STATE LAST_HEALTH_STATE <<< "$REVISION_STATUS"
   else
     status=$?
-    if [ "$status" -eq 3 ] || [ "$status" -eq 4 ]; then
+    if [ "$status" -eq 1 ] || [ "$status" -eq 3 ] || [ "$status" -eq 4 ]; then
       LAST_PROVISIONING_STATE=NotFound
       LAST_RUNNING_STATE=NotFound
       LAST_HEALTH_STATE=NotFound

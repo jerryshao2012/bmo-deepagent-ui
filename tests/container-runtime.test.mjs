@@ -166,19 +166,29 @@ exit 0
   }
 };
 
-test("automatic selection prefers Apple container", async () => {
+test("automatic selection prefers Docker over Podman and Apple container", async () => {
   const { result } = await runHelper({
     runtimes: ["container", "podman", "docker"],
     body: 'select_container_cli && printf "%s" "$CONTAINER_CLI"',
   });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout, "container");
+  assert.equal(result.stdout, "docker");
 });
 
-test("automatic selection prefers Podman over Docker", async () => {
+test("automatic selection prefers Docker over Podman", async () => {
   const { result } = await runHelper({
     runtimes: ["podman", "docker"],
+    body: 'select_container_cli && printf "%s" "$CONTAINER_CLI"',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "docker");
+});
+
+test("automatic selection prefers Podman over Apple container", async () => {
+  const { result } = await runHelper({
+    runtimes: ["container", "podman"],
     body: 'select_container_cli && printf "%s" "$CONTAINER_CLI"',
   });
 

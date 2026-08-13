@@ -524,8 +524,8 @@ test("build retains automatic runtime selection without an argument or environme
   });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.match(log, /^podman <build>/m);
-  assert.doesNotMatch(log, /^docker\b/m);
+  assert.match(log, /^docker <build>/m);
+  assert.doesNotMatch(log, /^podman\b/m);
 });
 
 test("build runtime argument state cannot be replaced by inherited or sourced values", async () => {

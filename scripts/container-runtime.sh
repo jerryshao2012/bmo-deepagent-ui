@@ -24,7 +24,7 @@ select_container_cli() {
   fi
 
   local candidate
-  for candidate in container podman docker; do
+  for candidate in docker podman container; do
     if _container_cli_on_path "$candidate"; then
       CONTAINER_CLI="$candidate"
       return 0

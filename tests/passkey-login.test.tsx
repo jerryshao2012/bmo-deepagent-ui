@@ -289,6 +289,39 @@ test("runs identifier-free browser ceremony through same-origin BFF", async () =
   assert.equal(navigatedTo, "/chat");
 });
 
+test("binds passkey sign-in requests to the global fetch receiver", async () => {
+  const requests: string[] = [];
+  const browserFetch = function (
+    this: unknown,
+    input: RequestInfo | URL
+  ): Promise<Response> {
+    if (this !== globalThis) throw new TypeError("Illegal invocation");
+    requests.push(String(input));
+    return Promise.resolve(
+      requests.length === 1
+        ? Response.json({
+            ceremony_id: "ceremony-123",
+            options: { challenge: "challenge" },
+          })
+        : Response.json({
+            ok: true,
+            user: { provider: "google", auth_method: "passkey" },
+          })
+    );
+  } as typeof fetch;
+
+  await (authenticateWithPasskey as any)({
+    fetchImpl: browserFetch,
+    startAuthenticationImpl: async () => ({ id: "credential-id" }),
+    navigate: () => {},
+  });
+
+  assert.deepEqual(requests, [
+    "/api/auth/passkeys/authentication/options",
+    "/api/auth/passkeys/authentication/verify",
+  ]);
+});
+
 test("treats browser cancellation and authenticator timeout as neutral", () => {
   assert.equal(isPasskeyCancellation({ name: "AbortError" }), true);
   assert.equal(isPasskeyCancellation({ name: "NotAllowedError" }), true);

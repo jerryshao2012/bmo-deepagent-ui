@@ -4,8 +4,7 @@ import type {
   PasskeyGateway,
 } from "../application/passkey-authentication";
 
-const PASSKEY_FAILURE =
-  "Passkey sign-in failed. Please use Google or GitHub.";
+const PASSKEY_FAILURE = "Passkey sign-in failed. Please use Google or GitHub.";
 
 async function readJson(response: Response): Promise<unknown> {
   try {
@@ -16,7 +15,11 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 export class PasskeyBffGateway implements PasskeyGateway {
-  constructor(private readonly fetchImpl: typeof fetch) {}
+  private readonly fetchImpl: typeof fetch;
+
+  constructor(fetchImpl: typeof fetch) {
+    this.fetchImpl = fetchImpl.bind(globalThis);
+  }
 
   async beginAuthentication(): Promise<PasskeyCeremony> {
     const response = await this.fetchImpl(

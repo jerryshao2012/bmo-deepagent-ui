@@ -447,6 +447,75 @@ test("build retains inherited CONTAINER_CLI without an argument", async () => {
   assert.doesNotMatch(log, /^docker\b/m);
 });
 
+for (const [name, callerContainerCli, runtimes, diagnostic] of [
+  [
+    "empty inherited CONTAINER_CLI",
+    "",
+    ["container", "podman", "docker"],
+    /CONTAINER_CLI.*container.*podman.*docker/i,
+  ],
+  [
+    "unsupported inherited CONTAINER_CLI",
+    "nerdctl",
+    ["container", "podman", "docker"],
+    /CONTAINER_CLI.*container.*podman.*docker/i,
+  ],
+  [
+    "unavailable inherited CONTAINER_CLI",
+    "podman",
+    ["docker"],
+    /podman.*PATH/i,
+  ],
+]) {
+  test(`build rejects ${name} before side effects`, async () => {
+    const { result, log, manifest } = await runBuild({
+      callerContainerCli,
+      runtimes,
+      existingManifest: priorManifest,
+      uiEnvExtra: `printf 'config-source\\n' >> "$COMMAND_LOG"
+`,
+      exportedPat: "unused-inherited-runtime-pat",
+    });
+
+    assert.equal(result.status, 64, result.stderr);
+    assert.match(result.stderr, diagnostic);
+    assertNoBuildSideEffects({ log, manifest }, priorManifest);
+  });
+}
+
+for (const [name, callerContainerCli] of [
+  ["invalid", "nerdctl"],
+  ["unavailable", "container"],
+]) {
+  test(`build CLI runtime overrides ${name} inherited CONTAINER_CLI`, async () => {
+    const { result, log } = await runBuild({
+      args: ["--container-cli", "podman"],
+      callerContainerCli,
+      runtimes: ["podman"],
+      exportedPat: "cli-over-inherited-runtime-pat",
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(log, /^podman <build>/m);
+  });
+}
+
+test("build protects inherited runtime snapshot state", async () => {
+  const { result, log } = await runBuild({
+    callerContainerCli: "podman",
+    runtimes: ["podman", "docker"],
+    inheritedEnv: {
+      CALLER_CONTAINER_CLI_WAS_SET: "false",
+      CALLER_CONTAINER_CLI: "docker",
+    },
+    exportedPat: "protected-inherited-snapshot-pat",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(log, /^podman <build>/m);
+  assert.doesNotMatch(log, /^docker\b/m);
+});
+
 test("build retains automatic runtime selection without an argument or environment override", async () => {
   const { result, log } = await runBuild({
     runtimes: ["podman", "docker"],
@@ -796,6 +865,7 @@ const reservedDockerEnvKeys = [
   "CALLER_DOCKER_HUB_USERNAME",
   "CALLER_CONTAINER_CLI_WAS_SET",
   "CALLER_CONTAINER_CLI",
+  "CALLER_CONTAINER_CLI_PATH",
   "CLI_CONTAINER_CLI",
   "CLI_CONTAINER_CLI_SEEN",
   "CLI_CONTAINER_CLI_PATH",

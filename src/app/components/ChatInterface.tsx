@@ -201,6 +201,12 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     setSelectedFile(file);
   }, []);
 
+  // Close document viewer and file viewer when thread ID changes (different thread or new thread)
+  useEffect(() => {
+    setSelectedFile(null);
+    setDocumentViewerState(null);
+  }, [currentThreadId]);
+
   const [wikiFileCount, setWikiFileCount] = useState<number | null>(null);
   const [ingestProgress, setIngestProgress] = useState<number | null>(null);
   const [ingestPhase, setIngestPhase] = useState<string | null>(null);

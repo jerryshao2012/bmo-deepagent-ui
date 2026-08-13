@@ -32,3 +32,14 @@ test("thread hook delegates LangGraph SDK operations", async () => {
   assert.doesNotMatch(source, /new Client\s*\(/);
   assert.doesNotMatch(source, /client\.threads\./);
 });
+
+test("intro collaboration IDs are never forwarded as chat thread UUIDs", async () => {
+  const source = await readFile("src/app/intro/page.tsx", "utf8");
+
+  assert.doesNotMatch(source, /\/chat\?threadId=\$\{threadId\}/);
+  assert.equal(
+    source.match(/href="\/chat"/g)?.length,
+    3,
+    "all three workspace links must start a fresh chat"
+  );
+});

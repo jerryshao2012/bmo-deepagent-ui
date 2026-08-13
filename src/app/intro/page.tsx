@@ -1373,7 +1373,7 @@ function IntroPageContent() {
           </div>
 
           <a
-            href={`/chat?threadId=${threadId}`}
+            href="/chat"
             className="card-elevated flex h-9 items-center gap-2 rounded-full bg-[#FF8A42] px-4 py-2 font-semibold text-white transition hover:scale-[1.02] active:scale-95"
           >
             <span className="text-xs">Launch Workspace</span>
@@ -1405,7 +1405,7 @@ function IntroPageContent() {
 
           <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <a
-              href={`/chat?threadId=${threadId}`}
+              href="/chat"
               className="card-elevated flex h-11 items-center gap-2 rounded-full bg-[#FF8A42] px-6 py-3 font-semibold text-white transition hover:scale-[1.03]"
             >
               See the Workspace in Action
@@ -1973,7 +1973,7 @@ function IntroPageContent() {
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <a
-              href={`/chat?threadId=${threadId}`}
+              href="/chat"
               className="card-elevated flex h-11 items-center justify-center gap-2 rounded-full bg-[#FF8A42] px-8 py-3 font-semibold text-white transition hover:scale-[1.03]"
             >
               Launch Workspace

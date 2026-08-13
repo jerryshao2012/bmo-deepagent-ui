@@ -688,6 +688,36 @@ test("offers manual OAuth reauthentication without replaying sensitive action", 
   );
 });
 
+test("recovers from a cross-bundle reauthentication error", async () => {
+  render(
+    <PasskeyManagementDialog
+      open
+      onOpenChange={() => {}}
+      provider="google"
+      oauthBackendUrl="https://backend.example.com"
+      fetchImpl={async (input) => {
+        if (String(input).endsWith("/registration/options")) {
+          throw {
+            status: 403,
+            code: "reauth_required",
+            provider: "google",
+          };
+        }
+        return json({ passkeys: [] });
+      }}
+    />
+  );
+
+  await screen.findByText("No passkeys enrolled yet.");
+  fireEvent.click(screen.getByRole("button", { name: "Add passkey" }));
+  assert.ok(
+    await screen.findByText(
+      "Verify again with Google, then retry this action manually."
+    )
+  );
+  assert.equal(screen.queryByText(/Passkey action failed/), null);
+});
+
 test("falls back to authenticated provider when 403 provider is invalid", async () => {
   const navigations: string[] = [];
   render(

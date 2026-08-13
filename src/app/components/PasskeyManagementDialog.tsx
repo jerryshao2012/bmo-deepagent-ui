@@ -21,7 +21,6 @@ import { Input } from "@/components/ui/input";
 import {
   enrollManagedPasskey,
   loadManagedPasskeys,
-  ManagementRequestError,
   renameManagedPasskey,
   revokeManagedPasskey,
   validatePasskeyLabel,
@@ -75,6 +74,34 @@ type ReauthenticationReason =
   | "recent_auth"
   | "invalid_session"
   | "authentication_required";
+
+interface ManagementFailure {
+  status: number;
+  code: string | null;
+  provider: LoginProvider | null;
+}
+
+function managementFailure(caught: unknown): ManagementFailure | null {
+  if (!caught || typeof caught !== "object") return null;
+  try {
+    const candidate = caught as Record<string, unknown>;
+    if (
+      typeof candidate.status !== "number" ||
+      !Number.isInteger(candidate.status) ||
+      candidate.status < 100 ||
+      candidate.status > 599
+    ) {
+      return null;
+    }
+    return {
+      status: candidate.status,
+      code: typeof candidate.code === "string" ? candidate.code : null,
+      provider: isLoginProvider(candidate.provider) ? candidate.provider : null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function providerName(provider: LoginProvider) {
   return provider === "google" ? "Google" : "GitHub";
@@ -143,35 +170,36 @@ export default function PasskeyManagementDialog({
 
   const handleError = useCallback(
     (caught: unknown) => {
-      if (caught instanceof ManagementRequestError) {
-        if (caught.status === 403 && caught.code === "reauth_required") {
-          setReauthProvider(caught.provider ?? provider);
+      const failure = managementFailure(caught);
+      if (failure) {
+        if (failure.status === 403 && failure.code === "reauth_required") {
+          setReauthProvider(failure.provider ?? provider);
           setReauthReason("recent_auth");
           return;
         }
         if (
-          caught.status === 401 &&
-          (caught.code === "invalid_session" ||
-            caught.code === "authentication_required")
+          failure.status === 401 &&
+          (failure.code === "invalid_session" ||
+            failure.code === "authentication_required")
         ) {
           setReauthProvider(provider);
-          setReauthReason(caught.code);
+          setReauthReason(failure.code);
           return;
         }
-        if (caught.status === 429 && caught.code === "rate_limited") {
+        if (failure.status === 429 && failure.code === "rate_limited") {
           setError("Too many passkey requests. Wait one minute, then retry.");
           return;
         }
         if (
-          caught.status === 502 &&
-          caught.code === "authentication_service_unavailable"
+          failure.status === 502 &&
+          failure.code === "authentication_service_unavailable"
         ) {
           setError(
             "Authentication service is temporarily unavailable. Use Google or GitHub, or retry later."
           );
           return;
         }
-        if (caught.status === 503 && caught.code === "passkeys_unavailable") {
+        if (failure.status === 503 && failure.code === "passkeys_unavailable") {
           setError(
             "Passkey service is temporarily unavailable. Use Google or GitHub, or retry later."
           );

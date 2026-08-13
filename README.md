@@ -201,7 +201,7 @@ For existing Azure resources, choose one target:
 
 ```bash
 ./build.sh --container-cli podman # Build/push with Podman; write .deployment-build.json
-./deploy-azure-container-app.sh  # Update existing ACA from pinned manifest; never builds
+./deploy-azure-container-app.sh --oauth-redirects-confirmed # Confirm changed OAuth URLs and update existing ACA
 ./deploy.sh                      # Build/ZIP-deploy to Azure App Service
 ```
 
@@ -210,6 +210,12 @@ and `-c podman`; supported values are `container`, `podman`, and `docker`.
 Command-line selection overrides `CONTAINER_CLI`. Existing
 `CONTAINER_CLI=podman ./build.sh` usage and automatic runtime selection remain
 supported when no option is supplied.
+
+Use `--oauth-redirects-confirmed` after updating Google and GitHub when resolved
+OAuth URLs changed. Existing `OAUTH_REDIRECTS_CONFIRMED=true
+./deploy-azure-container-app.sh` usage remains supported; unchanged URLs do not
+require either form. The option confirms only the current deploy process and is
+never persisted.
 
 Unified passkey cutover deploys backend first, then runs UI `./build.sh` once and
 UI `./deploy-azure-container-app.sh` once. Current rollout does not configure,

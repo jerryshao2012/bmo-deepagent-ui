@@ -9,6 +9,40 @@ case "$-" in
 esac
 
 set -eo pipefail
+
+print_usage() {
+  echo "Usage: ./deploy-azure-container-app.sh [--oauth-redirects-confirmed] [--help]"
+}
+
+CLI_OAUTH_REDIRECTS_CONFIRMED=false
+CLI_OAUTH_REDIRECTS_CONFIRMED_SEEN=false
+DEPLOY_ORIGINAL_ARGUMENT_COUNT="$#"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --help|-h)
+      if [ "$DEPLOY_ORIGINAL_ARGUMENT_COUNT" -ne 1 ]; then
+        echo "Error: --help must be used alone." >&2
+        exit 64
+      fi
+      print_usage
+      exit 0
+      ;;
+    --oauth-redirects-confirmed)
+      if [ "$CLI_OAUTH_REDIRECTS_CONFIRMED_SEEN" = true ]; then
+        echo "Error: --oauth-redirects-confirmed may be supplied only once." >&2
+        exit 64
+      fi
+      CLI_OAUTH_REDIRECTS_CONFIRMED=true
+      CLI_OAUTH_REDIRECTS_CONFIRMED_SEEN=true
+      shift
+      ;;
+    *)
+      echo "Error: unknown argument '$1'." >&2
+      exit 64
+      ;;
+  esac
+done
+
 unset LANGCHAIN_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE
 CALLER_OAUTH_REDIRECTS_CONFIRMED="${OAUTH_REDIRECTS_CONFIRMED-}"
 unset OAUTH_REDIRECTS_CONFIRMED
@@ -42,8 +76,13 @@ if [ "$ENV_SH_SOURCE_STATUS" -ne 0 ]; then
 fi
 unset ENV_SH_SOURCE_STATUS
 unset LANGCHAIN_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE
-OAUTH_REDIRECTS_CONFIRMED="$CALLER_OAUTH_REDIRECTS_CONFIRMED"
-unset CALLER_OAUTH_REDIRECTS_CONFIRMED
+if [ "$CLI_OAUTH_REDIRECTS_CONFIRMED_SEEN" = true ]; then
+  OAUTH_REDIRECTS_CONFIRMED="$CLI_OAUTH_REDIRECTS_CONFIRMED"
+else
+  OAUTH_REDIRECTS_CONFIRMED="$CALLER_OAUTH_REDIRECTS_CONFIRMED"
+fi
+unset CALLER_OAUTH_REDIRECTS_CONFIRMED CLI_OAUTH_REDIRECTS_CONFIRMED \
+  CLI_OAUTH_REDIRECTS_CONFIRMED_SEEN DEPLOY_ORIGINAL_ARGUMENT_COUNT
 
 source "$SCRIPT_DIR/scripts/azure-subscription.sh"
 

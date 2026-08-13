@@ -438,6 +438,7 @@ const runDeployment = async ({
   endpointResolverOutput = deploymentResolverOutput,
   endpointResolverStatus = 0,
   oauthRedirectsConfirmed = true,
+  args = [],
 } = {}) => {
   const tempRoot = await mkdtemp(
     path.join(tmpdir(), "container-app-deploy-test-")
@@ -618,6 +619,7 @@ exec ${process.execPath} "$@"
         "--norc",
         ...(xtrace ? ["-x"] : []),
         path.join(fixtureRoot, "deploy-azure-container-app.sh"),
+        ...args,
       ],
       { cwd: outsideCwd ? outsideRoot : fixtureRoot, encoding: "utf8", env }
     );
@@ -811,6 +813,131 @@ test("unchanged endpoint reminder is nonblocking without OAuth confirmation", as
     /OAuth provider reminder: verify the following URLs remain configured\./
   );
 });
+
+test("oauth confirmation argument confirms changed endpoints without caller environment", async () => {
+  const { result, log, patchBody } = await runDeployment({
+    oauthRedirectsConfirmed: false,
+    args: ["--oauth-redirects-confirmed"],
+  });
+  assert.equal(result.status, 0, `${result.stderr}\n${log}`);
+  assert.match(log, /az <rest> <--method> <patch>/);
+  assert.doesNotMatch(
+    `${result.stdout}${result.stderr}${log}${JSON.stringify(patchBody)}`,
+    /OAUTH_REDIRECTS_CONFIRMED|oauth-redirects-confirmed/
+  );
+});
+
+test("oauth confirmation argument overrides a false caller environment", async () => {
+  const { result, log } = await runDeployment({
+    oauthRedirectsConfirmed: false,
+    inheritedEnv: { OAUTH_REDIRECTS_CONFIRMED: "false" },
+    args: ["--oauth-redirects-confirmed"],
+  });
+  assert.equal(result.status, 0, `${result.stderr}\n${log}`);
+  assert.match(log, /az <rest> <--method> <patch>/);
+});
+
+test("existing OAuth confirmation environment remains compatible", async () => {
+  const { result, log } = await runDeployment({
+    oauthRedirectsConfirmed: true,
+  });
+  assert.equal(result.status, 0, `${result.stderr}\n${log}`);
+  assert.match(log, /az <rest> <--method> <patch>/);
+});
+
+test("caller environment cannot forge oauth confirmation parser state", async () => {
+  const { result, log } = await runDeployment({
+    oauthRedirectsConfirmed: false,
+    inheritedEnv: {
+      CLI_OAUTH_REDIRECTS_CONFIRMED: "true",
+      CLI_OAUTH_REDIRECTS_CONFIRMED_SEEN: "true",
+      DEPLOY_ORIGINAL_ARGUMENT_COUNT: "1",
+    },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /OAUTH_REDIRECTS_CONFIRMED=true is required/);
+  assertNoAppMutation(log);
+});
+
+for (const [name, options] of [
+  ["without argument", { oauthRedirectsConfirmed: false }],
+  [
+    "with argument",
+    {
+      oauthRedirectsConfirmed: false,
+      args: ["--oauth-redirects-confirmed"],
+    },
+  ],
+]) {
+  test(`unchanged endpoints deploy ${name}`, async () => {
+    const { result, log } = await runDeployment({
+      ...options,
+      endpointResolverOutput: deploymentResolverOutput.replace(
+        "CHANGED='true'",
+        "CHANGED='false'"
+      ),
+    });
+    assert.equal(result.status, 0, `${result.stderr}\n${log}`);
+  });
+}
+
+for (const [name, args] of [
+  [
+    "duplicate oauth confirmation argument",
+    ["--oauth-redirects-confirmed", "--oauth-redirects-confirmed"],
+  ],
+  [
+    "value-bearing oauth confirmation argument",
+    ["--oauth-redirects-confirmed=true"],
+  ],
+  [
+    "false value-bearing oauth confirmation argument",
+    ["--oauth-redirects-confirmed=false"],
+  ],
+  ["short oauth confirmation argument", ["-o"]],
+  ["unknown deployment argument", ["--unknown"]],
+  [
+    "deployment help before another argument",
+    ["--help", "--oauth-redirects-confirmed"],
+  ],
+  [
+    "deployment help after another argument",
+    ["--oauth-redirects-confirmed", "--help"],
+  ],
+  [
+    "short deployment help before another argument",
+    ["-h", "--oauth-redirects-confirmed"],
+  ],
+  [
+    "short deployment help after another argument",
+    ["--oauth-redirects-confirmed", "-h"],
+  ],
+]) {
+  test(`${name} fails before configuration or external access`, async () => {
+    const { result, log } = await runDeployment({
+      args,
+      uiEnvExtra: `printf 'env-source\\n' >> "$COMMAND_LOG"`,
+    });
+    assert.equal(result.status, 64, result.stderr);
+    assert.equal(log, "");
+  });
+}
+
+for (const help of ["--help", "-h"]) {
+  test(`deployment help ${help} is side-effect free`, async () => {
+    const { result, log } = await runDeployment({
+      args: [help],
+      uiEnvExtra: `printf 'env-source\\n' >> "$COMMAND_LOG"`,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /^Usage: \.\/deploy-azure-container-app\.sh \[--oauth-redirects-confirmed\] \[--help\]\n$/
+    );
+    assert.equal(result.stderr, "");
+    assert.equal(log, "");
+  });
+}
 
 test("deployment strictly decodes resolver output and preserves resolver status", async () => {
   for (const output of [

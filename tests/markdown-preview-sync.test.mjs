@@ -137,16 +137,40 @@ test("cross-machine markdown updates converge every local transport", async () =
   );
 });
 
-test("synced images are opt-in and ordinary markdown images keep existing rendering", async () => {
+test("synced assets are opt-in and ordinary markdown images keep existing rendering", async () => {
   const markdownContent = await source(
     "src/app/components/MarkdownContent.tsx"
   );
 
-  assert.match(markdownContent, /syncedImageContext\?:\s*\{/);
+  assert.match(markdownContent, /syncedAssetContext\?:\s*\{/);
   assert.match(markdownContent, /parseSyncedImageSource\(src\)/);
   assert.match(markdownContent, /<SyncedMarkdownImage/);
-  assert.match(markdownContent, /if\s*\(assetId\s*&&\s*syncedImageContext\)/);
+  assert.match(markdownContent, /if\s*\(assetId\s*&&\s*syncedAssetContext\)/);
   assert.match(markdownContent, /<img\s+[\s\S]*src=\{src\}/);
+});
+
+test("synced attachments use canonical type-neutral links and a dedicated card", async () => {
+  const markdownContent = await source(
+    "src/app/components/MarkdownContent.tsx"
+  );
+
+  assert.match(markdownContent, /parseSyncedAttachmentHref\(href\)/);
+  assert.match(markdownContent, /parseSyncedAttachmentSize\(title\)/);
+  assert.match(markdownContent, /<SyncedMarkdownAttachment/);
+  assert.match(markdownContent, /filename=\{[^}]+\}/);
+  assert.doesNotMatch(markdownContent, /__markdown-zip/);
+});
+
+test("intro asset gestures accept mixed images and attachments", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(introPage, /onPaste=\{handleMarkdownAssetPaste\}/);
+  assert.match(introPage, /onDrop=\{handleMarkdownAssetDrop\}/);
+  assert.match(introPage, /isSupportedMarkdownAssetFile/);
+  assert.match(introPage, /validateMarkdownAssetFiles/);
+  assert.match(introPage, /buildSyncedAssetMarkdown/);
+  assert.match(introPage, /uploadMarkdownAssets/);
+  assert.match(introPage, /UPLOADING ATTACHMENTS/);
 });
 
 test("synced image renderer cleans object URLs and exposes download", async () => {
@@ -182,18 +206,18 @@ test("synced image proxy keeps backend credentials server-side", async () => {
   );
 });
 
-test("intro image gestures publish references and removal invalidates pending uploads", async () => {
+test("intro asset gestures publish references and removal invalidates pending uploads", async () => {
   const introPage = await source("src/app/intro/page.tsx");
 
-  assert.match(introPage, /onPaste=\{handleMarkdownImagePaste\}/);
-  assert.match(introPage, /onDrop=\{handleMarkdownImageDrop\}/);
-  assert.match(introPage, /imageOperationEpochRef\.current \+= 1/);
-  assert.match(introPage, /activeImageUploadPromiseRef\.current/);
+  assert.match(introPage, /onPaste=\{handleMarkdownAssetPaste\}/);
+  assert.match(introPage, /onDrop=\{handleMarkdownAssetDrop\}/);
+  assert.match(introPage, /assetOperationEpochRef\.current \+= 1/);
+  assert.match(introPage, /activeAssetUploadPromiseRef\.current/);
   assert.match(introPage, /removeSyncedMarkdownWorkspace\(\{/);
   assert.match(introPage, /markdownId:\s*markdownIdToRemove/);
-  assert.match(introPage, /deleteNamespace:\s*deleteMarkdownImages/);
+  assert.match(introPage, /deleteNamespace:\s*deleteMarkdownAssets/);
   assert.match(
     introPage,
-    /syncedImageContext=\{\{\s*markdownId:\s*threadId,\s*allowDownload:\s*true,?\s*\}\}/
+    /syncedAssetContext=\{\{\s*markdownId:\s*threadId,\s*allowDownload:\s*true,?\s*\}\}/
   );
 });

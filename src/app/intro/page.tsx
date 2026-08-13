@@ -11,14 +11,15 @@ import { createConfiguredBackendMarkdownSyncStore } from "@/features/markdown-sy
 import { backendMirrorRetryDelay } from "@/features/markdown-sync/application/sync-state-machine";
 import { clearRememberedLogin } from "@/lib/remembered-login";
 import {
-  buildSyncedImageMarkdown,
+  buildSyncedAssetMarkdown,
   canStartSyncedImageGesture,
-  deleteMarkdownImages,
+  deleteMarkdownAssets,
   insertSyncedImageMarkdown,
+  isSupportedMarkdownAssetFile,
   removeSyncedMarkdownWorkspace,
   shouldApplySyncedImageUpload,
-  uploadMarkdownImages,
-  validateImageFiles,
+  uploadMarkdownAssets,
+  validateMarkdownAssetFiles,
 } from "@/lib/markdown-images";
 
 export const dynamic = "force-dynamic";
@@ -58,8 +59,8 @@ function IntroPageContent() {
   const [copied, setCopied] = useState<boolean>(false);
   const [copiedHtml, setCopiedHtml] = useState<boolean>(false);
   const [activeTelemetryTab, setActiveTelemetryTab] = useState<string>("edit");
-  const [isUploadingImages, setIsUploadingImages] = useState(false);
-  const [isRemovingImages, setIsRemovingImages] = useState(false);
+  const [isUploadingAssets, setIsUploadingAssets] = useState(false);
+  const [isRemovingAssets, setIsRemovingAssets] = useState(false);
 
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -99,9 +100,9 @@ function IntroPageContent() {
     immediate: boolean;
   } | null>(null);
   const fallbackWriteInFlightRef = useRef(false);
-  const imageOperationEpochRef = useRef(0);
-  const activeImageUploadPromiseRef = useRef<Promise<void> | null>(null);
-  const isRemovingImagesRef = useRef(false);
+  const assetOperationEpochRef = useRef(0);
+  const activeAssetUploadPromiseRef = useRef<Promise<void> | null>(null);
+  const isRemovingAssetsRef = useRef(false);
   const activeThreadIdRef = useRef(threadId);
   activeThreadIdRef.current = threadId;
 
@@ -598,27 +599,31 @@ function IntroPageContent() {
   };
 
   const handleRemove = async () => {
-    if (isRemovingImagesRef.current) return;
+    if (isRemovingAssetsRef.current) return;
     const markdownIdToRemove = activeThreadIdRef.current;
-    imageOperationEpochRef.current += 1;
-    isRemovingImagesRef.current = true;
-    setIsRemovingImages(true);
-    const activeUpload = activeImageUploadPromiseRef.current;
+    assetOperationEpochRef.current += 1;
+    isRemovingAssetsRef.current = true;
+    setIsRemovingAssets(true);
+    const activeUpload = activeAssetUploadPromiseRef.current;
 
     try {
       await removeSyncedMarkdownWorkspace({
         markdownId: markdownIdToRemove,
         activeUpload,
         publishEmpty: () => publishContent(""),
-        deleteNamespace: deleteMarkdownImages,
+        deleteNamespace: deleteMarkdownAssets,
       });
-      toast.success("Content and synced images removed from server storage.");
+      toast.success(
+        "Content and synced attachments removed from server storage."
+      );
     } catch (error) {
-      console.error("Failed to remove synced images:", error);
-      toast.warning("Content removed, but some image storage could not be cleaned up.");
+      console.error("Failed to remove synced attachments:", error);
+      toast.warning(
+        "Content removed, but some attachment storage could not be cleaned up.",
+      );
     } finally {
-      isRemovingImagesRef.current = false;
-      setIsRemovingImages(false);
+      isRemovingAssetsRef.current = false;
+      setIsRemovingAssets(false);
     }
   };
 
@@ -631,20 +636,20 @@ function IntroPageContent() {
     }
   };
 
-  const processMarkdownImageFiles = (
+  const processMarkdownAssetFiles = (
     files: readonly File[],
     selectionStart: number,
     selectionEnd: number,
   ) => {
     if (!canStartSyncedImageGesture({
       markdownId: threadId,
-      uploadActive: activeImageUploadPromiseRef.current !== null,
-      removalActive: isRemovingImagesRef.current,
+      uploadActive: activeAssetUploadPromiseRef.current !== null,
+      removalActive: isRemovingAssetsRef.current,
     })) {
       return;
     }
 
-    const { accepted, rejected } = validateImageFiles(files);
+    const { accepted, rejected } = validateMarkdownAssetFiles(files);
     if (accepted.length === 0) {
       if (rejected.length > 0) toast.error(rejected[0].message);
       return;
@@ -652,23 +657,23 @@ function IntroPageContent() {
 
     const markdownIdAtStart = threadId;
     const contentVersionAtStart = contentVersionRef.current;
-    const operationEpoch = imageOperationEpochRef.current;
-    setIsUploadingImages(true);
+    const operationEpoch = assetOperationEpochRef.current;
+    setIsUploadingAssets(true);
 
     const operation = (async () => {
       try {
-        const response = await uploadMarkdownImages(markdownIdAtStart, accepted);
+        const response = await uploadMarkdownAssets(markdownIdAtStart, accepted);
         if (!shouldApplySyncedImageUpload({
           markdownIdAtStart,
           currentMarkdownId: activeThreadIdRef.current,
           epochAtStart: operationEpoch,
-          currentEpoch: imageOperationEpochRef.current,
+          currentEpoch: assetOperationEpochRef.current,
         })) {
           return;
         }
 
         if (response.assets.length > 0) {
-          const markdown = buildSyncedImageMarkdown(response.assets);
+          const markdown = buildSyncedAssetMarkdown(response.assets);
           const nextContent = insertSyncedImageMarkdown({
             content: sharedTextRef.current,
             markdown,
@@ -682,41 +687,42 @@ function IntroPageContent() {
         const failureCount = rejected.length + response.errors.length;
         if (failureCount > 0) {
           toast.warning(
-            `${failureCount} image${failureCount === 1 ? "" : "s"} could not be uploaded.`,
+            `${failureCount} attachment${failureCount === 1 ? "" : "s"} could not be uploaded.`,
           );
         }
       } catch (error) {
-        console.error("Failed to upload Markdown images:", error);
-        toast.error("Failed to upload images.");
+        console.error("Failed to upload Markdown attachments:", error);
+        toast.error("Failed to upload attachments.");
       }
     })();
 
-    activeImageUploadPromiseRef.current = operation;
+    activeAssetUploadPromiseRef.current = operation;
     void operation.finally(() => {
-      if (activeImageUploadPromiseRef.current === operation) {
-        activeImageUploadPromiseRef.current = null;
-        setIsUploadingImages(false);
+      if (activeAssetUploadPromiseRef.current === operation) {
+        activeAssetUploadPromiseRef.current = null;
+        setIsUploadingAssets(false);
       }
     });
   };
 
-  const handleMarkdownImagePaste = (
+  const handleMarkdownAssetPaste = (
     event: React.ClipboardEvent<HTMLTextAreaElement>,
   ) => {
     const files = Array.from(event.clipboardData.items)
-      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .filter((item) => item.kind === "file")
       .map((item) => item.getAsFile())
-      .filter((file): file is File => file !== null);
+      .filter((file): file is File => file !== null)
+      .filter(isSupportedMarkdownAssetFile);
     if (files.length === 0) return;
     event.preventDefault();
-    processMarkdownImageFiles(
+    processMarkdownAssetFiles(
       files,
       event.currentTarget.selectionStart,
       event.currentTarget.selectionEnd,
     );
   };
 
-  const handleMarkdownImageDragOver = (
+  const handleMarkdownAssetDragOver = (
     event: React.DragEvent<HTMLTextAreaElement>,
   ) => {
     if (event.dataTransfer.types.includes("Files")) {
@@ -725,15 +731,15 @@ function IntroPageContent() {
     }
   };
 
-  const handleMarkdownImageDrop = (
+  const handleMarkdownAssetDrop = (
     event: React.DragEvent<HTMLTextAreaElement>,
   ) => {
-    const files = Array.from(event.dataTransfer.files).filter((file) =>
-      file.type.startsWith("image/"),
+    const files = Array.from(event.dataTransfer.files).filter(
+      isSupportedMarkdownAssetFile,
     );
     if (files.length === 0) return;
     event.preventDefault();
-    processMarkdownImageFiles(
+    processMarkdownAssetFiles(
       files,
       event.currentTarget.selectionStart,
       event.currentTarget.selectionEnd,
@@ -2195,10 +2201,10 @@ function IntroPageContent() {
                         <div className="tooltip-wrapper">
                           <button
                             onClick={() => void handleRemove()}
-                            disabled={isRemovingImages}
+                            disabled={isRemovingAssets}
                             className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-200/40 text-zinc-600 transition duration-200 hover:bg-rose-500/10 hover:text-rose-600 disabled:cursor-wait disabled:opacity-50"
                           >
-                            {isRemovingImages ? (
+                            {isRemovingAssets ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
                               <Trash2 className="h-3.5 w-3.5" />
@@ -2244,18 +2250,18 @@ function IntroPageContent() {
                   className="flex min-h-0 flex-1 flex-col bg-[#f5f7fb] p-4 data-[state=inactive]:hidden"
                 >
                   <div className="relative flex flex-1 flex-col overflow-hidden rounded-2xl border border-[#d5dee9] bg-white p-6 text-left text-zinc-900 shadow-sm">
-                    {isUploadingImages && (
+                    {isUploadingAssets && (
                       <span className="absolute right-5 top-4 z-10 inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 font-mono text-[10px] font-semibold text-sky-700 shadow-sm">
                         <Loader2 className="h-3 w-3 animate-spin" />
-                        UPLOADING IMAGES
+                        UPLOADING ATTACHMENTS
                       </span>
                     )}
                     <textarea
                       value={sharedText}
                       onChange={handleTextChange}
-                      onPaste={handleMarkdownImagePaste}
-                      onDragOver={handleMarkdownImageDragOver}
-                      onDrop={handleMarkdownImageDrop}
+                      onPaste={handleMarkdownAssetPaste}
+                      onDragOver={handleMarkdownAssetDragOver}
+                      onDrop={handleMarkdownAssetDrop}
                       placeholder="Type, paste, or telemetry sync here..."
                       className="w-full flex-1 resize-none border-0 bg-white font-mono text-sm leading-relaxed text-zinc-900 placeholder-zinc-400 outline-none focus:ring-0"
                     />
@@ -2275,7 +2281,7 @@ function IntroPageContent() {
                         <MarkdownContent
                           content={sharedText}
                           light={true}
-                          syncedImageContext={{
+                          syncedAssetContext={{
                             markdownId: threadId,
                             allowDownload: true,
                           }}

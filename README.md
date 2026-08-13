@@ -200,10 +200,16 @@ Inspect each script and its example secret files before running it.
 For existing Azure resources, choose one target:
 
 ```bash
-./build.sh                       # Build/push Docker Hub image; write .deployment-build.json
+./build.sh --container-cli podman # Build/push with Podman; write .deployment-build.json
 ./deploy-azure-container-app.sh  # Update existing ACA from pinned manifest; never builds
 ./deploy.sh                      # Build/ZIP-deploy to Azure App Service
 ```
+
+Build runtime forms are `--container-cli podman`, `--container-cli=podman`,
+and `-c podman`; supported values are `container`, `podman`, and `docker`.
+Command-line selection overrides `CONTAINER_CLI`. Existing
+`CONTAINER_CLI=podman ./build.sh` usage and automatic runtime selection remain
+supported when no option is supplied.
 
 Unified passkey cutover deploys backend first, then runs UI `./build.sh` once and
 UI `./deploy-azure-container-app.sh` once. Current rollout does not configure,

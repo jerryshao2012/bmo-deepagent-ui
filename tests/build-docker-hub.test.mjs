@@ -49,7 +49,7 @@ for variable_name in LANGCHAIN_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET SYNTH
   [ -z "\${!variable_name-}" ] || printf 'environment-leak:%s\n' "$variable_name" >> "$COMMAND_LOG"
 done
 {
-  printf 'docker'
+  printf '%s' "\${0##*/}"
   for argument in "$@"; do printf ' <%s>' "$argument"; done
   printf '\n'
 } >> "$COMMAND_LOG"
@@ -88,6 +88,9 @@ exit 86
 `;
 
 const runBuild = async ({
+  args = [],
+  runtimes = ["docker"],
+  callerContainerCli = "docker",
   exportedPat,
   siblingPat = "sibling-docker-pat",
   dockerEnv = "NEXT_PUBLIC_ASSISTANT_ID='docker-assistant'\nNEXT_PUBLIC_LANGGRAPH_URL=https://ignored.invalid\n",
@@ -219,9 +222,11 @@ ${backendEnvExtra}`
       );
     }
 
-    const runtimePath = path.join(binDir, "docker");
-    await writeFile(runtimePath, fakeRuntime);
-    await chmod(runtimePath, 0o755);
+    for (const runtime of runtimes) {
+      const runtimePath = path.join(binDir, runtime);
+      await writeFile(runtimePath, fakeRuntime);
+      await chmod(runtimePath, 0o755);
+    }
     for (const [name, target] of [
       ["dirname", "/usr/bin/dirname"],
       ["rsync", "/usr/bin/rsync"],
@@ -304,7 +309,6 @@ exec /bin/mv "$@"
       CLEANUP_RM_STATUS: String(cleanupRmStatus),
       ENDPOINT_RESOLVER_OUTPUT: endpointResolverOutput,
       ENDPOINT_RESOLVER_STATUS: String(endpointResolverStatus),
-      CONTAINER_CLI: "docker",
       ...Object.fromEntries(
         Object.entries(inheritedEnv).map(([key, value]) => [
           key,
@@ -315,6 +319,9 @@ exec /bin/mv "$@"
         ])
       ),
     };
+    if (callerContainerCli !== null) {
+      env.CONTAINER_CLI = callerContainerCli;
+    }
     if (exportedPat !== undefined) env.DOCKER_HUB_PAT = exportedPat;
     if (username !== undefined) env.DOCKER_HUB_USERNAME = username;
     const result = spawnSync(
@@ -325,6 +332,7 @@ exec /bin/mv "$@"
         ...(allexport ? ["-a"] : []),
         ...(xtrace ? ["-x"] : []),
         path.join(fixtureRoot, "build.sh"),
+        ...args,
       ],
       { cwd: fixtureRoot, encoding: "utf8", env }
     );
@@ -386,6 +394,154 @@ exec /bin/mv "$@"
     await rm(tempRoot, { recursive: true, force: true });
   }
 };
+
+const assertNoBuildSideEffects = (
+  { log, manifest },
+  expectedManifest = null
+) => {
+  assert.equal(log, "");
+  assert.deepEqual(manifest, expectedManifest);
+};
+
+for (const args of [
+  ["--container-cli", "podman"],
+  ["--container-cli=podman"],
+  ["-c", "podman"],
+]) {
+  test(`build accepts runtime argument form ${args.join(" ")}`, async () => {
+    const { result, log } = await runBuild({
+      args,
+      runtimes: ["podman", "docker"],
+      exportedPat: "argument-runtime-pat",
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(log, /^podman <info>/m);
+    assert.match(log, /^podman <build>/m);
+    assert.doesNotMatch(log, /^docker\b/m);
+  });
+}
+
+test("build runtime argument wins over inherited CONTAINER_CLI", async () => {
+  const { result, log } = await runBuild({
+    args: ["--container-cli", "podman"],
+    runtimes: ["podman", "docker"],
+    callerContainerCli: "docker",
+    exportedPat: "argument-precedence-pat",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(log, /^podman <build>/m);
+  assert.doesNotMatch(log, /^docker\b/m);
+});
+
+test("build retains inherited CONTAINER_CLI without an argument", async () => {
+  const { result, log } = await runBuild({
+    runtimes: ["podman", "docker"],
+    callerContainerCli: "podman",
+    exportedPat: "environment-runtime-pat",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(log, /^podman <build>/m);
+  assert.doesNotMatch(log, /^docker\b/m);
+});
+
+test("build retains automatic runtime selection without an argument or environment override", async () => {
+  const { result, log } = await runBuild({
+    runtimes: ["podman", "docker"],
+    callerContainerCli: null,
+    exportedPat: "automatic-runtime-pat",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(log, /^podman <build>/m);
+  assert.doesNotMatch(log, /^docker\b/m);
+});
+
+test("build runtime argument state cannot be replaced by inherited or sourced values", async () => {
+  const { result, log } = await runBuild({
+    args: ["--container-cli", "podman"],
+    runtimes: ["container", "podman", "docker"],
+    callerContainerCli: "docker",
+    inheritedEnv: {
+      CLI_CONTAINER_CLI: "container",
+      CLI_CONTAINER_CLI_SEEN: "false",
+    },
+    uiEnvExtra: `export CLI_CONTAINER_CLI=container
+export CLI_CONTAINER_CLI_SEEN=false
+`,
+    exportedPat: "protected-parser-state-pat",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(log, /^podman <build>/m);
+  assert.doesNotMatch(log, /^(?:container|docker)\b/m);
+});
+
+for (const [name, args] of [
+  ["missing long value", ["--container-cli"]],
+  ["missing short value", ["-c"]],
+  ["empty separate value", ["--container-cli", ""]],
+  ["empty equals value", ["--container-cli="]],
+  ["unsupported value", ["--container-cli", "nerdctl"]],
+  ["duplicate same flags", ["--container-cli", "docker", "-c", "docker"]],
+  [
+    "duplicate conflicting flags",
+    ["--container-cli", "docker", "--container-cli=podman"],
+  ],
+  ["combined short form", ["-cpodman"]],
+  ["unknown argument", ["--unknown"]],
+  ["help mixed with another argument", ["--help", "--container-cli", "docker"]],
+  ["help after another argument", ["--container-cli", "docker", "--help"]],
+]) {
+  test(`build rejects ${name} before side effects`, async () => {
+    const { result, log, manifest } = await runBuild({
+      args,
+      runtimes: ["container", "podman", "docker"],
+      existingManifest: priorManifest,
+      uiEnvExtra: `printf 'config-source\\n' >> "$COMMAND_LOG"
+`,
+      exportedPat: "unused-argument-pat",
+    });
+
+    assert.equal(result.status, 64, result.stderr);
+    assertNoBuildSideEffects({ log, manifest }, priorManifest);
+  });
+}
+
+test("build rejects unavailable selected runtime before side effects", async () => {
+  const { result, log, manifest } = await runBuild({
+    args: ["--container-cli", "podman"],
+    runtimes: ["docker"],
+    existingManifest: priorManifest,
+    uiEnvExtra: `printf 'config-source\\n' >> "$COMMAND_LOG"
+`,
+    exportedPat: "unused-runtime-pat",
+  });
+
+  assert.equal(result.status, 64, result.stderr);
+  assert.match(result.stderr, /podman.*PATH/i);
+  assertNoBuildSideEffects({ log, manifest }, priorManifest);
+});
+
+for (const help of ["--help", "-h"]) {
+  test(`build ${help} is side-effect-free`, async () => {
+    const { result, log, manifest } = await runBuild({
+      args: [help],
+      runtimes: [],
+      existingManifest: priorManifest,
+      uiEnvExtra: `printf 'config-source\\n' >> "$COMMAND_LOG"
+`,
+      exportedPat: "unused-help-pat",
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Usage: .*build\.sh/);
+    assert.match(result.stdout, /container.*podman.*docker/i);
+    assertNoBuildSideEffects({ log, manifest }, priorManifest);
+  });
+}
 
 test("build then Docker Hub login then push writes exact atomic manifest", async () => {
   const {
@@ -640,6 +796,9 @@ const reservedDockerEnvKeys = [
   "CALLER_DOCKER_HUB_USERNAME",
   "CALLER_CONTAINER_CLI_WAS_SET",
   "CALLER_CONTAINER_CLI",
+  "CLI_CONTAINER_CLI",
+  "CLI_CONTAINER_CLI_SEEN",
+  "CLI_CONTAINER_CLI_PATH",
   "ENTRY_XTRACE_WAS_ENABLED",
   "ENV_CONFIG_OUTPUT",
   "CONFIG_LINE_COUNT",

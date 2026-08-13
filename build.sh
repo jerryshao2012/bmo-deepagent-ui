@@ -20,6 +20,77 @@ unset LANGCHAIN_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET NODE_OPTIONS DOCKER_
 
 set -eo pipefail
 
+print_usage() {
+  echo "Usage: ./build.sh [--container-cli RUNTIME|-c RUNTIME]"
+  echo "       ./build.sh --container-cli=RUNTIME"
+  echo "RUNTIME: container, podman, or docker"
+}
+
+unset CLI_CONTAINER_CLI CLI_CONTAINER_CLI_SEEN CLI_CONTAINER_CLI_PATH
+CLI_CONTAINER_CLI=""
+CLI_CONTAINER_CLI_SEEN=false
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --help|-h)
+      if [ "$#" -ne 1 ] || [ "$CLI_CONTAINER_CLI_SEEN" = true ]; then
+        echo "Error: --help must be used alone." >&2
+        exit 64
+      fi
+      print_usage
+      exit 0
+      ;;
+    --container-cli|-c)
+      if [ "$CLI_CONTAINER_CLI_SEEN" = true ]; then
+        echo "Error: container runtime option may be supplied only once." >&2
+        exit 64
+      fi
+      if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+        echo "Error: $1 requires a runtime value." >&2
+        exit 64
+      fi
+      CLI_CONTAINER_CLI="$2"
+      CLI_CONTAINER_CLI_SEEN=true
+      shift 2
+      ;;
+    --container-cli=*)
+      if [ "$CLI_CONTAINER_CLI_SEEN" = true ]; then
+        echo "Error: container runtime option may be supplied only once." >&2
+        exit 64
+      fi
+      CLI_CONTAINER_CLI="${1#--container-cli=}"
+      if [ -z "$CLI_CONTAINER_CLI" ]; then
+        echo "Error: --container-cli requires a runtime value." >&2
+        exit 64
+      fi
+      CLI_CONTAINER_CLI_SEEN=true
+      shift
+      ;;
+    *)
+      echo "Error: unknown argument '$1'." >&2
+      exit 64
+      ;;
+  esac
+done
+
+if [ "$CLI_CONTAINER_CLI_SEEN" = true ]; then
+  case "$CLI_CONTAINER_CLI" in
+    container|podman|docker) ;;
+    *)
+      echo "Error: container runtime must be one of: container, podman, docker." >&2
+      exit 64
+      ;;
+  esac
+  CLI_CONTAINER_CLI_PATH="$(type -P -- "$CLI_CONTAINER_CLI" 2>/dev/null)" || {
+    echo "Error: requested container runtime '$CLI_CONTAINER_CLI' is not on PATH." >&2
+    exit 64
+  }
+  if [ ! -f "$CLI_CONTAINER_CLI_PATH" ] || [ ! -x "$CLI_CONTAINER_CLI_PATH" ]; then
+    echo "Error: requested container runtime '$CLI_CONTAINER_CLI' is not on PATH." >&2
+    exit 64
+  fi
+  unset CLI_CONTAINER_CLI_PATH
+fi
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -102,13 +173,16 @@ XTRACE_RESTORED=false
 ALLEXPORT_RESTORED=false
 DOCKER_HUB_PAT_VALUE="$EXPORTED_DOCKER_HUB_PAT_VALUE"
 DOCKER_HUB_USERNAME="$CALLER_DOCKER_HUB_USERNAME"
-if [ "$CALLER_CONTAINER_CLI_WAS_SET" = true ]; then
+if [ "$CLI_CONTAINER_CLI_SEEN" = true ]; then
+  CONTAINER_CLI="$CLI_CONTAINER_CLI"
+elif [ "$CALLER_CONTAINER_CLI_WAS_SET" = true ]; then
   CONTAINER_CLI="$CALLER_CONTAINER_CLI"
 else
   unset CONTAINER_CLI
 fi
 unset DOCKER_HUB_PAT EXPORTED_DOCKER_HUB_PAT_VALUE CALLER_DOCKER_HUB_USERNAME
 unset CALLER_CONTAINER_CLI CALLER_CONTAINER_CLI_WAS_SET
+unset CLI_CONTAINER_CLI CLI_CONTAINER_CLI_SEEN
 
 restore_xtrace() {
   if [ "$XTRACE_WAS_ENABLED" = true ] && [ "$XTRACE_RESTORED" = false ]; then
@@ -174,7 +248,7 @@ load_docker_env() {
     fi
     case "$key" in
       NEXT_PUBLIC_ASSISTANT_ID|NEXT_PUBLIC_LANGGRAPH_URL) ;;
-      AZURE_SUBSCRIPTION_ID|RESOURCE_GROUP|ACR_NAME|KV_NAME|SEED|CONTAINER_APP_NAME|CONTAINER_CLI|DOCKER_HUB_USERNAME|DOCKER_HUB_PAT|XTRACE_WAS_ENABLED|XTRACE_RESTORED|ALLEXPORT_WAS_ENABLED|ALLEXPORT_RESTORED|SCRIPT_DIR|BUILD_CONTEXT_DIR|MANIFEST_TEMP|DOCKER_HUB_PAT_VALUE|EXPORTED_DOCKER_HUB_PAT_VALUE|CALLER_DOCKER_HUB_USERNAME|CALLER_CONTAINER_CLI_WAS_SET|CALLER_CONTAINER_CLI|ENTRY_XTRACE_WAS_ENABLED|ENV_CONFIG_OUTPUT|CONFIG_LINE_COUNT|ENV_SH_SKIP_DOCKER_SYNC|ENV_SH_SKIP_DOCKER_SYNC_WAS_SET|ENV_SH_SKIP_DOCKER_SYNC_PREVIOUS|ENV_SH_SOURCE_STATUS|APPROVED_DOCKER_HUB_USERNAME|ASSISTANT_ID|IMAGE_NAME|DEPLOYMENT_MARKER|LOGIN_STATUS|PATH|IFS|CDPATH|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|HOME|PWD|OLDPWD|TMPDIR|PS4|BASH_XTRACEFD|PROMPT_COMMAND|BASH_COMPAT|POSIXLY_CORRECT|GLOBIGNORE|NODE_OPTIONS|DOCKER_CONFIG|REGISTRY_AUTH_FILE|LD_*|DYLD_*)
+      AZURE_SUBSCRIPTION_ID|RESOURCE_GROUP|ACR_NAME|KV_NAME|SEED|CONTAINER_APP_NAME|CONTAINER_CLI|DOCKER_HUB_USERNAME|DOCKER_HUB_PAT|XTRACE_WAS_ENABLED|XTRACE_RESTORED|ALLEXPORT_WAS_ENABLED|ALLEXPORT_RESTORED|SCRIPT_DIR|BUILD_CONTEXT_DIR|MANIFEST_TEMP|DOCKER_HUB_PAT_VALUE|EXPORTED_DOCKER_HUB_PAT_VALUE|CALLER_DOCKER_HUB_USERNAME|CALLER_CONTAINER_CLI_WAS_SET|CALLER_CONTAINER_CLI|CLI_CONTAINER_CLI|CLI_CONTAINER_CLI_SEEN|CLI_CONTAINER_CLI_PATH|ENTRY_XTRACE_WAS_ENABLED|ENV_CONFIG_OUTPUT|CONFIG_LINE_COUNT|ENV_SH_SKIP_DOCKER_SYNC|ENV_SH_SKIP_DOCKER_SYNC_WAS_SET|ENV_SH_SKIP_DOCKER_SYNC_PREVIOUS|ENV_SH_SOURCE_STATUS|APPROVED_DOCKER_HUB_USERNAME|ASSISTANT_ID|IMAGE_NAME|DEPLOYMENT_MARKER|LOGIN_STATUS|PATH|IFS|CDPATH|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|HOME|PWD|OLDPWD|TMPDIR|PS4|BASH_XTRACEFD|PROMPT_COMMAND|BASH_COMPAT|POSIXLY_CORRECT|GLOBIGNORE|NODE_OPTIONS|DOCKER_CONFIG|REGISTRY_AUTH_FILE|LD_*|DYLD_*)
         dotenv_fail "$docker_env_path" "$line_number" "protected deployment, credential, or shell control '$key' cannot be overridden."
         ;;
     esac

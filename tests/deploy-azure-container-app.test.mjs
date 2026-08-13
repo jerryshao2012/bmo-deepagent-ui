@@ -434,6 +434,8 @@ const runDeployment = async ({
   pollIntervalSeconds = "5",
   inheritedEnv = {},
   uiEnvExtra = "",
+  backendEnvExtra = "",
+  envShExtra = "",
   xtrace = false,
   endpointResolverOutput = deploymentResolverOutput,
   endpointResolverStatus = 0,
@@ -494,9 +496,17 @@ const runDeployment = async ({
         path.join(scriptsDir, "containerapp-template-patch.mjs")
       ),
     ]);
+    if (envShExtra) {
+      const envShPath = path.join(fixtureRoot, "env.sh");
+      const envSh = await readFile(envShPath, "utf8");
+      await writeFile(envShPath, `${envSh}\n${envShExtra}\n`);
+    }
     await writeFile(
       path.join(scriptsDir, "resolve-azure-endpoints.sh"),
       `#!/bin/bash
+for variable_name in CALLER_OAUTH_REDIRECTS_CONFIRMED CLI_OAUTH_REDIRECTS_CONFIRMED CLI_OAUTH_REDIRECTS_CONFIRMED_SEEN DEPLOY_ORIGINAL_ARGUMENT_COUNT; do
+  [ -z "\${!variable_name-}" ] || printf 'parser-state-leak:%s\\n' "$variable_name" >> "$COMMAND_LOG"
+done
 printf 'resolver' >> "$COMMAND_LOG"
 for argument in "$@"; do printf ' <%s>' "$argument" >> "$COMMAND_LOG"; done
 printf '\n' >> "$COMMAND_LOG"
@@ -525,7 +535,7 @@ exit "$ENDPOINT_RESOLVER_STATUS"
     await chmod(path.join(scriptsDir, "resolve-azure-endpoints.sh"), 0o755);
     await writeFile(
       path.join(backendRoot, "env.sh"),
-      'export DEEP_RESEARCH_AGENT_URL="https://env-backend.invalid"\n'
+      `export DEEP_RESEARCH_AGENT_URL="https://env-backend.invalid"\n${backendEnvExtra}\n`
     );
     await writeFile(
       path.join(fixtureRoot, ".env"),
@@ -858,6 +868,44 @@ test("caller environment cannot forge oauth confirmation parser state", async ()
   assert.match(result.stderr, /OAUTH_REDIRECTS_CONFIRMED=true is required/);
   assertNoAppMutation(log);
 });
+
+for (const [sourceName, sourceOption] of [
+  ["env.sh", "envShExtra"],
+  ["backend env", "backendEnvExtra"],
+  ["UI .env", "uiEnvExtra"],
+]) {
+  test(`${sourceName} cannot forge oauth confirmation parser state`, async () => {
+    const { result, log } = await runDeployment({
+      oauthRedirectsConfirmed: false,
+      [sourceOption]: `export CALLER_OAUTH_REDIRECTS_CONFIRMED=true
+export CLI_OAUTH_REDIRECTS_CONFIRMED=true
+export CLI_OAUTH_REDIRECTS_CONFIRMED_SEEN=true`,
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /OAUTH_REDIRECTS_CONFIRMED=true is required/);
+    assert.doesNotMatch(
+      `${result.stdout}${result.stderr}${log}`,
+      /parser-state-leak/
+    );
+    assertNoAppMutation(log);
+  });
+
+  test(`${sourceName} cannot clear oauth confirmation parser state`, async () => {
+    const { result, log, patchBody } = await runDeployment({
+      oauthRedirectsConfirmed: false,
+      args: ["--oauth-redirects-confirmed"],
+      [sourceOption]: `export CALLER_OAUTH_REDIRECTS_CONFIRMED=false
+export CLI_OAUTH_REDIRECTS_CONFIRMED=false
+export CLI_OAUTH_REDIRECTS_CONFIRMED_SEEN=false`,
+    });
+    assert.equal(result.status, 0, `${result.stderr}\n${log}`);
+    assert.match(log, /az <rest> <--method> <patch>/);
+    assert.doesNotMatch(
+      `${result.stdout}${result.stderr}${log}${JSON.stringify(patchBody)}`,
+      /OAUTH_REDIRECTS_CONFIRMED|oauth-redirects-confirmed|parser-state-leak/
+    );
+  });
+}
 
 for (const [name, options] of [
   ["without argument", { oauthRedirectsConfirmed: false }],
@@ -1570,8 +1618,29 @@ test("deployment preserves .env.docker bytes and works outside repository cwd", 
   assert.deepEqual(outsideAfter, outsideSentinel);
 });
 
+const deployInternalControlNames = [
+  "CALLER_OAUTH_REDIRECTS_CONFIRMED",
+  "CLI_OAUTH_REDIRECTS_CONFIRMED",
+  "CLI_OAUTH_REDIRECTS_CONFIRMED_SEEN",
+  "DEPLOY_ORIGINAL_ARGUMENT_COUNT",
+  "DEPLOY_XTRACE_WAS_ENABLED",
+  "ENV_CONFIG_OUTPUT",
+  "CONFIG_LINE_COUNT",
+  "config_line",
+  "ENV_SH_SKIP_DOCKER_SYNC",
+  "ENV_SH_SKIP_DOCKER_SYNC_WAS_SET",
+  "ENV_SH_SKIP_DOCKER_SYNC_PREVIOUS",
+  "ENV_SH_SOURCE_STATUS",
+  "OAUTH_REDIRECTS_CONFIRMED",
+];
+
 for (const [name, dockerEnv, error] of [
   ["protected override", "RESOURCE_GROUP=attacker\n", /protected/i],
+  ...deployInternalControlNames.map((variableName) => [
+    `protected ${variableName}`,
+    `${variableName}=attacker\n`,
+    /protected/i,
+  ]),
   [
     "export syntax",
     "export NEXT_PUBLIC_ASSISTANT_ID=attacker\n",

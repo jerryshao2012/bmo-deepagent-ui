@@ -21,10 +21,17 @@ class FakeScheduler implements ConnectionScheduler {
     number,
     { callback: () => void; deadline: number; delayMs: number }
   >();
+  private readonly retainedCallbacks: Array<() => void> = [];
+  private readonly retainedClearCounts = new Map<number, number>();
 
-  constructor(
-    private readonly retainedClearDelays: ReadonlySet<number> = new Set(),
-  ) {}
+  constructor(retainedClearDelays: readonly number[] = []) {
+    for (const delayMs of retainedClearDelays) {
+      this.retainedClearCounts.set(
+        delayMs,
+        (this.retainedClearCounts.get(delayMs) ?? 0) + 1,
+      );
+    }
+  }
 
   setTimeout(callback: () => void, delayMs: number): number {
     const id = this.nextId++;
@@ -39,12 +46,26 @@ class FakeScheduler implements ConnectionScheduler {
   clearTimeout(handle: unknown): void {
     const id = handle as number;
     const timer = this.timers.get(id);
-    if (timer && this.retainedClearDelays.has(timer.delayMs)) return;
+    const retainCount = timer
+      ? (this.retainedClearCounts.get(timer.delayMs) ?? 0)
+      : 0;
+    if (timer && retainCount > 0) {
+      this.retainedClearCounts.set(timer.delayMs, retainCount - 1);
+      this.timers.delete(id);
+      this.retainedCallbacks.push(timer.callback);
+      return;
+    }
     this.timers.delete(id);
   }
 
   get pendingTimerCount(): number {
     return this.timers.size;
+  }
+
+  runRetainedCallback(): void {
+    const callback = this.retainedCallbacks.shift();
+    if (!callback) throw new Error("Expected a retained callback");
+    callback();
   }
 
   advanceBy(delayMs: number): void {
@@ -82,6 +103,11 @@ class EffectRecorder implements MarkdownConnectionEffects {
   readonly countdowns: Array<number | null> = [];
   requestAutoCloseCalls = 0;
   onRequestAutoClose: (() => void) | undefined;
+  onSetAutoCloseCountdown:
+    | ((seconds: number | null) => void)
+    | undefined;
+  onStopAllTransports: (() => void) | undefined;
+  onSetStatus: ((status: MarkdownConnectionStatus) => void) | undefined;
   readonly statuses: MarkdownConnectionStatus[] = [];
 
   connectWebSocket(attemptId: number): void {
@@ -108,14 +134,17 @@ class EffectRecorder implements MarkdownConnectionEffects {
 
   stopAllTransports(): void {
     this.stopAllTransportsCalls += 1;
+    this.onStopAllTransports?.();
   }
 
   setStatus(status: MarkdownConnectionStatus): void {
     this.statuses.push(status);
+    this.onSetStatus?.(status);
   }
 
   setAutoCloseCountdown(seconds: number | null): void {
     this.countdowns.push(seconds);
+    this.onSetAutoCloseCountdown?.(seconds);
   }
 
   requestAutoClose(): void {
@@ -160,6 +189,26 @@ function openCurrent(
   effects: EffectRecorder,
 ): void {
   lifecycle.socketOpened(effects.currentAttemptId);
+}
+
+function onNextIdleEffect(
+  effects: EffectRecorder,
+  boundary: "stopAllTransports" | "setStatus",
+  callback: () => void,
+): void {
+  if (boundary === "stopAllTransports") {
+    effects.onStopAllTransports = () => {
+      effects.onStopAllTransports = undefined;
+      callback();
+    };
+    return;
+  }
+
+  effects.onSetStatus = (status) => {
+    if (status !== "idle") return;
+    effects.onSetStatus = undefined;
+    callback();
+  };
 }
 
 function reachFallback(
@@ -249,6 +298,126 @@ test("five minutes hibernates transport before exact countdown and one close", (
   assert.equal(effects.requestAutoCloseCalls, 1);
   assert.equal(scheduler.pendingTimerCount, 0);
 });
+
+for (const boundary of ["stopAllTransports", "setStatus"] as const) {
+  test(`inactivity rechecks epoch after reentrant activity from ${boundary}`, () => {
+    const { effects, lifecycle, scheduler } = createLifecycle();
+    wake(lifecycle);
+    openCurrent(lifecycle, effects);
+    onNextIdleEffect(effects, boundary, () => lifecycle.recordActivity());
+
+    scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+
+    assert.deepEqual(effects.countdowns, []);
+    assert.equal(effects.requestAutoCloseCalls, 0);
+    assert.equal(effects.connectWebSocketCalls, 2);
+    assert.equal(effects.stopAllTransportsCalls, 2);
+    assert.equal(effects.status, "connecting");
+    assert.equal(scheduler.pendingTimerCount, 2);
+  });
+}
+
+for (const action of ["activity", "visibility", "dispose"] as const) {
+  test(`countdown start rechecks after reentrant ${action}`, () => {
+    const { effects, lifecycle, scheduler } = createLifecycle();
+    wake(lifecycle);
+    openCurrent(lifecycle, effects);
+    effects.onSetAutoCloseCountdown = (seconds) => {
+      if (seconds !== MARKDOWN_AUTO_CLOSE_SECONDS) return;
+      effects.onSetAutoCloseCountdown = undefined;
+      if (action === "activity") lifecycle.recordActivity();
+      if (action === "visibility") lifecycle.setVisibility(false);
+      if (action === "dispose") lifecycle.dispose();
+    };
+
+    scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+
+    assert.deepEqual(effects.countdowns, [5, null]);
+    assert.equal(effects.requestAutoCloseCalls, 0);
+    assert.equal(
+      scheduler.pendingTimerCount,
+      action === "activity" ? 2 : 0,
+    );
+    assert.equal(
+      effects.connectWebSocketCalls,
+      action === "activity" ? 2 : 1,
+    );
+  });
+}
+
+test("countdown tick rechecks epoch after reentrant activity", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+  effects.onSetAutoCloseCountdown = (seconds) => {
+    if (seconds !== 4) return;
+    effects.onSetAutoCloseCountdown = undefined;
+    lifecycle.recordActivity();
+  };
+
+  scheduler.advanceBy(MARKDOWN_COUNTDOWN_TICK_MS);
+
+  assert.deepEqual(effects.countdowns, [5, 4, null]);
+  assert.equal(effects.requestAutoCloseCalls, 0);
+  assert.equal(effects.connectWebSocketCalls, 2);
+  assert.equal(scheduler.pendingTimerCount, 2);
+});
+
+test("inactivity rechecks eligibility after visibility changes in stop effect", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+  onNextIdleEffect(effects, "stopAllTransports", () =>
+    lifecycle.setVisibility(false),
+  );
+
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+
+  assert.equal(lifecycle.isEligible(), false);
+  assert.deepEqual(effects.countdowns, []);
+  assert.equal(effects.requestAutoCloseCalls, 0);
+  assert.equal(effects.stopAllTransportsCalls, 2);
+  assert.equal(effects.status, "idle");
+  assert.equal(scheduler.pendingTimerCount, 0);
+});
+
+test("inactivity rechecks eligibility after dialog closes in status effect", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+  onNextIdleEffect(effects, "setStatus", () => lifecycle.setDialogOpen(false));
+
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+
+  assert.equal(lifecycle.isEligible(), false);
+  assert.deepEqual(effects.countdowns, []);
+  assert.equal(effects.requestAutoCloseCalls, 0);
+  assert.equal(effects.stopAllTransportsCalls, 2);
+  assert.equal(effects.status, "idle");
+  assert.equal(scheduler.pendingTimerCount, 0);
+});
+
+for (const boundary of ["stopAllTransports", "setStatus"] as const) {
+  test(`inactivity rechecks disposal after reentrant ${boundary}`, () => {
+    const { effects, lifecycle, scheduler } = createLifecycle();
+    wake(lifecycle);
+    openCurrent(lifecycle, effects);
+    onNextIdleEffect(effects, boundary, () => lifecycle.dispose());
+
+    scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+
+    assert.equal(lifecycle.isEligible(), false);
+    assert.deepEqual(effects.countdowns, []);
+    assert.equal(effects.requestAutoCloseCalls, 0);
+    assert.equal(effects.stopAllTransportsCalls, 3);
+    assert.equal(
+      effects.status,
+      boundary === "stopAllTransports" ? "connected" : "idle",
+    );
+    assert.equal(scheduler.pendingTimerCount, 0);
+  });
+}
 
 test("activity at countdown three clears warning, wakes once, and resets five minutes", () => {
   const { effects, lifecycle, scheduler } = createLifecycle();
@@ -346,18 +515,58 @@ test("hiding during warning clears countdown without stale close", () => {
 
 test("epoch rejects retained countdown callback after visibility loss", () => {
   const { effects, lifecycle, scheduler } = createLifecycle(
-    new FakeScheduler(new Set([MARKDOWN_COUNTDOWN_TICK_MS])),
+    new FakeScheduler([MARKDOWN_COUNTDOWN_TICK_MS]),
   );
   wake(lifecycle);
   openCurrent(lifecycle, effects);
   scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
 
   lifecycle.setVisibility(false);
-  scheduler.advanceBy(10 * MARKDOWN_COUNTDOWN_TICK_MS);
+  scheduler.runRetainedCallback();
 
   assert.deepEqual(effects.countdowns, [5, null]);
   assert.equal(effects.requestAutoCloseCalls, 0);
   assert.equal(effects.connectWebSocketCalls, 1);
+});
+
+test("retained stale inactivity callback cannot orphan a rearmed timer", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle(
+    new FakeScheduler([MARKDOWN_INACTIVITY_MS]),
+  );
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+  scheduler.advanceBy(1);
+  lifecycle.recordActivity();
+
+  scheduler.runRetainedCallback();
+  lifecycle.setVisibility(false);
+
+  assert.equal(scheduler.pendingTimerCount, 0);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+  assert.deepEqual(effects.countdowns, []);
+  assert.equal(effects.requestAutoCloseCalls, 0);
+  assert.equal(effects.stopAllTransportsCalls, 2);
+});
+
+test("retained stale countdown callback cannot orphan a newer countdown", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle(
+    new FakeScheduler([MARKDOWN_COUNTDOWN_TICK_MS]),
+  );
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+  lifecycle.recordActivity();
+  openCurrent(lifecycle, effects);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+
+  scheduler.runRetainedCallback();
+  lifecycle.dispose();
+
+  assert.equal(scheduler.pendingTimerCount, 0);
+  scheduler.advanceBy(MARKDOWN_COUNTDOWN_TICK_MS);
+  assert.deepEqual(effects.countdowns, [5, null, 5, null]);
+  assert.equal(effects.requestAutoCloseCalls, 0);
+  assert.equal(effects.stopAllTransportsCalls, 4);
 });
 
 test("closing during warning clears countdown and never reconnects", () => {
@@ -685,7 +894,7 @@ test("lifecycle instances hibernate and wake independently", () => {
 });
 
 test("disposed controller cannot warn or close while replacement reaches countdown", () => {
-  const scheduler = new FakeScheduler(new Set([MARKDOWN_INACTIVITY_MS]));
+  const scheduler = new FakeScheduler([MARKDOWN_INACTIVITY_MS]);
   const oldEffects = new EffectRecorder();
   const oldLifecycle = new MarkdownConnectionLifecycle(oldEffects, scheduler);
   wake(oldLifecycle);
@@ -700,6 +909,7 @@ test("disposed controller cannot warn or close while replacement reaches countdo
   );
   wake(replacement);
   openCurrent(replacement, replacementEffects);
+  scheduler.runRetainedCallback();
   scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
 
   assert.deepEqual(oldEffects.countdowns, []);

@@ -285,6 +285,7 @@ export class MarkdownConnectionLifecycle {
     this.sleeping = true;
     this.ineligibleReconciled = true;
     this.effects.stopAllTransports();
+    if (this.disposed || !this.sleeping) return;
     this.effects.setStatus("idle");
   }
 
@@ -315,30 +316,34 @@ export class MarkdownConnectionLifecycle {
   private armInactivityTimer(): void {
     this.invalidateIdleCycle();
     const epoch = this.idleCycleEpoch;
-    this.inactivityTimer = this.scheduler.setTimeout(() => {
-      this.inactivityTimer = undefined;
+    const timer = this.scheduler.setTimeout(() => {
+      if (this.inactivityTimer === timer) this.inactivityTimer = undefined;
       if (!this.isCurrentIdleCycle(epoch)) return;
 
       this.hibernateTransports();
+      if (!this.isCurrentIdleCycle(epoch)) return;
       this.beginCountdown();
     }, MARKDOWN_INACTIVITY_MS);
+    this.inactivityTimer = timer;
   }
 
   private beginCountdown(): void {
     this.idleCycleEpoch += 1;
     const epoch = this.idleCycleEpoch;
     this.publishCountdown(MARKDOWN_AUTO_CLOSE_SECONDS);
+    if (!this.isCurrentIdleCycle(epoch)) return;
     this.armCountdownTick(epoch, MARKDOWN_AUTO_CLOSE_SECONDS - 1);
   }
 
   private armCountdownTick(epoch: number, remainingSeconds: number): void {
     this.clearCountdownTimer();
-    this.countdownTimer = this.scheduler.setTimeout(() => {
-      this.countdownTimer = undefined;
+    const timer = this.scheduler.setTimeout(() => {
+      if (this.countdownTimer === timer) this.countdownTimer = undefined;
       if (!this.isCurrentIdleCycle(epoch)) return;
 
       if (remainingSeconds > 0) {
         this.publishCountdown(remainingSeconds);
+        if (!this.isCurrentIdleCycle(epoch)) return;
         this.armCountdownTick(epoch, remainingSeconds - 1);
         return;
       }
@@ -348,6 +353,7 @@ export class MarkdownConnectionLifecycle {
       this.publishCountdown(null);
       this.effects.requestAutoClose();
     }, MARKDOWN_COUNTDOWN_TICK_MS);
+    this.countdownTimer = timer;
   }
 
   private isCurrentIdleCycle(epoch: number): boolean {

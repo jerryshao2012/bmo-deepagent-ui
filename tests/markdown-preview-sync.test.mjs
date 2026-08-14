@@ -161,13 +161,41 @@ test("synced attachments use canonical type-neutral links and a dedicated card",
   assert.doesNotMatch(markdownContent, /__markdown-zip/);
 });
 
-test("intro asset gestures accept mixed images and attachments", async () => {
+test("intro asset gestures validate every non-null pasted and dropped file", async () => {
   const introPage = await source("src/app/intro/page.tsx");
+  const pasteHandler = introPage.slice(
+    introPage.indexOf("const handleMarkdownAssetPaste"),
+    introPage.indexOf("const handleMarkdownAssetDragOver")
+  );
+  const dropHandler = introPage.slice(
+    introPage.indexOf("const handleMarkdownAssetDrop"),
+    introPage.indexOf("const handleCopy")
+  );
 
   assert.match(introPage, /onPaste=\{handleMarkdownAssetPaste\}/);
   assert.match(introPage, /onDrop=\{handleMarkdownAssetDrop\}/);
-  assert.match(introPage, /isSupportedMarkdownAssetFile/);
-  assert.match(introPage, /validateMarkdownAssetFiles/);
+  assert.doesNotMatch(introPage, /isSupportedMarkdownAssetFile/);
+  assert.match(
+    pasteHandler,
+    /Array\.from\(event\.clipboardData\.items\)[\s\S]*?\.filter\(\(item\) => item\.kind === "file"\)[\s\S]*?\.map\(\(item\) => item\.getAsFile\(\)\)[\s\S]*?\.filter\(\(file\): file is File => file !== null\);/
+  );
+  assert.match(
+    dropHandler,
+    /const files = Array\.from\(event\.dataTransfer\.files\);/
+  );
+  for (const handler of [pasteHandler, dropHandler]) {
+    assert.match(handler, /if \(files\.length === 0\) return;/);
+    assert.match(handler, /event\.preventDefault\(\);/);
+    assert.match(handler, /processMarkdownAssetFiles\(\s*files,/);
+  }
+  assert.match(
+    introPage,
+    /const \{ accepted, rejected \} = validateMarkdownAssetFiles\(files\);/
+  );
+  assert.match(
+    introPage,
+    /const failureCount = rejected\.length \+ response\.errors\.length;/
+  );
   assert.match(introPage, /buildSyncedAssetMarkdown/);
   assert.match(introPage, /uploadMarkdownAssets/);
   assert.match(introPage, /UPLOADING ATTACHMENTS/);

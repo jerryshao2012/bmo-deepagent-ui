@@ -123,6 +123,7 @@ export function escapeMarkdownAlt(filename: string): string {
 
 export function escapeMarkdownAttachmentLabel(filename: string): string {
   return escapeMarkdownAlt(filename)
+    .replace(/[<>&]/g, (character) => `\\${character}`)
     .replace(/\*/g, "\\*")
     .replace(/_/g, "\\_")
     .replace(/`/g, "\\`")
@@ -155,8 +156,11 @@ export function buildSyncedAssetMarkdown(
         const filename = escapeMarkdownAttachmentLabel(asset.filename);
         return `[${filename}](/__markdown-attachment/${asset.id} "size=${asset.size}")`;
       }
-      const filename = escapeMarkdownAlt(asset.filename);
-      return `![${filename}](/__markdown-image/${asset.id})`;
+      if (ALLOWED_IMAGE_EXTENSIONS[asset.content_type.toLowerCase()]) {
+        const filename = escapeMarkdownAlt(asset.filename);
+        return `![${filename}](/__markdown-image/${asset.id})`;
+      }
+      throw new Error("Unsupported Markdown asset content type");
     })
     .join("\n\n");
 }

@@ -14,6 +14,7 @@ import {
   buildSyncedAssetMarkdown,
   buildSyncedImageMarkdown,
   canStartSyncedImageGesture,
+  escapeMarkdownAttachmentLabel,
   formatMarkdownAttachmentSize,
   insertSyncedImageMarkdown,
   parseContentDispositionFilename,
@@ -246,6 +247,18 @@ test("builds mixed image and attachment Markdown in upload order", () => {
   assert.doesNotMatch(markdown, /__markdown-zip/);
 });
 
+test("escapes GFM autolink and entity punctuation in attachment labels", () => {
+  assert.equal(
+    escapeMarkdownAttachmentLabel("<foo@example.com>.docx"),
+    "\\<foo@example.com\\>.docx"
+  );
+  assert.equal(
+    escapeMarkdownAttachmentLabel("report&copy;.docx"),
+    "report\\&copy;.docx"
+  );
+  assert.equal(escapeMarkdownAttachmentLabel("a>b<c.docx"), "a\\>b\\<c.docx");
+});
+
 test("builds type-neutral attachment Markdown for normalized archives and Office assets", () => {
   const ids = [
     "1b14e924-5f0e-4fdb-b85d-4dddf8bc4271",
@@ -305,10 +318,9 @@ test("builds type-neutral attachment Markdown for normalized archives and Office
   }
 });
 
-test("uses response content type for images and leaves unknown octet-stream responses unsupported", () => {
+test("uses normalized response content type instead of filename for images", () => {
   const archiveId = "1b14e924-5f0e-4fdb-b85d-4dddf8bc4271";
   const imageId = "1df760fa-5e2e-4e83-8a43-f2e939f64d08";
-  const unknownId = "2882c02f-80ce-48aa-bff8-2f04336b5451";
 
   assert.equal(
     buildSyncedAssetMarkdown([
@@ -321,19 +333,41 @@ test("uses response content type for images and leaves unknown octet-stream resp
       {
         id: imageId,
         filename: "misleading.docx",
-        content_type: "image/png",
+        content_type: "IMAGE/PNG",
         size: 2,
-      },
-      {
-        id: unknownId,
-        filename: "unknown.bin",
-        content_type: "application/octet-stream",
-        size: 3,
       },
     ]),
     `[misleading.png](/__markdown-attachment/${archiveId} "size=1")\n\n` +
-      `![misleading.docx](/__markdown-image/${imageId})\n\n` +
-      `![unknown.bin](/__markdown-image/${unknownId})`
+      `![misleading.docx](/__markdown-image/${imageId})`
+  );
+});
+
+test("throws a deterministic error for unsupported response content types", () => {
+  for (const contentType of ["application/octet-stream", "text/plain"]) {
+    assert.throws(
+      () =>
+        buildSyncedAssetMarkdown([
+          {
+            id: "2882c02f-80ce-48aa-bff8-2f04336b5451",
+            filename: "unknown.bin",
+            content_type: contentType,
+            size: 3,
+          },
+        ]),
+      new Error("Unsupported Markdown asset content type")
+    );
+  }
+  assert.throws(
+    () =>
+      buildSyncedAssetMarkdown([
+        {
+          id: "2882c02f-80ce-48aa-bff8-2f04336b5451",
+          filename: "misleading.png",
+          content_type: "application/octet-stream",
+          size: 3,
+        },
+      ]),
+    new Error("Unsupported Markdown asset content type")
   );
 });
 

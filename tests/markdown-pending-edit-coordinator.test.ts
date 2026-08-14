@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   MarkdownPendingEditCoordinator,
+  resolveMarkdownWebSocketSync,
   type FallbackWriteContext,
   type PendingEditCoordinatorScheduler,
   type PendingMarkdownEdit,
@@ -239,4 +240,88 @@ test("fallback readiness waits for both initial barrier and current acceptance",
 
   coordinator.markFallbackInitialSeen(generation);
   assert.equal(readyCalls, 1);
+});
+
+test("WebSocket resolver rejects stale ABA acknowledgements until exact A3 echo", () => {
+  const coordinator = new MarkdownPendingEditCoordinator();
+  const clientId = "md-client_123";
+  const first = coordinator.publish("111111", "A", false);
+  const second = coordinator.publish("111111", "B", false);
+  const third = coordinator.publish("111111", "A", true);
+
+  for (const incoming of [
+    { content: "A", clientId, operationId: first.operationId },
+    { content: "B", clientId, operationId: second.operationId },
+    { content: "A" },
+  ]) {
+    assert.deepEqual(
+      resolveMarkdownWebSocketSync({
+        incoming,
+        localClientId: clientId,
+        pendingEdit: third,
+      }),
+      { action: "ignore" }
+    );
+    assert.equal(
+      coordinator.pendingForThread("111111")?.operationId,
+      third.operationId
+    );
+  }
+
+  const exact = resolveMarkdownWebSocketSync({
+    incoming: {
+      content: "A",
+      clientId,
+      operationId: third.operationId,
+    },
+    localClientId: clientId,
+    pendingEdit: third,
+  });
+  assert.deepEqual(exact, {
+    action: "apply",
+    acknowledgeOperationId: third.operationId,
+  });
+  coordinator.acknowledgeWebSocket("111111", exact.acknowledgeOperationId);
+  assert.equal(coordinator.pendingForThread("111111"), null);
+});
+
+test("WebSocket resolver resends pending edit at initial barrier without exact echo", () => {
+  const coordinator = new MarkdownPendingEditCoordinator();
+  const pendingEdit = coordinator.publish("111111", "local", false);
+
+  for (const incoming of [
+    { content: "remote", initial: true },
+    {
+      content: "local",
+      initial: true,
+      clientId: { arbitrary: true },
+      operationId: pendingEdit.operationId,
+    },
+    {
+      content: "local",
+      initial: true,
+      clientId: "md-client_123",
+      operationId: "1",
+    },
+  ]) {
+    assert.deepEqual(
+      resolveMarkdownWebSocketSync({
+        incoming,
+        localClientId: "md-client_123",
+        pendingEdit,
+      }),
+      { action: "resend" }
+    );
+  }
+});
+
+test("WebSocket resolver applies remote sync when no local edit is pending", () => {
+  assert.deepEqual(
+    resolveMarkdownWebSocketSync({
+      incoming: { content: "remote" },
+      localClientId: "md-client_123",
+      pendingEdit: null,
+    }),
+    { action: "apply" }
+  );
 });

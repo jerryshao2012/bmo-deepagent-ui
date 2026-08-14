@@ -57,7 +57,7 @@ test("WebSocket and HTTP fallback maintain one local markdown state", async () =
   assert.match(server, /roomContent\.(?:set|delete)\(threadId/);
   assert.match(
     server,
-    /globalThis\.__sseNotify\(\s*threadId,\s*data\.content\s*\|\|\s*"",\s*data\.immediate\s*===\s*true\s*\)/
+    /globalThis\.__sseNotify\(\s*threadId,\s*data\.content\s*\|\|\s*"",\s*data\.immediate\s*===\s*true,\s*operationMetadata\s*\)/
   );
 });
 
@@ -160,13 +160,57 @@ test("local markdown queues for WebSocket wake unless fallback is active", async
 test("WebSocket initial sync resends a newer pending edit before becoming ready", async () => {
   const introPage = await source("src/app/intro/page.tsx");
 
+  const resendStart = introPage.indexOf('resolution.action === "resend"');
+  const resendEnd = introPage.indexOf(
+    'if (resolution.action !== "apply")',
+    resendStart,
+  );
+  assert.notEqual(resendStart, -1);
+  assert.notEqual(resendEnd, -1);
+  const resendBlock = introPage.slice(resendStart, resendEnd);
+  assert.match(resendBlock, /pendingEdit !== null/);
+  assert.match(resendBlock, /data\.initial === true/);
+  assert.match(
+    resendBlock,
+    /type: "update",\s*content: pendingEdit\.content/,
+  );
+  assert.match(resendBlock, /lifecycleRef\.current\?\.initialSyncReady\(\)/);
+  assert.match(introPage, /if \(resolution\.action !== "apply"\) return/);
+  const resolverStart = introPage.indexOf(
+    "const resolution = resolveMarkdownWebSocketSync",
+  );
+  const resolverEnd = introPage.indexOf(
+    "applyContent(incomingContent)",
+    resolverStart,
+  );
+  assert.notEqual(resolverStart, -1);
+  assert.notEqual(resolverEnd, -1);
+  const resolverBlock = introPage.slice(resolverStart, resolverEnd);
+  assert.match(resolverBlock, /acknowledgeOperationId/);
+  assert.match(resolverBlock, /acknowledgeWebSocket/);
   assert.match(
     introPage,
-    /pendingEdit !== null[\s\S]{0,250}data\.initial === true[\s\S]{0,300}JSON\.stringify\(\{\s*type: "update",\s*content: pendingEdit\.content[\s\S]{0,200}initialSyncReady\(\)/
+    /clientId:\s*markdownClientIdRef\.current,\s*operationId:\s*pendingEdit\.operationId/
+  );
+});
+
+test("WebSocket operation metadata is validated and echoed as scalar fields", async () => {
+  const [introPage, server] = await Promise.all([
+    source("src/app/intro/page.tsx"),
+    source("server.cjs"),
+  ]);
+
+  assert.match(introPage, /const markdownClientIdRef = useRef/);
+  assert.match(server, /\^\[A-Za-z0-9_-\]\{1,64\}\$/);
+  assert.match(server, /Number\.isSafeInteger\(metadata\.operationId\)/);
+  assert.match(server, /metadata\.operationId <= 0/);
+  assert.match(
+    server,
+    /clientId:\s*metadata\.clientId,\s*operationId:\s*metadata\.operationId/
   );
   assert.match(
-    introPage,
-    /incomingContent === pendingEdit\.content[\s\S]{0,300}acknowledgeWebSocket\([\s\S]{0,100}threadId,[\s\S]{0,100}pendingEdit\.operationId/
+    server,
+    /__sseNotify\([\s\S]{0,180}operationMetadata/
   );
 });
 
@@ -301,6 +345,20 @@ test("cross-machine markdown updates converge every local transport", async () =
   assert.notEqual(remotePollEnd, -1);
   const remotePollBlock = introPage.slice(remotePollStart, remotePollEnd);
   assert.doesNotMatch(remotePollBlock, /lifecycleRef\.current/);
+  const backendRelayStart = remotePollBlock.indexOf(
+    "if (activeSocket?.readyState === WebSocket.OPEN)",
+  );
+  const backendRelayEnd = remotePollBlock.indexOf(
+    "applyContent(remoteContent)",
+    backendRelayStart,
+  );
+  assert.notEqual(backendRelayStart, -1);
+  assert.notEqual(backendRelayEnd, -1);
+  const backendRelayBlock = remotePollBlock.slice(
+    backendRelayStart,
+    backendRelayEnd,
+  );
+  assert.doesNotMatch(backendRelayBlock, /clientId|operationId/);
   assert.doesNotMatch(introPage, /pendingWebSocketContentRef/);
   assert.doesNotMatch(introPage, /pendingFallbackUpdateRef/);
   assert.doesNotMatch(introPage, /fallbackWriteInFlightRef/);

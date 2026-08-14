@@ -13,7 +13,10 @@ import {
   MarkdownConnectionLifecycle,
   type MarkdownConnectionStatus,
 } from "@/features/markdown-sync/application/connection-lifecycle";
-import { MarkdownPendingEditCoordinator } from "@/features/markdown-sync/application/pending-edit-coordinator";
+import {
+  MarkdownPendingEditCoordinator,
+  resolveMarkdownWebSocketSync,
+} from "@/features/markdown-sync/application/pending-edit-coordinator";
 import { clearRememberedLogin } from "@/lib/remembered-login";
 import {
   buildSyncedAssetMarkdown,
@@ -47,6 +50,10 @@ import {
 } from "lucide-react";
 
 const browserMarkdownStore = new BrowserMarkdownSyncStore();
+
+function createMarkdownClientId(): string {
+  return `md-${globalThis.crypto.randomUUID()}`;
+}
 
 function IntroPageContent() {
   const searchParams = useSearchParams();
@@ -84,6 +91,7 @@ function IntroPageContent() {
   };
 
   const wsRef = useRef<WebSocket | null>(null);
+  const markdownClientIdRef = useRef(createMarkdownClientId());
   const wsAttemptIdRef = useRef<number | null>(null);
   const lifecycleRef = useRef<MarkdownConnectionLifecycle | null>(null);
   const wsStatusRef = useRef<MarkdownConnectionStatus>(wsStatus);
@@ -262,26 +270,17 @@ function IntroPageContent() {
         console.log("[Cross-Deploy] Received remote content from backend");
         lastBackendSyncRef.current = remoteContent;
         lastPollPushedRef.current = remoteContent;
-        const pendingEdit = pendingEditCoordinatorRef.current.publish(
-          threadId,
-          remoteContent,
-          false
-        );
-
         const activeSocket = wsRef.current;
-        if (
-          activeSocket &&
-          activeSocket.readyState !== WebSocket.CLOSING &&
-          activeSocket.readyState !== WebSocket.CLOSED
-        ) {
-          if (activeSocket.readyState === WebSocket.OPEN) {
-            activeSocket.send(
-              JSON.stringify({
-                type: "update",
-                content: pendingEdit.content,
-              })
-            );
-          }
+        if (activeSocket?.readyState === WebSocket.OPEN) {
+          activeSocket.send(
+            JSON.stringify({ type: "update", content: remoteContent })
+          );
+        } else {
+          pendingEditCoordinatorRef.current.publish(
+            threadId,
+            remoteContent,
+            false
+          );
         }
         applyContent(remoteContent);
       }
@@ -611,29 +610,39 @@ function IntroPageContent() {
           const incomingContent: string = data.content ?? "";
           const pendingEdit =
             pendingEditCoordinatorRef.current.pendingForThread(threadId);
+          const resolution = resolveMarkdownWebSocketSync({
+            incoming: {
+              content: incomingContent,
+              initial: data.initial,
+              clientId: data.clientId,
+              operationId: data.operationId,
+            },
+            localClientId: markdownClientIdRef.current,
+            pendingEdit,
+          });
           if (
+            resolution.action === "resend" &&
             pendingEdit !== null &&
-            incomingContent !== pendingEdit.content
+            data.initial === true &&
+            ws.readyState === WebSocket.OPEN
           ) {
-            if (data.initial === true && ws.readyState === WebSocket.OPEN) {
-              ws.send(
-                JSON.stringify({
-                  type: "update",
-                  content: pendingEdit.content,
-                  immediate: pendingEdit.immediate,
-                })
-              );
-              lifecycleRef.current?.initialSyncReady();
-            }
+            ws.send(
+              JSON.stringify({
+                type: "update",
+                content: pendingEdit.content,
+                immediate: pendingEdit.immediate,
+                clientId: markdownClientIdRef.current,
+                operationId: pendingEdit.operationId,
+              })
+            );
+            lifecycleRef.current?.initialSyncReady();
             return;
           }
-          if (
-            pendingEdit !== null &&
-            incomingContent === pendingEdit.content
-          ) {
+          if (resolution.action !== "apply") return;
+          if (resolution.acknowledgeOperationId !== undefined) {
             pendingEditCoordinatorRef.current.acknowledgeWebSocket(
               threadId,
-              pendingEdit.operationId
+              resolution.acknowledgeOperationId
             );
           }
           applyContent(incomingContent);
@@ -744,6 +753,8 @@ function IntroPageContent() {
             type: "update",
             content: pendingEdit.content,
             immediate: pendingEdit.immediate,
+            clientId: markdownClientIdRef.current,
+            operationId: pendingEdit.operationId,
           })
         );
       } else if (wsStatusRef.current === "fallback") {

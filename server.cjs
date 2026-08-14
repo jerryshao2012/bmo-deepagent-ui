@@ -18,6 +18,25 @@ const { dev, port } = runtimeConfig();
 const hostname = process.env.HOST || "0.0.0.0";
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
+const MARKDOWN_CLIENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+function readMarkdownOperationMetadata(metadata) {
+  if (
+    !metadata ||
+    typeof metadata !== "object" ||
+    Array.isArray(metadata) ||
+    typeof metadata.clientId !== "string" ||
+    !MARKDOWN_CLIENT_ID_PATTERN.test(metadata.clientId) ||
+    !Number.isSafeInteger(metadata.operationId) ||
+    metadata.operationId <= 0
+  ) {
+    return null;
+  }
+  return {
+    clientId: metadata.clientId,
+    operationId: metadata.operationId,
+  };
+}
 
 app.prepare().then(() => {
   // Temporary in-memory store for exported Mermaid PNG images
@@ -330,8 +349,14 @@ app.prepare().then(() => {
   // Bidirectional bridge: notifies both SSE subscribers AND WebSocket
   // clients in the same thread.  Called from the SSE POST handler as well
   // as from the WebSocket message handler so both transports stay in sync.
-  globalThis.__sseNotify = (threadId, content, immediate = false) => {
+  globalThis.__sseNotify = (
+    threadId,
+    content,
+    immediate = false,
+    metadata
+  ) => {
     const normalizedContent = typeof content === "string" ? content : "";
+    const operationMetadata = readMarkdownOperationMetadata(metadata);
     globalThis.__sseThreadStore.set(threadId, normalizedContent);
     roomContent.set(threadId, normalizedContent);
 
@@ -353,7 +378,11 @@ app.prepare().then(() => {
       scheduleBatchSave(threadId, normalizedContent);
     }
 
-    const payload = JSON.stringify({ type: "sync", content: normalizedContent });
+    const payload = JSON.stringify({
+      type: "sync",
+      content: normalizedContent,
+      ...(operationMetadata || {}),
+    });
 
     // Push to SSE subscribers
     const subs = globalThis.__sseSubscribers.get(threadId);
@@ -472,10 +501,12 @@ app.prepare().then(() => {
         if (data.type === "update" && typeof data.content === "string") {
           // Update shared storage and push to both WebSocket and SSE clients.
           if (typeof globalThis.__sseNotify === "function") {
+            const operationMetadata = readMarkdownOperationMetadata(data);
             globalThis.__sseNotify(
               threadId,
               data.content || "",
-              data.immediate === true
+              data.immediate === true,
+              operationMetadata
             );
           }
         }

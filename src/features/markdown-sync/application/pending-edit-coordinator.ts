@@ -5,6 +5,43 @@ export interface PendingMarkdownEdit {
   readonly threadId: string;
 }
 
+export interface MarkdownWebSocketSyncMessage {
+  readonly content: string;
+  readonly initial?: unknown;
+  readonly clientId?: unknown;
+  readonly operationId?: unknown;
+}
+
+export type MarkdownWebSocketSyncResolution =
+  | { readonly action: "apply"; readonly acknowledgeOperationId?: number }
+  | { readonly action: "ignore" }
+  | { readonly action: "resend" };
+
+export function resolveMarkdownWebSocketSync({
+  incoming,
+  localClientId,
+  pendingEdit,
+}: {
+  incoming: MarkdownWebSocketSyncMessage;
+  localClientId: string;
+  pendingEdit: PendingMarkdownEdit | null;
+}): MarkdownWebSocketSyncResolution {
+  if (!pendingEdit) return { action: "apply" };
+  if (
+    incoming.content === pendingEdit.content &&
+    incoming.clientId === localClientId &&
+    incoming.operationId === pendingEdit.operationId
+  ) {
+    return {
+      action: "apply",
+      acknowledgeOperationId: pendingEdit.operationId,
+    };
+  }
+  return incoming.initial === true
+    ? { action: "resend" }
+    : { action: "ignore" };
+}
+
 export interface FallbackWriteContext {
   readonly generation: number;
   readonly signal: AbortSignal;

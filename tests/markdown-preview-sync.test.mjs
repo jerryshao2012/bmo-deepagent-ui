@@ -297,6 +297,84 @@ test("intro transport lifecycle hibernates and resumes with page eligibility", a
   assert.match(introPage, /lifecycleRef\.current\?\.reconnectNow\(\)/);
 });
 
+test("markdown preview panel records local activity without backdrop or mousemove wakeups", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /const noteMarkdownActivity = useCallback\(\(\) => \{\s*lifecycleRef\.current\?\.recordActivity\(\);\s*\}, \[\]\)/,
+  );
+  const backdropStart = introPage.indexOf(
+    'className={cn(\n            "fixed inset-0',
+  );
+  const panelStart = introPage.indexOf(
+    'className={cn(\n              "markdown-preview-dialog-selection',
+    backdropStart,
+  );
+  const headerStart = introPage.indexOf("{/* Modal Header */}", panelStart);
+  assert.notEqual(backdropStart, -1);
+  assert.notEqual(panelStart, -1);
+  assert.notEqual(headerStart, -1);
+
+  const backdropTagStart = introPage.lastIndexOf("<div", backdropStart);
+  const panelTagStart = introPage.lastIndexOf("<div", panelStart);
+  const backdropOpening = introPage.slice(backdropTagStart, panelTagStart);
+  const panelOpening = introPage.slice(panelTagStart, headerStart);
+  assert.doesNotMatch(backdropOpening, /noteMarkdownActivity|onMouseMove/);
+  assert.match(panelOpening, /onPointerDownCapture=\{noteMarkdownActivity\}/);
+  assert.match(panelOpening, /onKeyDownCapture=\{noteMarkdownActivity\}/);
+  assert.match(panelOpening, /onScrollCapture=\{noteMarkdownActivity\}/);
+  assert.match(panelOpening, /onWheelCapture=\{noteMarkdownActivity\}/);
+  assert.match(panelOpening, /onTouchStartCapture=\{noteMarkdownActivity\}/);
+  assert.doesNotMatch(panelOpening, /onMouseMove/);
+});
+
+test("markdown mutation handlers wake transport before changing content", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+  const handlerBlock = (name, nextName) => {
+    const start = introPage.indexOf(`const ${name}`);
+    const end = introPage.indexOf(`const ${nextName}`, start);
+    assert.notEqual(start, -1, `${name} exists`);
+    assert.notEqual(end, -1, `${nextName} follows ${name}`);
+    return introPage.slice(start, end);
+  };
+
+  for (const [name, nextName] of [
+    ["handleTextChange", "handleRemove"],
+    ["handleRemove", "handlePaste"],
+    ["handlePaste", "processMarkdownAssetFiles"],
+    ["handleMarkdownAssetPaste", "handleMarkdownAssetDragOver"],
+    ["handleMarkdownAssetDrop", "handleCopy"],
+  ]) {
+    const block = handlerBlock(name, nextName);
+    assert.match(
+      block,
+      /(?:=>\s*\{|async\s*\(\)\s*=>\s*\{)\s*noteMarkdownActivity\(\)/,
+      `${name} records activity first`,
+    );
+  }
+});
+
+test("markdown transport badge uses presentation actions for wake and reconnect", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(introPage, /markdownConnectionPresentation\(wsStatus\)/);
+  assert.match(
+    introPage,
+    /connectionPresentation\.action === "wake"[\s\S]{0,120}noteMarkdownActivity\(\)/,
+  );
+  assert.match(
+    introPage,
+    /connectionPresentation\.action === "reconnect"[\s\S]{0,300}lifecycleRef\.current\?\.reconnectNow\(\)/,
+  );
+  assert.match(introPage, /connectionPresentation\.label/);
+  assert.match(introPage, /title=\{connectionPresentation\.title\}/);
+  assert.match(
+    introPage,
+    /disabled=\{connectionPresentation\.action === "none"\}/,
+  );
+});
+
 test("intro transport stop helpers own all timers and use safe intentional close metadata", async () => {
   const introPage = await source("src/app/intro/page.tsx");
 

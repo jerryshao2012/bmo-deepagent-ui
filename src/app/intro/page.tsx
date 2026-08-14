@@ -16,6 +16,7 @@ import {
   MarkdownConnectionLifecycle,
   type MarkdownConnectionStatus,
 } from "@/features/markdown-sync/application/connection-lifecycle";
+import { markdownConnectionPresentation } from "@/features/markdown-sync/application/connection-status-presentation";
 import {
   MarkdownPendingEditCoordinator,
   resolveMarkdownWebSocketSync,
@@ -126,6 +127,10 @@ function IntroPageContent() {
   const updateWsStatus = useCallback((status: MarkdownConnectionStatus) => {
     wsStatusRef.current = status;
     setWsStatus(status);
+  }, []);
+
+  const noteMarkdownActivity = useCallback(() => {
+    lifecycleRef.current?.recordActivity();
   }, []);
 
   const applyContent = useCallback(
@@ -784,10 +789,12 @@ function IntroPageContent() {
   );
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    noteMarkdownActivity();
     publishContent(e.target.value);
   };
 
   const handleRemove = async () => {
+    noteMarkdownActivity();
     if (isRemovingAssetsRef.current) return;
     const markdownIdToRemove = activeThreadIdRef.current;
     assetOperationEpochRef.current += 1;
@@ -817,6 +824,7 @@ function IntroPageContent() {
   };
 
   const handlePaste = async () => {
+    noteMarkdownActivity();
     try {
       const text = await navigator.clipboard.readText();
       publishContent(text, Boolean(text));
@@ -897,6 +905,7 @@ function IntroPageContent() {
   const handleMarkdownAssetPaste = (
     event: React.ClipboardEvent<HTMLTextAreaElement>,
   ) => {
+    noteMarkdownActivity();
     const files = Array.from(event.clipboardData.items)
       .filter((item) => item.kind === "file")
       .map((item) => item.getAsFile())
@@ -923,6 +932,7 @@ function IntroPageContent() {
   const handleMarkdownAssetDrop = (
     event: React.DragEvent<HTMLTextAreaElement>,
   ) => {
+    noteMarkdownActivity();
     const files = Array.from(event.dataTransfer.files).filter(
       isSupportedMarkdownAssetFile,
     );
@@ -1343,6 +1353,8 @@ function IntroPageContent() {
 
     return () => observer.disconnect();
   }, []);
+
+  const connectionPresentation = markdownConnectionPresentation(wsStatus);
 
   return (
     <div
@@ -2200,6 +2212,11 @@ function IntroPageContent() {
           )}
         >
           <div
+            onPointerDownCapture={noteMarkdownActivity}
+            onKeyDownCapture={noteMarkdownActivity}
+            onScrollCapture={noteMarkdownActivity}
+            onWheelCapture={noteMarkdownActivity}
+            onTouchStartCapture={noteMarkdownActivity}
             className={cn(
               "markdown-preview-dialog-selection relative flex flex-col border border-[#d5dee9] bg-[#f5f7fb] shadow-2xl transition-all duration-300 ease-in-out animate-in zoom-in-95",
               isTelemetryFullscreen
@@ -2273,10 +2290,11 @@ function IntroPageContent() {
                   </h3>
                   <button
                     onClick={() => {
-                      if (
-                        wsStatus === "disconnected" ||
-                        wsStatus === "fallback"
-                      ) {
+                      if (connectionPresentation.action === "wake") {
+                        noteMarkdownActivity();
+                        return;
+                      }
+                      if (connectionPresentation.action === "reconnect") {
                         toast.promise(
                           new Promise<void>((resolve) => {
                             lifecycleRef.current?.reconnectNow();
@@ -2290,41 +2308,38 @@ function IntroPageContent() {
                         );
                       }
                     }}
+                    disabled={connectionPresentation.action === "none"}
+                    aria-label={connectionPresentation.title}
                     className={cn(
                       "flex select-none items-center gap-2 rounded-full px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider transition-all duration-300",
-                      wsStatus === "connected" &&
+                      connectionPresentation.tone === "idle" &&
+                        "cursor-pointer border border-zinc-300 bg-zinc-100 text-zinc-600 hover:bg-zinc-200 active:scale-95",
+                      connectionPresentation.tone === "connected" &&
                         "cursor-default border border-emerald-200 bg-emerald-50 text-emerald-700",
-                      wsStatus === "fallback" &&
-                        "cursor-default border border-sky-200 bg-sky-50 text-sky-700",
-                      wsStatus === "connecting" &&
+                      connectionPresentation.tone === "fallback" &&
+                        "cursor-pointer border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 active:scale-95",
+                      connectionPresentation.tone === "pending" &&
                         "animate-pulse cursor-default border border-amber-200 bg-amber-50 text-amber-700",
-                      wsStatus === "disconnected" &&
+                      connectionPresentation.tone === "disconnected" &&
                         "cursor-pointer border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 active:scale-95"
                     )}
-                    title={
-                      wsStatus === "connected"
-                        ? "Websocket Synced (Connected)"
-                        : wsStatus === "fallback"
-                        ? "HTTP Stream Synced (Fallback)"
-                        : wsStatus === "connecting"
-                        ? "Websocket Connecting..."
-                        : "Websocket Disconnected (Click to Reconnect)"
-                    }
+                    title={connectionPresentation.title}
                   >
                     <span
                       className={cn(
                         "h-2 w-2 rounded-full",
-                        wsStatus === "connected" &&
+                        connectionPresentation.tone === "idle" && "bg-zinc-400",
+                        connectionPresentation.tone === "connected" &&
                           "animate-pulse bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]",
-                        wsStatus === "fallback" &&
+                        connectionPresentation.tone === "fallback" &&
                           "animate-pulse bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.6)]",
-                        wsStatus === "connecting" &&
+                        connectionPresentation.tone === "pending" &&
                           "animate-pulse bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]",
-                        wsStatus === "disconnected" &&
+                        connectionPresentation.tone === "disconnected" &&
                           "bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"
                       )}
                     />
-                    {wsStatus.toUpperCase()}
+                    {connectionPresentation.label}
                   </button>
                 </div>
               </div>

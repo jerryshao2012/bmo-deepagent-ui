@@ -64,7 +64,7 @@ test("HTTP fallback distinguishes initial empty state from an explicit delete", 
   );
   assert.match(
     introPage,
-    /data\.initial\s*&&\s*!data\.authoritative\s*&&\s*!data\.content\s*&&\s*sharedTextRef\.current/
+    /data\.initial\s*&&\s*!data\.authoritative\s*&&\s*!data\.content\s*&&\s*pendingEdit === null\s*&&\s*sharedTextRef\.current/
   );
 });
 
@@ -92,7 +92,7 @@ test("WebSocket and HTTP fallback maintain one local markdown state", async () =
   assert.match(server, /roomContent\.(?:set|delete)\(threadId/);
   assert.match(
     server,
-    /globalThis\.__sseNotify\(\s*threadId,\s*data\.content\s*\|\|\s*"",\s*data\.immediate\s*===\s*true\s*\)/
+    /globalThis\.__sseNotify\(\s*threadId,\s*data\.content\s*\|\|\s*"",\s*data\.immediate\s*===\s*true,\s*operationMetadata\s*\)/
   );
 });
 
@@ -144,12 +144,328 @@ test("new local markdown wins over stale asynchronous sync responses", async () 
   );
   assert.match(
     introPage,
-    /pendingWebSocketContentRef\.current !== null\s*&&\s*incomingContent !== pendingWebSocketContentRef\.current/
+    /const pendingEdit =\s*pendingEditCoordinatorRef\.current\.pendingForThread\(threadId\)/
   );
   assert.match(
     introPage,
-    /pendingFallbackUpdateRef\.current !== null\s*\|\|\s*requestVersion !== contentVersionRef\.current/
+    /pendingEditCoordinatorRef\.current\.pendingForThread\(threadId\) !==\s*null\s*\|\|\s*requestVersion !== contentVersionRef\.current/
   );
+  const cacheLoadStart = introPage.indexOf(
+    "// Load initial content from localStorage once threadId resolves",
+  );
+  const cacheLoadEnd = introPage.indexOf(
+    "// ── Cross-deployment sync",
+    cacheLoadStart,
+  );
+  const cacheLoadBlock = introPage.slice(cacheLoadStart, cacheLoadEnd);
+  assert.match(
+    cacheLoadBlock,
+    /pendingEditCoordinatorRef\.current\s*\.readCurrent\([\s\S]*browserMarkdownStore\.load\(threadId\)/,
+  );
+  assert.match(cacheLoadBlock, /cachedRead\.current/);
+
+  const backendPollStart = introPage.indexOf("const pollBackendOnce");
+  const backendPollEnd = introPage.indexOf(
+    "const startCrossDeployPolling",
+    backendPollStart,
+  );
+  const backendPollBlock = introPage.slice(backendPollStart, backendPollEnd);
+  assert.match(
+    backendPollBlock,
+    /pendingEditCoordinatorRef\.current\.readCurrent\([\s\S]*backendStore\.load\(threadId\)/,
+  );
+  assert.match(backendPollBlock, /if \(!backendRead\.current\) return/);
+});
+
+test("intro transport lifecycle delegates WebSocket attempt outcomes to the controller", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /import\s*\{[\s\S]*MarkdownConnectionLifecycle[\s\S]*type MarkdownConnectionStatus[\s\S]*\}\s*from\s*["']@\/features\/markdown-sync\/application\/connection-lifecycle["']/
+  );
+  assert.match(introPage, /new MarkdownConnectionLifecycle\s*\(/);
+  assert.match(introPage, /connectWebSocket:\s*connectWS/);
+  assert.match(introPage, /abortWebSocketAttempt/);
+  assert.match(introPage, /connectionFailed\(attemptId\)/);
+  assert.match(introPage, /socketOpened\(attemptId\)/);
+  assert.match(introPage, /initialSyncReady\(\)/);
+  assert.match(introPage, /fallbackReady\(\)/);
+  assert.doesNotMatch(introPage, /hasFallenBackRef/);
+  assert.doesNotMatch(introPage, /reconnectTimeoutRef/);
+});
+
+test("WebSocket broadcasts start backend polling only after authoritative initial sync", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /applyContent\(incomingContent\);\s*if\s*\(data\.initial\s*===\s*true\)\s*\{\s*lifecycleRef\.current\?\.initialSyncReady\(\);\s*\}/
+  );
+  assert.doesNotMatch(
+    introPage,
+    /applyContent\(incomingContent\);\s*lifecycleRef\.current\?\.initialSyncReady\(\)/
+  );
+});
+
+test("local markdown queues for WebSocket wake unless fallback is active", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /applyContent\(value\);[\s\S]{0,220}pendingEditCoordinatorRef\.current\.publish\([\s\S]{0,100}threadId,[\s\S]{0,80}value,[\s\S]{0,80}immediate[\s\S]{0,500}else if \(wsStatusRef\.current === "fallback"\) \{\s*pendingEditCoordinatorRef\.current\.flushActiveFallback/
+  );
+});
+
+test("WebSocket initial sync resends a newer pending edit before becoming ready", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  const resendStart = introPage.indexOf('resolution.action === "resend"');
+  const resendEnd = introPage.indexOf(
+    'if (resolution.action !== "apply")',
+    resendStart,
+  );
+  assert.notEqual(resendStart, -1);
+  assert.notEqual(resendEnd, -1);
+  const resendBlock = introPage.slice(resendStart, resendEnd);
+  assert.match(resendBlock, /pendingEdit !== null/);
+  assert.match(resendBlock, /data\.initial === true/);
+  assert.match(
+    resendBlock,
+    /type: "update",\s*content: pendingEdit\.content/,
+  );
+  assert.match(resendBlock, /lifecycleRef\.current\?\.initialSyncReady\(\)/);
+  assert.match(introPage, /if \(resolution\.action !== "apply"\) return/);
+  const resolverStart = introPage.indexOf(
+    "const resolution = resolveMarkdownWebSocketSync",
+  );
+  const resolverEnd = introPage.indexOf(
+    "applyContent(incomingContent)",
+    resolverStart,
+  );
+  assert.notEqual(resolverStart, -1);
+  assert.notEqual(resolverEnd, -1);
+  const resolverBlock = introPage.slice(resolverStart, resolverEnd);
+  assert.match(resolverBlock, /acknowledgeOperationId/);
+  assert.match(resolverBlock, /acknowledgeWebSocket/);
+  assert.match(
+    introPage,
+    /clientId:\s*markdownClientIdRef\.current,\s*operationId:\s*pendingEdit\.operationId/
+  );
+});
+
+test("WebSocket operation metadata is validated and echoed as scalar fields", async () => {
+  const [introPage, server] = await Promise.all([
+    source("src/app/intro/page.tsx"),
+    source("server.cjs"),
+  ]);
+
+  assert.match(introPage, /const markdownClientIdRef = useRef/);
+  assert.match(server, /\^\[A-Za-z0-9_-\]\{1,64\}\$/);
+  assert.match(server, /Number\.isSafeInteger\(metadata\.operationId\)/);
+  assert.match(server, /metadata\.operationId <= 0/);
+  assert.match(
+    server,
+    /clientId:\s*metadata\.clientId,\s*operationId:\s*metadata\.operationId/
+  );
+  assert.match(
+    server,
+    /__sseNotify\([\s\S]{0,180}operationMetadata/
+  );
+});
+
+test("fallback initial sync preserves and accepts pending WebSocket content before readiness", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /const fallbackGeneration =\s*pendingEditCoordinatorRef\.current\.startFallback\([\s\S]{0,500}signal[\s\S]{0,500}fallbackReady\(\)/
+  );
+  assert.match(
+    introPage,
+    /pendingEditCoordinatorRef\.current\.pendingForThread\(threadId\)[\s\S]{0,1000}markFallbackInitialSeen\([\s\S]{0,80}fallbackGeneration/
+  );
+  assert.match(
+    introPage,
+    /pendingEditCoordinatorRef\.current\.stopFallback\(\)/
+  );
+});
+
+test("fallback nonauthoritative initial state cannot acknowledge a pending empty delete", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /data\.initial\s*&&\s*pendingEdit !== null[\s\S]{0,250}markFallbackInitialSeen\([\s\S]{0,80}fallbackGeneration[\s\S]{0,100}return;/
+  );
+});
+
+test("fallback callbacks and async polls reject stale EventSource generations", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /addEventListener\("sync", \(event\) => \{\s*if \(eventSourceRef\.current !== eventSource\) return;/
+  );
+  assert.match(
+    introPage,
+    /await fetch\([\s\S]{0,300}eventSourceRef\.current !== eventSource[\s\S]{0,300}await res\.json\(\)[\s\S]{0,300}eventSourceRef\.current !== eventSource/
+  );
+  assert.match(
+    introPage,
+    /activeThreadIdRef\.current !== threadId/
+  );
+});
+
+test("intro transport lifecycle hibernates and resumes with page eligibility", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(introPage, /document\.visibilityState\s*===\s*["']visible["']/);
+  assert.match(introPage, /addEventListener\(["']visibilitychange["']/);
+  assert.match(introPage, /addEventListener\(["']pagehide["']/);
+  assert.match(introPage, /addEventListener\(["']pageshow["']/);
+  assert.match(introPage, /removeEventListener\(["']visibilitychange["']/);
+  assert.match(introPage, /removeEventListener\(["']pagehide["']/);
+  assert.match(introPage, /removeEventListener\(["']pageshow["']/);
+  assert.match(introPage, /lifecycle\.dispose\(\)/);
+  assert.match(introPage, /lifecycleRef\.current\?\.setDialogOpen\(isDialogOpen\)/);
+  assert.match(introPage, /lifecycleRef\.current\?\.reconnectNow\(\)/);
+});
+
+test("markdown preview panel records local activity without backdrop or mousemove wakeups", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /const noteMarkdownActivity = useCallback\([\s\S]{0,220}shouldRecordMarkdownActivity\(event\?\.target \?\? null\)[\s\S]{0,120}lifecycleRef\.current\?\.recordActivity\(\)/,
+  );
+  const backdropStart = introPage.indexOf(
+    'className={cn(\n            "fixed inset-0',
+  );
+  const panelStart = introPage.indexOf(
+    'className={cn(\n              "markdown-preview-dialog-selection',
+    backdropStart,
+  );
+  const headerStart = introPage.indexOf("{/* Modal Header */}", panelStart);
+  assert.notEqual(backdropStart, -1);
+  assert.notEqual(panelStart, -1);
+  assert.notEqual(headerStart, -1);
+
+  const backdropTagStart = introPage.lastIndexOf("<div", backdropStart);
+  const panelTagStart = introPage.lastIndexOf("<div", panelStart);
+  const backdropOpening = introPage.slice(backdropTagStart, panelTagStart);
+  const panelOpening = introPage.slice(panelTagStart, headerStart);
+  assert.doesNotMatch(backdropOpening, /noteMarkdownActivity|onMouseMove/);
+  assert.match(panelOpening, /onPointerDownCapture=\{noteMarkdownActivity\}/);
+  assert.match(panelOpening, /onKeyDownCapture=\{noteMarkdownActivity\}/);
+  assert.match(panelOpening, /onScrollCapture=\{noteMarkdownActivity\}/);
+  assert.match(panelOpening, /onWheelCapture=\{noteMarkdownActivity\}/);
+  assert.match(panelOpening, /onTouchStartCapture=\{noteMarkdownActivity\}/);
+  assert.doesNotMatch(panelOpening, /onMouseMove/);
+  assert.match(
+    introPage,
+    /<button\s+data-markdown-preview-close[\s\S]{0,120}onClick=\{\(\) => setIsDialogOpen\(false\)\}/,
+  );
+});
+
+test("markdown mutation handlers wake transport before changing content", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+  const handlerBlock = (name, nextName) => {
+    const start = introPage.indexOf(`const ${name}`);
+    const end = introPage.indexOf(`const ${nextName}`, start);
+    assert.notEqual(start, -1, `${name} exists`);
+    assert.notEqual(end, -1, `${nextName} follows ${name}`);
+    return introPage.slice(start, end);
+  };
+
+  for (const [name, nextName] of [
+    ["handleTextChange", "handleRemove"],
+    ["handleRemove", "handlePaste"],
+    ["handlePaste", "processMarkdownAssetFiles"],
+    ["handleMarkdownAssetPaste", "handleMarkdownAssetDragOver"],
+    ["handleMarkdownAssetDrop", "handleCopy"],
+  ]) {
+    const block = handlerBlock(name, nextName);
+    assert.match(
+      block,
+      /(?:=>\s*\{|async\s*\(\)\s*=>\s*\{)\s*noteMarkdownActivity\(\)/,
+      `${name} records activity first`,
+    );
+  }
+});
+
+test("markdown transport badge uses presentation actions for wake and reconnect", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(introPage, /markdownConnectionPresentation\(wsStatus\)/);
+  assert.match(
+    introPage,
+    /connectionPresentation\.action === "wake"[\s\S]{0,120}noteMarkdownActivity\(\)/,
+  );
+  assert.match(
+    introPage,
+    /connectionPresentation\.action === "reconnect"[\s\S]{0,300}lifecycleRef\.current\?\.reconnectNow\(\)/,
+  );
+  assert.match(introPage, /connectionPresentation\.label/);
+  assert.match(introPage, /title=\{connectionPresentation\.title\}/);
+  assert.match(
+    introPage,
+    /disabled=\{connectionPresentation\.action === "none"\}/,
+  );
+  const badgeStart = introPage.indexOf(
+    "if (connectionPresentation.action === \"wake\")",
+  );
+  const liveStatusStart = introPage.indexOf('role="status"', badgeStart);
+  const badgeEnd = introPage.lastIndexOf("</button>", liveStatusStart);
+  assert.notEqual(badgeStart, -1);
+  assert.notEqual(liveStatusStart, -1);
+  assert.notEqual(badgeEnd, -1);
+  assert.ok(badgeEnd < liveStatusStart, "live status is outside action button");
+  const liveStatus = introPage.slice(liveStatusStart, liveStatusStart + 300);
+  assert.match(liveStatus, /aria-live="polite"/);
+  assert.match(liveStatus, /aria-atomic="true"/);
+  assert.match(liveStatus, /connectionPresentation\.title/);
+});
+
+test("intro transport stop helpers own all timers and use safe intentional close metadata", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(introPage, /const closeWebSocket = useCallback/);
+  assert.match(introPage, /const stopFallback = useCallback/);
+  assert.match(introPage, /const stopCrossDeployPolling = useCallback/);
+  assert.match(introPage, /const stopAllTransports = useCallback/);
+  assert.match(introPage, /closeWebSocket\(1000,\s*["']hibernate["']/);
+  assert.match(introPage, /closeWebSocket\(4000,\s*["']attempt timeout["'],\s*attemptId\)/);
+  assert.match(introPage, /intentional:\s*true/);
+  assert.match(introPage, /stopFallback\(\);[\s\S]*stopCrossDeployPolling\(\)/);
+});
+
+test("cross-deployment polls discard stopped generations and serialize each active generation", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(introPage, /const crossDeployPollGenerationRef = useRef\(0\)/);
+  assert.match(
+    introPage,
+    /const crossDeployPollInFlightGenerationRef = useRef<number \| null>\(null\)/
+  );
+  assert.match(
+    introPage,
+    /stopCrossDeployPolling[\s\S]*crossDeployPollGenerationRef\.current \+= 1/
+  );
+  assert.match(introPage, /pollBackendOnce = useCallback\(async \(generation: number\)/);
+  assert.match(
+    introPage,
+    /crossDeployPollInFlightGenerationRef\.current === generation\) return/
+  );
+  assert.match(
+    introPage,
+    /await pendingEditCoordinatorRef\.current\.readCurrent\([\s\S]{0,180}backendStore\.load\(threadId\)[\s\S]{0,300}generation !== crossDeployPollGenerationRef\.current[\s\S]{0,200}activeThreadIdRef\.current !== threadId[\s\S]{0,200}backendRead\.current[\s\S]{0,200}resetBackendMirrorBackoff\(\)/
+  );
+  assert.match(
+    introPage,
+    /finally\s*\{\s*if \(crossDeployPollInFlightGenerationRef\.current === generation\)[\s\S]{0,120}= null/
+  );
+  assert.match(introPage, /void pollBackendOnce\(generation\)/);
 });
 
 test("cross-machine markdown updates converge every local transport", async () => {
@@ -164,12 +480,48 @@ test("cross-machine markdown updates converge every local transport", async () =
   );
   assert.match(
     introPage,
-    /pendingWebSocketContentRef\.current = remoteContent/
+    /pendingEditCoordinatorRef\.current\.publish\(\s*threadId,\s*remoteContent,\s*false/
   );
   assert.match(
     introPage,
-    /pendingFallbackUpdateRef\.current = \{\s*content:\s*remoteContent/
+    /ws\.onopen = async \(\) => \{[\s\S]{0,700}await browserMarkdownStore\.load\(threadId\)[\s\S]{0,350}ws\.send\(JSON\.stringify\(\{ type: "init", content: localContent \}\)\)/
   );
+  assert.match(
+    introPage,
+    /const startCrossDeployPolling[\s\S]{0,350}void pollBackendOnce\(generation\);[\s\S]{0,200}window\.setInterval/
+  );
+
+  const remotePollStart = introPage.indexOf("const pollBackendOnce");
+  const remotePollEnd = introPage.indexOf(
+    "const startCrossDeployPolling",
+    remotePollStart,
+  );
+  assert.notEqual(remotePollStart, -1);
+  assert.notEqual(remotePollEnd, -1);
+  const remotePollBlock = introPage.slice(remotePollStart, remotePollEnd);
+  assert.doesNotMatch(remotePollBlock, /lifecycleRef\.current/);
+  assert.match(
+    remotePollBlock,
+    /const remoteContent = backendRead\.value;[\s\S]*shouldApplyRemoteMarkdown\(\s*remoteContent,\s*localContent,\s*lastBackendSyncRef\.current\s*\)/,
+  );
+  assert.doesNotMatch(remotePollBlock, /backendRead\.value\s*\?\?/);
+  const backendRelayStart = remotePollBlock.indexOf(
+    "if (activeSocket?.readyState === WebSocket.OPEN)",
+  );
+  const backendRelayEnd = remotePollBlock.indexOf(
+    "applyContent(remoteContent)",
+    backendRelayStart,
+  );
+  assert.notEqual(backendRelayStart, -1);
+  assert.notEqual(backendRelayEnd, -1);
+  const backendRelayBlock = remotePollBlock.slice(
+    backendRelayStart,
+    backendRelayEnd,
+  );
+  assert.doesNotMatch(backendRelayBlock, /clientId|operationId/);
+  assert.doesNotMatch(introPage, /pendingWebSocketContentRef/);
+  assert.doesNotMatch(introPage, /pendingFallbackUpdateRef/);
+  assert.doesNotMatch(introPage, /fallbackWriteInFlightRef/);
 });
 
 test("synced assets are opt-in and ordinary markdown images keep existing rendering", async () => {

@@ -8,7 +8,20 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { BrowserMarkdownSyncStore } from "@/features/markdown-sync/infrastructure/browser-markdown-sync-store";
 import { createConfiguredBackendMarkdownSyncStore } from "@/features/markdown-sync/infrastructure/backend-markdown-sync-store";
-import { backendMirrorRetryDelay } from "@/features/markdown-sync/application/sync-state-machine";
+import {
+  backendMirrorRetryDelay,
+  shouldApplyRemoteMarkdown,
+} from "@/features/markdown-sync/application/sync-state-machine";
+import {
+  MarkdownConnectionLifecycle,
+  type MarkdownConnectionStatus,
+} from "@/features/markdown-sync/application/connection-lifecycle";
+import { markdownConnectionPresentation } from "@/features/markdown-sync/application/connection-status-presentation";
+import { shouldRecordMarkdownActivity } from "@/features/markdown-sync/application/preview-activity";
+import {
+  MarkdownPendingEditCoordinator,
+  resolveMarkdownWebSocketSync,
+} from "@/features/markdown-sync/application/pending-edit-coordinator";
 import { clearRememberedLogin } from "@/lib/remembered-login";
 import {
   buildSyncedAssetMarkdown,
@@ -42,15 +55,18 @@ import {
 
 const browserMarkdownStore = new BrowserMarkdownSyncStore();
 
+function createMarkdownClientId(): string {
+  return `md-${globalThis.crypto.randomUUID()}`;
+}
+
 function IntroPageContent() {
   const searchParams = useSearchParams();
   const [threadId, setThreadId] = useState<string>("");
   const [scrollY, setScrollY] = useState(0);
 
   const [, setSocket] = useState<WebSocket | null>(null);
-  const [wsStatus, setWsStatus] = useState<
-    "connected" | "disconnected" | "connecting" | "fallback"
-  >("disconnected");
+  const [wsStatus, setWsStatus] =
+    useState<MarkdownConnectionStatus>("disconnected");
   const [sharedText, setSharedText] = useState<string>("");
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
   const [isTelemetryFullscreen, setIsTelemetryFullscreen] =
@@ -78,32 +94,45 @@ function IntroPageContent() {
     toast.success("Session cookies cleared. Please refresh the page.");
   };
 
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const markdownClientIdRef = useRef(createMarkdownClientId());
+  const wsAttemptIdRef = useRef<number | null>(null);
+  const lifecycleRef = useRef<MarkdownConnectionLifecycle | null>(null);
+  const wsStatusRef = useRef<MarkdownConnectionStatus>(wsStatus);
   const eventSourceRef = useRef<EventSource | null>(null);
-  const hasFallenBackRef = useRef<boolean>(false);
   const pollingIntervalRef = useRef<number | null>(null);
   const sharedTextRef = useRef<string>("");
   const lastPollPushedRef = useRef<string | null>(null);
   const fallbackInitializedRef = useRef<boolean>(false);
   const crossDeployPollRef = useRef<number | null>(null);
+  const crossDeployPollGenerationRef = useRef(0);
+  const crossDeployPollInFlightGenerationRef = useRef<number | null>(null);
   const lastBackendSyncRef = useRef<string | null>(null);
   const contentVersionRef = useRef(0);
-  const pendingWebSocketContentRef = useRef<string | null>(null);
+  const pendingEditCoordinatorRef = useRef(
+    new MarkdownPendingEditCoordinator()
+  );
   const pendingBackendContentRef = useRef<string | null>(null);
   const backendWriteInFlightRef = useRef(false);
   const backendFailureCountRef = useRef(0);
   const backendNextRetryAtRef = useRef(0);
-  const pendingFallbackUpdateRef = useRef<{
-    content: string;
-    immediate: boolean;
-  } | null>(null);
-  const fallbackWriteInFlightRef = useRef(false);
   const assetOperationEpochRef = useRef(0);
   const activeAssetUploadPromiseRef = useRef<Promise<void> | null>(null);
   const isRemovingAssetsRef = useRef(false);
   const activeThreadIdRef = useRef(threadId);
   activeThreadIdRef.current = threadId;
+  const isDialogOpenRef = useRef(isDialogOpen);
+  isDialogOpenRef.current = isDialogOpen;
+
+  const updateWsStatus = useCallback((status: MarkdownConnectionStatus) => {
+    wsStatusRef.current = status;
+    setWsStatus(status);
+  }, []);
+
+  const noteMarkdownActivity = useCallback((event?: React.SyntheticEvent) => {
+    if (!shouldRecordMarkdownActivity(event?.target ?? null)) return;
+    lifecycleRef.current?.recordActivity();
+  }, []);
 
   const applyContent = useCallback(
     (content: string) => {
@@ -131,16 +160,22 @@ function IntroPageContent() {
   // Load initial content from localStorage once threadId resolves
   useEffect(() => {
     if (threadId) {
-      hasFallenBackRef.current = false;
       contentVersionRef.current += 1;
-      pendingWebSocketContentRef.current = null;
+      pendingEditCoordinatorRef.current.switchThread(threadId);
       pendingBackendContentRef.current = null;
       backendFailureCountRef.current = 0;
       backendNextRetryAtRef.current = 0;
-      pendingFallbackUpdateRef.current = null;
-      void browserMarkdownStore.load(threadId).then((cached) => {
-        if (cached && activeThreadIdRef.current === threadId) applyContent(cached);
-      });
+      void pendingEditCoordinatorRef.current
+        .readCurrent(threadId, () => browserMarkdownStore.load(threadId))
+        .then((cachedRead) => {
+          if (
+            cachedRead.current &&
+            cachedRead.value &&
+            activeThreadIdRef.current === threadId
+          ) {
+            applyContent(cachedRead.value);
+          }
+        });
     }
   }, [threadId, applyContent]);
 
@@ -200,69 +235,92 @@ function IntroPageContent() {
     [threadId, deferBackendMirrorRetry, resetBackendMirrorBackoff]
   );
 
-  const startCrossDeployPolling = useCallback(() => {
-    if (!threadId) return;
+  const stopCrossDeployPolling = useCallback(() => {
+    crossDeployPollGenerationRef.current += 1;
     if (crossDeployPollRef.current) {
       clearInterval(crossDeployPollRef.current);
+      crossDeployPollRef.current = null;
     }
-    lastBackendSyncRef.current = null;
+  }, []);
 
-    crossDeployPollRef.current = window.setInterval(async () => {
-      if (Date.now() < backendNextRetryAtRef.current) return;
+  const pollBackendOnce = useCallback(async (generation: number) => {
+    if (
+      !threadId ||
+      generation !== crossDeployPollGenerationRef.current ||
+      activeThreadIdRef.current !== threadId ||
+      Date.now() < backendNextRetryAtRef.current
+    ) {
+      return;
+    }
 
-      if (pendingBackendContentRef.current !== null) {
-        void syncContentToBackend(pendingBackendContentRef.current);
+    if (pendingBackendContentRef.current !== null) {
+      void syncContentToBackend(pendingBackendContentRef.current);
+      return;
+    }
+    if (crossDeployPollInFlightGenerationRef.current === generation) return;
+
+    const backendStore = createConfiguredBackendMarkdownSyncStore();
+    if (!backendStore) return;
+    const requestVersion = contentVersionRef.current;
+    crossDeployPollInFlightGenerationRef.current = generation;
+    try {
+      const backendRead = await pendingEditCoordinatorRef.current.readCurrent(
+        threadId,
+        () => backendStore.load(threadId)
+      );
+      if (
+        generation !== crossDeployPollGenerationRef.current ||
+        activeThreadIdRef.current !== threadId
+      ) {
         return;
       }
-
-      const backendStore = createConfiguredBackendMarkdownSyncStore();
-      if (!backendStore) return;
-      const requestVersion = contentVersionRef.current;
-      try {
-        const remoteContent = (await backendStore.load(threadId)) ?? "";
-        resetBackendMirrorBackoff();
-        if (
-          requestVersion !== contentVersionRef.current ||
-          pendingBackendContentRef.current !== null
-        ) {
-          return;
-        }
-        const localContent = sharedTextRef.current;
-        if (
-          remoteContent &&
-          remoteContent !== localContent &&
-          remoteContent !== lastBackendSyncRef.current
-        ) {
-          console.log(
-            "[Cross-Deploy] Received remote content from backend"
-          );
-          lastBackendSyncRef.current = remoteContent;
-          lastPollPushedRef.current = remoteContent;
-
-          const activeSocket = wsRef.current;
-          if (
-            activeSocket &&
-            activeSocket.readyState !== WebSocket.CLOSING &&
-            activeSocket.readyState !== WebSocket.CLOSED
-          ) {
-            pendingWebSocketContentRef.current = remoteContent;
-            if (activeSocket.readyState === WebSocket.OPEN) {
-              activeSocket.send(
-                JSON.stringify({ type: "update", content: remoteContent })
-              );
-            }
-          } else {
-            pendingFallbackUpdateRef.current = {
-              content: remoteContent,
-              immediate: false,
-            };
-          }
-          applyContent(remoteContent);
-        }
-      } catch {
-        deferBackendMirrorRetry();
+      if (!backendRead.current) return;
+      const remoteContent = backendRead.value;
+      resetBackendMirrorBackoff();
+      if (
+        requestVersion !== contentVersionRef.current ||
+        pendingBackendContentRef.current !== null
+      ) {
+        return;
       }
-    }, 4000);
+      const localContent = sharedTextRef.current;
+      if (
+        shouldApplyRemoteMarkdown(
+          remoteContent,
+          localContent,
+          lastBackendSyncRef.current
+        )
+      ) {
+        console.log("[Cross-Deploy] Received remote content from backend");
+        lastBackendSyncRef.current = remoteContent;
+        lastPollPushedRef.current = remoteContent;
+        const activeSocket = wsRef.current;
+        if (activeSocket?.readyState === WebSocket.OPEN) {
+          activeSocket.send(
+            JSON.stringify({ type: "update", content: remoteContent })
+          );
+        } else {
+          pendingEditCoordinatorRef.current.publish(
+            threadId,
+            remoteContent,
+            false
+          );
+        }
+        applyContent(remoteContent);
+      }
+    } catch {
+      if (
+        generation !== crossDeployPollGenerationRef.current ||
+        activeThreadIdRef.current !== threadId
+      ) {
+        return;
+      }
+      deferBackendMirrorRetry();
+    } finally {
+      if (crossDeployPollInFlightGenerationRef.current === generation) {
+        crossDeployPollInFlightGenerationRef.current = null;
+      }
+    }
   }, [
     threadId,
     syncContentToBackend,
@@ -271,55 +329,82 @@ function IntroPageContent() {
     resetBackendMirrorBackoff,
   ]);
 
-  const sendFallbackUpdate = useCallback(
-    async (val: string, immediate = false) => {
-      pendingFallbackUpdateRef.current = { content: val, immediate };
-      if (fallbackWriteInFlightRef.current) return;
-      fallbackWriteInFlightRef.current = true;
+  const startCrossDeployPolling = useCallback(() => {
+    if (!threadId) return;
+    stopCrossDeployPolling();
+    const generation = crossDeployPollGenerationRef.current;
+    lastBackendSyncRef.current = null;
+    void pollBackendOnce(generation);
+    crossDeployPollRef.current = window.setInterval(() => {
+      void pollBackendOnce(generation);
+    }, 4000);
+  }, [threadId, pollBackendOnce, stopCrossDeployPolling]);
 
-      try {
-        while (pendingFallbackUpdateRef.current !== null) {
-          const pendingUpdate: {
-            content: string;
-            immediate: boolean;
-          } = pendingFallbackUpdateRef.current;
-          const response = await fetch("/api/ws-fallback", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              threadId,
-              type: "update",
-              content: pendingUpdate.content,
-              immediate: pendingUpdate.immediate,
-            }),
-          });
-          if (activeThreadIdRef.current !== threadId) return;
-          if (!response.ok) {
-            throw new Error(`HTTP fallback returned ${response.status}`);
-          }
-          fallbackInitializedRef.current = true;
-          if (pendingFallbackUpdateRef.current === pendingUpdate) {
-            pendingFallbackUpdateRef.current = null;
-          }
-        }
-      } catch (err) {
-        console.error("Failed to send content update via HTTP fallback:", err);
-      } finally {
-        fallbackWriteInFlightRef.current = false;
+  const closeWebSocket = useCallback(
+    (code: number, reason: string, attemptId?: number) => {
+      const socket = wsRef.current;
+      const activeAttemptId = wsAttemptIdRef.current;
+      if (attemptId !== undefined && activeAttemptId !== attemptId) return;
+
+      wsRef.current = null;
+      wsAttemptIdRef.current = null;
+      setSocket(null);
+
+      if (!socket) return;
+      console.log("[Markdown WS] Closing transport", {
+        threadId: activeThreadIdRef.current,
+        code,
+        reason,
+        status: wsStatusRef.current,
+        intentional: true,
+      });
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onerror = null;
+      socket.onclose = null;
+      if (
+        socket.readyState === WebSocket.OPEN ||
+        socket.readyState === WebSocket.CONNECTING
+      ) {
+        socket.close(code, reason);
       }
     },
-    [threadId]
+    [],
   );
+
+  const abortWebSocketAttempt = useCallback(
+    (attemptId: number) => {
+      closeWebSocket(4000, "attempt timeout", attemptId);
+    },
+    [closeWebSocket],
+  );
+
+  const stopFallback = useCallback(() => {
+    pendingEditCoordinatorRef.current.stopFallback();
+    const eventSource = eventSourceRef.current;
+    eventSourceRef.current = null;
+    if (eventSource) {
+      eventSource.onerror = null;
+      eventSource.close();
+    }
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    fallbackInitializedRef.current = false;
+  }, []);
+
+  const stopAllTransports = useCallback(() => {
+    closeWebSocket(1000, "hibernate");
+    stopFallback();
+    stopCrossDeployPolling();
+  }, [closeWebSocket, stopFallback, stopCrossDeployPolling]);
 
   const startFallbackSSE = useCallback(() => {
     if (!threadId) return;
     if (eventSourceRef.current) return;
 
-    hasFallenBackRef.current = true;
     fallbackInitializedRef.current = false;
-    setWsStatus("fallback");
     console.log(
       "Initiating HTTP streaming (SSE) fallback for thread:",
       threadId
@@ -329,34 +414,91 @@ function IntroPageContent() {
       `/api/ws-fallback?threadId=${encodeURIComponent(threadId)}`
     );
     eventSourceRef.current = eventSource;
+    const fallbackGeneration = pendingEditCoordinatorRef.current.startFallback(
+      threadId,
+      async (pendingEdit, { signal }) => {
+        const response = await fetch("/api/ws-fallback", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            threadId: pendingEdit.threadId,
+            type: "update",
+            content: pendingEdit.content,
+            immediate: pendingEdit.immediate,
+          }),
+          signal,
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP fallback returned ${response.status}`);
+        }
+      },
+      {
+        onReady: () => {
+          if (
+            eventSourceRef.current !== eventSource ||
+            activeThreadIdRef.current !== threadId
+          ) {
+            return;
+          }
+          fallbackInitializedRef.current = true;
+          lifecycleRef.current?.fallbackReady();
+        },
+        onWriteError: (error) => {
+          if (
+            eventSourceRef.current === eventSource &&
+            activeThreadIdRef.current === threadId
+          ) {
+            console.error(
+              "Failed to send content update via HTTP fallback:",
+              error
+            );
+          }
+        },
+      }
+    );
 
     eventSource.addEventListener("sync", (event) => {
+      if (eventSourceRef.current !== eventSource) return;
       try {
         const data = JSON.parse(event.data);
         if (data.type === "sync") {
+          const incomingContent: string = data.content ?? "";
+          let pendingEdit =
+            pendingEditCoordinatorRef.current.pendingForThread(threadId);
           if (
             data.initial &&
             !data.authoritative &&
             !data.content &&
+            pendingEdit === null &&
             sharedTextRef.current
           ) {
             lastPollPushedRef.current = sharedTextRef.current;
-            void sendFallbackUpdate(sharedTextRef.current, true).finally(() => {
-              fallbackInitializedRef.current = true;
-            });
-            return;
+            pendingEdit = pendingEditCoordinatorRef.current.publish(
+              threadId,
+              sharedTextRef.current,
+              true
+            );
           }
 
-          const incomingContent: string = data.content ?? "";
-          if (
-            pendingFallbackUpdateRef.current !== null &&
-            incomingContent !== pendingFallbackUpdateRef.current.content
-          ) {
+          if (data.initial && pendingEdit !== null) {
+            lastPollPushedRef.current = pendingEdit.content;
+            pendingEditCoordinatorRef.current.markFallbackInitialSeen(
+              fallbackGeneration
+            );
+            return;
+          }
+          if (pendingEdit !== null) {
             return;
           }
           lastPollPushedRef.current = incomingContent;
-          fallbackInitializedRef.current = true;
           applyContent(incomingContent);
+          if (data.initial) {
+            pendingEditCoordinatorRef.current.markFallbackInitialSeen(
+              fallbackGeneration
+            );
+          }
         }
       } catch (err) {
         console.error("SSE error parsing message:", err);
@@ -364,17 +506,18 @@ function IntroPageContent() {
     });
 
     eventSource.onerror = () => {
+      if (eventSourceRef.current !== eventSource) return;
       if (eventSource.readyState === EventSource.CLOSED) {
         // Fatal: server returned non-200, or close() was called explicitly
         console.error(
           "[SSE Fallback] Connection permanently closed. Will not auto-reconnect."
         );
-        hasFallenBackRef.current = false; // Allow future WS reconnection attempts
-        eventSourceRef.current = null;
+        if (eventSourceRef.current === eventSource) {
+          eventSourceRef.current = null;
+        }
       } else if (eventSource.readyState === EventSource.CONNECTING) {
         // Expected: EventSource is auto-reconnecting after a timeout or transient failure
         console.log("[SSE Fallback] Reconnecting to SSE stream...");
-        setWsStatus("fallback");
       }
     };
 
@@ -389,12 +532,16 @@ function IntroPageContent() {
     lastPollPushedRef.current = sharedTextRef.current;
     pollingIntervalRef.current = window.setInterval(async () => {
       try {
-        if (pendingFallbackUpdateRef.current !== null) {
-          const pendingUpdate = pendingFallbackUpdateRef.current;
-          void sendFallbackUpdate(
-            pendingUpdate.content,
-            pendingUpdate.immediate
-          );
+        if (
+          eventSourceRef.current !== eventSource ||
+          activeThreadIdRef.current !== threadId
+        ) {
+          return;
+        }
+        if (
+          pendingEditCoordinatorRef.current.pendingForThread(threadId) !== null
+        ) {
+          pendingEditCoordinatorRef.current.flushFallback(fallbackGeneration);
           return;
         }
         if (!fallbackInitializedRef.current) return;
@@ -403,10 +550,19 @@ function IntroPageContent() {
         const res = await fetch(
           `/api/ws-fallback?threadId=${encodeURIComponent(threadId)}&poll=1`
         );
+        if (
+          eventSourceRef.current !== eventSource ||
+          activeThreadIdRef.current !== threadId
+        ) {
+          return;
+        }
         if (!res.ok) return;
         const data = await res.json();
         if (
-          pendingFallbackUpdateRef.current !== null ||
+          eventSourceRef.current !== eventSource ||
+          activeThreadIdRef.current !== threadId ||
+          pendingEditCoordinatorRef.current.pendingForThread(threadId) !==
+            null ||
           requestVersion !== contentVersionRef.current
         ) {
           return;
@@ -423,181 +579,223 @@ function IntroPageContent() {
         // Silently ignore transient poll failures
       }
     }, 3000);
-  }, [threadId, sendFallbackUpdate, applyContent]);
+  }, [threadId, applyContent]);
 
-  const connectWS = useCallback(() => {
+  const connectWS = useCallback((attemptId: number) => {
     if (!threadId) return;
-
-    // If we have already fallen back to HTTP, do not attempt WS reconnection
-    if (hasFallenBackRef.current) {
-      return;
-    }
-
-    // If socket is already open or currently connecting, skip
-    if (
-      wsRef.current &&
-      (wsRef.current.readyState === WebSocket.OPEN ||
-        wsRef.current.readyState === WebSocket.CONNECTING)
-    ) {
-      return;
-    }
-
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-
-    // Close any active fallback EventSource before attempting WS
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-
-    setWsStatus("connecting");
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
     const wsUrl = `${protocol}//${host}/api/ws?threadId=${threadId}`;
 
     console.log("Attempting WebSocket connection for thread:", threadId);
-    let ws: WebSocket | null = null;
+    let ws: WebSocket;
 
     try {
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;
-    } catch (e) {
-      console.error(
-        "WebSocket constructor failed, falling back to HTTP stream:",
-        e
-      );
-      startFallbackSSE();
+      wsAttemptIdRef.current = attemptId;
+    } catch {
+      console.error("WebSocket constructor failed", {
+        threadId,
+        status: wsStatusRef.current,
+      });
+      lifecycleRef.current?.connectionFailed(attemptId);
       return;
     }
 
     ws.onopen = async () => {
+      if (
+        wsRef.current !== ws ||
+        wsAttemptIdRef.current !== attemptId
+      ) {
+        return;
+      }
       console.log("WebSocket connected for thread:", threadId);
       setSocket(ws);
-      setWsStatus("connected");
+      lifecycleRef.current?.socketOpened(attemptId);
 
       // Retrieve local offline content from localStorage and initialize sync on the server
       const localContent = (await browserMarkdownStore.load(threadId)) || "";
-      ws?.send(JSON.stringify({ type: "init", content: localContent }));
+      if (
+        wsRef.current === ws &&
+        wsAttemptIdRef.current === attemptId &&
+        ws.readyState === WebSocket.OPEN
+      ) {
+        ws.send(JSON.stringify({ type: "init", content: localContent }));
+      }
     };
 
     ws.onmessage = (event) => {
+      if (wsRef.current !== ws || wsAttemptIdRef.current !== attemptId) return;
       try {
         const data = JSON.parse(event.data);
         if (data.type === "sync") {
           const incomingContent: string = data.content ?? "";
+          const pendingEdit =
+            pendingEditCoordinatorRef.current.pendingForThread(threadId);
+          const resolution = resolveMarkdownWebSocketSync({
+            incoming: {
+              content: incomingContent,
+              initial: data.initial,
+              clientId: data.clientId,
+              operationId: data.operationId,
+            },
+            localClientId: markdownClientIdRef.current,
+            pendingEdit,
+          });
           if (
-            pendingWebSocketContentRef.current !== null &&
-            incomingContent !== pendingWebSocketContentRef.current
+            resolution.action === "resend" &&
+            pendingEdit !== null &&
+            data.initial === true &&
+            ws.readyState === WebSocket.OPEN
           ) {
+            ws.send(
+              JSON.stringify({
+                type: "update",
+                content: pendingEdit.content,
+                immediate: pendingEdit.immediate,
+                clientId: markdownClientIdRef.current,
+                operationId: pendingEdit.operationId,
+              })
+            );
+            lifecycleRef.current?.initialSyncReady();
             return;
           }
-          pendingWebSocketContentRef.current = null;
+          if (resolution.action !== "apply") return;
+          if (resolution.acknowledgeOperationId !== undefined) {
+            pendingEditCoordinatorRef.current.acknowledgeWebSocket(
+              threadId,
+              resolution.acknowledgeOperationId
+            );
+          }
           applyContent(incomingContent);
+          if (data.initial === true) {
+            lifecycleRef.current?.initialSyncReady();
+          }
         }
       } catch (err) {
         console.error("WS error parsing message:", err);
       }
     };
 
-    ws.onclose = () => {
-      console.log("WebSocket closed");
-      setSocket(null);
+    ws.onclose = (event) => {
+      console.log("[Markdown WS] Transport closed", {
+        threadId,
+        code: event.code,
+        reason: event.reason,
+        status: wsStatusRef.current,
+        intentional: false,
+      });
+      if (wsRef.current !== ws || wsAttemptIdRef.current !== attemptId) return;
       wsRef.current = null;
-
-      // If we have already triggered fallback, ignore this close event
-      if (hasFallenBackRef.current) {
-        return;
-      }
-
-      // Automatically fallback if closing while still in connecting state
-      // Otherwise schedule standard reconnection
-      console.log(
-        "WebSocket connection failed or closed, falling back to HTTP stream..."
-      );
-      startFallbackSSE();
-    };
-
-    ws.onerror = (error) => {
-      console.error("WebSocket error, falling back to HTTP stream:", error);
-      if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.close();
-        wsRef.current = null;
-      }
+      wsAttemptIdRef.current = null;
       setSocket(null);
-      startFallbackSSE();
+      lifecycleRef.current?.connectionFailed(attemptId);
     };
-  }, [threadId, startFallbackSSE, applyContent]);
 
-  // Main connection management effect
+    ws.onerror = () => {
+      if (wsRef.current !== ws || wsAttemptIdRef.current !== attemptId) return;
+      wsRef.current = null;
+      wsAttemptIdRef.current = null;
+      setSocket(null);
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onerror = null;
+      ws.onclose = null;
+      if (
+        ws.readyState === WebSocket.OPEN ||
+        ws.readyState === WebSocket.CONNECTING
+      ) {
+        ws.close();
+      }
+      lifecycleRef.current?.connectionFailed(attemptId);
+    };
+  }, [threadId, applyContent]);
+
+  // One controller owns retries, fallback upgrades, and transport hibernation.
   useEffect(() => {
-    connectWS();
-    startCrossDeployPolling();
+    if (!threadId) return;
+
+    const lifecycle = new MarkdownConnectionLifecycle({
+      connectWebSocket: connectWS,
+      abortWebSocketAttempt,
+      startFallback: startFallbackSSE,
+      stopFallback,
+      startCrossDeploySync: startCrossDeployPolling,
+      stopAllTransports,
+      setStatus: updateWsStatus,
+    });
+    lifecycleRef.current = lifecycle;
+
+    const syncVisibility = () => {
+      lifecycle.setVisibility(document.visibilityState === "visible");
+    };
+    const handlePageHide = () => lifecycle.setVisibility(false);
+    const handlePageShow = () => syncVisibility();
+
+    syncVisibility();
+    lifecycle.setDialogOpen(isDialogOpenRef.current);
+    document.addEventListener("visibilitychange", syncVisibility);
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("pageshow", handlePageShow);
 
     return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
-      if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-      fallbackInitializedRef.current = false;
-      if (crossDeployPollRef.current) {
-        clearInterval(crossDeployPollRef.current);
-        crossDeployPollRef.current = null;
-      }
-      setSocket(null);
-      setWsStatus("disconnected");
+      document.removeEventListener("visibilitychange", syncVisibility);
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("pageshow", handlePageShow);
+      lifecycle.dispose();
+      if (lifecycleRef.current === lifecycle) lifecycleRef.current = null;
     };
-  }, [threadId, connectWS, startCrossDeployPolling]);
+  }, [
+    threadId,
+    abortWebSocketAttempt,
+    connectWS,
+    startCrossDeployPolling,
+    startFallbackSSE,
+    stopAllTransports,
+    stopFallback,
+    updateWsStatus,
+  ]);
 
-  // Trigger immediate reconnect when the telemetry dialog is opened if it's currently disconnected
   useEffect(() => {
-    if (isDialogOpen && wsStatus === "disconnected") {
-      console.log(
-        "Telemetry dialog opened while disconnected. Triggering instant reconnect..."
-      );
-      connectWS();
-    }
-  }, [isDialogOpen, wsStatus, connectWS]);
+    lifecycleRef.current?.setDialogOpen(isDialogOpen);
+  }, [isDialogOpen]);
 
   const publishContent = useCallback(
     (value: string, immediate = false) => {
       applyContent(value);
+      const pendingEdit = pendingEditCoordinatorRef.current.publish(
+        threadId,
+        value,
+        immediate
+      );
       const activeSocket = wsRef.current;
       if (activeSocket?.readyState === WebSocket.OPEN) {
-        pendingWebSocketContentRef.current = value;
         activeSocket.send(
-          JSON.stringify({ type: "update", content: value, immediate }),
+          JSON.stringify({
+            type: "update",
+            content: pendingEdit.content,
+            immediate: pendingEdit.immediate,
+            clientId: markdownClientIdRef.current,
+            operationId: pendingEdit.operationId,
+          })
         );
-      } else {
-        void sendFallbackUpdate(value, immediate);
+      } else if (wsStatusRef.current === "fallback") {
+        pendingEditCoordinatorRef.current.flushActiveFallback(threadId);
       }
       void syncContentToBackend(value);
     },
-    [applyContent, sendFallbackUpdate, syncContentToBackend],
+    [threadId, applyContent, syncContentToBackend]
   );
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    noteMarkdownActivity();
     publishContent(e.target.value);
   };
 
   const handleRemove = async () => {
+    noteMarkdownActivity();
     if (isRemovingAssetsRef.current) return;
     const markdownIdToRemove = activeThreadIdRef.current;
     assetOperationEpochRef.current += 1;
@@ -627,6 +825,7 @@ function IntroPageContent() {
   };
 
   const handlePaste = async () => {
+    noteMarkdownActivity();
     try {
       const text = await navigator.clipboard.readText();
       publishContent(text, Boolean(text));
@@ -707,6 +906,7 @@ function IntroPageContent() {
   const handleMarkdownAssetPaste = (
     event: React.ClipboardEvent<HTMLTextAreaElement>,
   ) => {
+    noteMarkdownActivity();
     const files = Array.from(event.clipboardData.items)
       .filter((item) => item.kind === "file")
       .map((item) => item.getAsFile())
@@ -732,6 +932,7 @@ function IntroPageContent() {
   const handleMarkdownAssetDrop = (
     event: React.DragEvent<HTMLTextAreaElement>,
   ) => {
+    noteMarkdownActivity();
     const files = Array.from(event.dataTransfer.files);
     if (files.length === 0) return;
     event.preventDefault();
@@ -1150,6 +1351,8 @@ function IntroPageContent() {
 
     return () => observer.disconnect();
   }, []);
+
+  const connectionPresentation = markdownConnectionPresentation(wsStatus);
 
   return (
     <div
@@ -2007,6 +2210,11 @@ function IntroPageContent() {
           )}
         >
           <div
+            onPointerDownCapture={noteMarkdownActivity}
+            onKeyDownCapture={noteMarkdownActivity}
+            onScrollCapture={noteMarkdownActivity}
+            onWheelCapture={noteMarkdownActivity}
+            onTouchStartCapture={noteMarkdownActivity}
             className={cn(
               "markdown-preview-dialog-selection relative flex flex-col border border-[#d5dee9] bg-[#f5f7fb] shadow-2xl transition-all duration-300 ease-in-out animate-in zoom-in-95",
               isTelemetryFullscreen
@@ -2020,6 +2228,7 @@ function IntroPageContent() {
                 {/* macOS-style Window Control Dots */}
                 <div className="group/dots mr-2 flex shrink-0 items-center gap-[6px] px-1 py-1">
                   <button
+                    data-markdown-preview-close
                     onClick={() => setIsDialogOpen(false)}
                     className="relative flex h-3 w-3 items-center justify-center rounded-full border border-[#E0443E] bg-[#FF5F56] transition-colors focus:outline-none active:bg-[#BF403A]"
                     aria-label="Close"
@@ -2080,14 +2289,14 @@ function IntroPageContent() {
                   </h3>
                   <button
                     onClick={() => {
-                      if (
-                        wsStatus === "disconnected" ||
-                        wsStatus === "fallback"
-                      ) {
+                      if (connectionPresentation.action === "wake") {
+                        noteMarkdownActivity();
+                        return;
+                      }
+                      if (connectionPresentation.action === "reconnect") {
                         toast.promise(
                           new Promise<void>((resolve) => {
-                            hasFallenBackRef.current = false;
-                            connectWS();
+                            lifecycleRef.current?.reconnectNow();
                             resolve();
                           }),
                           {
@@ -2098,42 +2307,47 @@ function IntroPageContent() {
                         );
                       }
                     }}
+                    disabled={connectionPresentation.action === "none"}
+                    aria-label={connectionPresentation.title}
                     className={cn(
                       "flex select-none items-center gap-2 rounded-full px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider transition-all duration-300",
-                      wsStatus === "connected" &&
+                      connectionPresentation.tone === "idle" &&
+                        "cursor-pointer border border-zinc-300 bg-zinc-100 text-zinc-600 hover:bg-zinc-200 active:scale-95",
+                      connectionPresentation.tone === "connected" &&
                         "cursor-default border border-emerald-200 bg-emerald-50 text-emerald-700",
-                      wsStatus === "fallback" &&
-                        "cursor-default border border-sky-200 bg-sky-50 text-sky-700",
-                      wsStatus === "connecting" &&
+                      connectionPresentation.tone === "fallback" &&
+                        "cursor-pointer border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 active:scale-95",
+                      connectionPresentation.tone === "pending" &&
                         "animate-pulse cursor-default border border-amber-200 bg-amber-50 text-amber-700",
-                      wsStatus === "disconnected" &&
+                      connectionPresentation.tone === "disconnected" &&
                         "cursor-pointer border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 active:scale-95"
                     )}
-                    title={
-                      wsStatus === "connected"
-                        ? "Websocket Synced (Connected)"
-                        : wsStatus === "fallback"
-                        ? "HTTP Stream Synced (Fallback)"
-                        : wsStatus === "connecting"
-                        ? "Websocket Connecting..."
-                        : "Websocket Disconnected (Click to Reconnect)"
-                    }
+                    title={connectionPresentation.title}
                   >
                     <span
                       className={cn(
                         "h-2 w-2 rounded-full",
-                        wsStatus === "connected" &&
+                        connectionPresentation.tone === "idle" && "bg-zinc-400",
+                        connectionPresentation.tone === "connected" &&
                           "animate-pulse bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]",
-                        wsStatus === "fallback" &&
+                        connectionPresentation.tone === "fallback" &&
                           "animate-pulse bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.6)]",
-                        wsStatus === "connecting" &&
+                        connectionPresentation.tone === "pending" &&
                           "animate-pulse bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]",
-                        wsStatus === "disconnected" &&
+                        connectionPresentation.tone === "disconnected" &&
                           "bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"
                       )}
                     />
-                    {wsStatus.toUpperCase()}
+                    {connectionPresentation.label}
                   </button>
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                    className="sr-only"
+                  >
+                    {connectionPresentation.title}
+                  </span>
                 </div>
               </div>
             </div>

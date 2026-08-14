@@ -1,0 +1,502 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  MARKDOWN_INACTIVITY_MS,
+  MarkdownConnectionLifecycle,
+  type ConnectionScheduler,
+  type MarkdownConnectionEffects,
+  type MarkdownConnectionStatus,
+  WEBSOCKET_ATTEMPT_TIMEOUT_MS,
+  WEBSOCKET_RETRY_DELAYS_MS,
+  WEBSOCKET_UPGRADE_INTERVAL_MS,
+} from "../src/features/markdown-sync/application/connection-lifecycle";
+
+class FakeScheduler implements ConnectionScheduler {
+  private now = 0;
+  private nextId = 1;
+  private readonly timers = new Map<
+    number,
+    { callback: () => void; deadline: number }
+  >();
+
+  setTimeout(callback: () => void, delayMs: number): number {
+    const id = this.nextId++;
+    this.timers.set(id, { callback, deadline: this.now + delayMs });
+    return id;
+  }
+
+  clearTimeout(handle: unknown): void {
+    this.timers.delete(handle as number);
+  }
+
+  get pendingTimerCount(): number {
+    return this.timers.size;
+  }
+
+  advanceBy(delayMs: number): void {
+    const target = this.now + delayMs;
+
+    while (true) {
+      const next = [...this.timers.entries()]
+        .filter(([, timer]) => timer.deadline <= target)
+        .sort(
+          ([leftId, left], [rightId, right]) =>
+            left.deadline - right.deadline || leftId - rightId,
+        )[0];
+
+      if (!next) break;
+
+      const [id, timer] = next;
+      this.now = timer.deadline;
+      this.timers.delete(id);
+      timer.callback();
+    }
+
+    this.now = target;
+  }
+}
+
+class EffectRecorder implements MarkdownConnectionEffects {
+  connectWebSocketCalls = 0;
+  abortWebSocketAttemptCalls = 0;
+  readonly connectedAttemptIds: number[] = [];
+  readonly abortedAttemptIds: number[] = [];
+  startFallbackCalls = 0;
+  stopFallbackCalls = 0;
+  startCrossDeploySyncCalls = 0;
+  stopAllTransportsCalls = 0;
+  readonly statuses: MarkdownConnectionStatus[] = [];
+
+  connectWebSocket(attemptId: number): void {
+    this.connectWebSocketCalls += 1;
+    this.connectedAttemptIds.push(attemptId);
+  }
+
+  abortWebSocketAttempt(attemptId: number): void {
+    this.abortWebSocketAttemptCalls += 1;
+    this.abortedAttemptIds.push(attemptId);
+  }
+
+  startFallback(): void {
+    this.startFallbackCalls += 1;
+  }
+
+  stopFallback(): void {
+    this.stopFallbackCalls += 1;
+  }
+
+  startCrossDeploySync(): void {
+    this.startCrossDeploySyncCalls += 1;
+  }
+
+  stopAllTransports(): void {
+    this.stopAllTransportsCalls += 1;
+  }
+
+  setStatus(status: MarkdownConnectionStatus): void {
+    this.statuses.push(status);
+  }
+
+  get status(): MarkdownConnectionStatus | undefined {
+    return this.statuses.at(-1);
+  }
+
+  get currentAttemptId(): number {
+    const attemptId = this.connectedAttemptIds.at(-1);
+    if (attemptId === undefined) {
+      throw new Error("Expected an active WebSocket attempt");
+    }
+    return attemptId;
+  }
+}
+
+function createLifecycle() {
+  const scheduler = new FakeScheduler();
+  const effects = new EffectRecorder();
+  const lifecycle = new MarkdownConnectionLifecycle(effects, scheduler);
+
+  return { effects, lifecycle, scheduler };
+}
+
+function wake(lifecycle: MarkdownConnectionLifecycle): void {
+  lifecycle.setVisibility(true);
+  lifecycle.setDialogOpen(true);
+}
+
+function failCurrent(
+  lifecycle: MarkdownConnectionLifecycle,
+  effects: EffectRecorder,
+): void {
+  lifecycle.connectionFailed(effects.currentAttemptId);
+}
+
+function openCurrent(
+  lifecycle: MarkdownConnectionLifecycle,
+  effects: EffectRecorder,
+): void {
+  lifecycle.socketOpened(effects.currentAttemptId);
+}
+
+function reachFallback(
+  lifecycle: MarkdownConnectionLifecycle,
+  scheduler: FakeScheduler,
+  effects: EffectRecorder,
+): void {
+  failCurrent(lifecycle, effects);
+  for (const retryDelay of WEBSOCKET_RETRY_DELAYS_MS) {
+    scheduler.advanceBy(retryDelay);
+    failCurrent(lifecycle, effects);
+  }
+}
+
+test("exports exact markdown connection timing values", () => {
+  assert.equal(MARKDOWN_INACTIVITY_MS, 300_000);
+  assert.equal(WEBSOCKET_ATTEMPT_TIMEOUT_MS, 10_000);
+  assert.deepEqual(WEBSOCKET_RETRY_DELAYS_MS, [1_000, 2_000, 4_000]);
+  assert.equal(WEBSOCKET_UPGRADE_INTERVAL_MS, 60_000);
+});
+
+test("initial ineligible reconciliation publishes idle and stops transports once", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+
+  lifecycle.setDialogOpen(false);
+  lifecycle.setVisibility(false);
+
+  assert.equal(effects.status, "idle");
+  assert.equal(effects.stopAllTransportsCalls, 1);
+  assert.equal(scheduler.pendingTimerCount, 0);
+});
+
+test("closed dialog and hidden tab remain idle", () => {
+  const closed = createLifecycle();
+  closed.lifecycle.setVisibility(true);
+
+  assert.equal(closed.lifecycle.isEligible(), false);
+  assert.equal(closed.effects.connectWebSocketCalls, 0);
+
+  const hidden = createLifecycle();
+  hidden.lifecycle.setVisibility(false);
+  hidden.lifecycle.setDialogOpen(true);
+
+  assert.equal(hidden.lifecycle.isEligible(), false);
+  assert.equal(hidden.effects.connectWebSocketCalls, 0);
+});
+
+test("open visible dialog wakes client", () => {
+  const { effects, lifecycle } = createLifecycle();
+
+  wake(lifecycle);
+
+  assert.equal(lifecycle.isEligible(), true);
+  assert.equal(effects.connectWebSocketCalls, 1);
+  assert.equal(effects.status, "connecting");
+});
+
+test("connected visible dialog hibernates exactly after five minutes", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS - 1);
+  assert.equal(effects.status, "connected");
+  assert.equal(effects.stopAllTransportsCalls, 1);
+
+  scheduler.advanceBy(1);
+  assert.equal(effects.status, "idle");
+  assert.equal(effects.stopAllTransportsCalls, 2);
+  assert.equal(scheduler.pendingTimerCount, 0);
+});
+
+test("activity resets inactivity timer and wakes eligible idle client", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS - 1);
+  lifecycle.recordActivity();
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS - 1);
+  assert.equal(effects.status, "connected");
+
+  scheduler.advanceBy(1);
+  assert.equal(effects.status, "idle");
+  lifecycle.recordActivity();
+  assert.equal(effects.connectWebSocketCalls, 2);
+  assert.equal(effects.status, "connecting");
+});
+
+test("same-value eligibility setters do not wake an inactivity-idle client", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+
+  lifecycle.setDialogOpen(true);
+  lifecycle.setVisibility(true);
+
+  assert.equal(effects.status, "idle");
+  assert.equal(effects.connectWebSocketCalls, 1);
+  assert.equal(scheduler.pendingTimerCount, 0);
+});
+
+test("WebSocket attempt aborts at ten seconds", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+
+  scheduler.advanceBy(WEBSOCKET_ATTEMPT_TIMEOUT_MS - 1);
+  assert.equal(effects.abortWebSocketAttemptCalls, 0);
+
+  scheduler.advanceBy(1);
+  assert.equal(effects.abortWebSocketAttemptCalls, 1);
+  assert.equal(effects.status, "reconnecting");
+});
+
+test("early failure clears old deadline before later attempt", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  failCurrent(lifecycle, effects);
+
+  scheduler.advanceBy(WEBSOCKET_RETRY_DELAYS_MS[0]);
+  assert.equal(effects.connectWebSocketCalls, 2);
+
+  scheduler.advanceBy(
+    WEBSOCKET_ATTEMPT_TIMEOUT_MS - WEBSOCKET_RETRY_DELAYS_MS[0],
+  );
+  assert.equal(effects.abortWebSocketAttemptCalls, 0);
+
+  scheduler.advanceBy(WEBSOCKET_RETRY_DELAYS_MS[0]);
+  assert.equal(effects.abortWebSocketAttemptCalls, 1);
+});
+
+test("duplicate and stale failures cannot advance retries or clear newer deadlines", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  const firstAttemptId = effects.currentAttemptId;
+
+  lifecycle.connectionFailed(firstAttemptId);
+  lifecycle.connectionFailed(firstAttemptId);
+  scheduler.advanceBy(WEBSOCKET_RETRY_DELAYS_MS[0]);
+
+  assert.equal(effects.connectWebSocketCalls, 2);
+  const secondAttemptId = effects.currentAttemptId;
+  lifecycle.socketOpened(firstAttemptId);
+  assert.equal(effects.status, "reconnecting");
+  lifecycle.connectionFailed(firstAttemptId);
+  scheduler.advanceBy(WEBSOCKET_ATTEMPT_TIMEOUT_MS);
+
+  assert.deepEqual(effects.abortedAttemptIds, [secondAttemptId]);
+  scheduler.advanceBy(WEBSOCKET_RETRY_DELAYS_MS[1] - 1);
+  assert.equal(effects.connectWebSocketCalls, 2);
+  scheduler.advanceBy(1);
+  assert.equal(effects.connectWebSocketCalls, 3);
+});
+
+test("attempt deadlines alone exhaust retries and start fallback", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+
+  for (const retryDelay of WEBSOCKET_RETRY_DELAYS_MS) {
+    scheduler.advanceBy(WEBSOCKET_ATTEMPT_TIMEOUT_MS);
+    scheduler.advanceBy(retryDelay);
+  }
+  scheduler.advanceBy(WEBSOCKET_ATTEMPT_TIMEOUT_MS);
+
+  assert.equal(effects.connectWebSocketCalls, 4);
+  assert.equal(effects.abortWebSocketAttemptCalls, 4);
+  assert.equal(effects.startFallbackCalls, 1);
+  assert.equal(effects.status, "fallback");
+});
+
+test("failed WebSocket retries after one, two, and four seconds before fallback", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+
+  failCurrent(lifecycle, effects);
+  assert.equal(effects.status, "reconnecting");
+  assert.equal(effects.connectWebSocketCalls, 1);
+
+  for (const [index, retryDelay] of WEBSOCKET_RETRY_DELAYS_MS.entries()) {
+    scheduler.advanceBy(retryDelay - 1);
+    assert.equal(effects.connectWebSocketCalls, index + 1);
+    scheduler.advanceBy(1);
+    assert.equal(effects.connectWebSocketCalls, index + 2);
+    failCurrent(lifecycle, effects);
+  }
+
+  assert.equal(effects.startFallbackCalls, 1);
+  assert.equal(effects.status, "fallback");
+});
+
+test("fallback retries WebSocket upgrade every sixty seconds without leaving fallback", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  reachFallback(lifecycle, scheduler, effects);
+
+  scheduler.advanceBy(WEBSOCKET_UPGRADE_INTERVAL_MS);
+  assert.equal(effects.connectWebSocketCalls, 5);
+  assert.equal(effects.status, "fallback");
+
+  failCurrent(lifecycle, effects);
+  assert.equal(effects.status, "fallback");
+  scheduler.advanceBy(WEBSOCKET_UPGRADE_INTERVAL_MS);
+  assert.equal(effects.connectWebSocketCalls, 6);
+  assert.equal(effects.status, "fallback");
+});
+
+test("hiding or closing cancels scheduled retry and fallback upgrade", () => {
+  const retrying = createLifecycle();
+  wake(retrying.lifecycle);
+  failCurrent(retrying.lifecycle, retrying.effects);
+  retrying.lifecycle.setVisibility(false);
+  retrying.scheduler.advanceBy(WEBSOCKET_RETRY_DELAYS_MS[0]);
+
+  assert.equal(retrying.effects.connectWebSocketCalls, 1);
+  assert.equal(retrying.effects.status, "idle");
+  assert.equal(retrying.scheduler.pendingTimerCount, 0);
+
+  const fallback = createLifecycle();
+  wake(fallback.lifecycle);
+  reachFallback(fallback.lifecycle, fallback.scheduler, fallback.effects);
+  fallback.lifecycle.setDialogOpen(false);
+  fallback.scheduler.advanceBy(WEBSOCKET_UPGRADE_INTERVAL_MS);
+
+  assert.equal(fallback.effects.connectWebSocketCalls, 4);
+  assert.equal(fallback.effects.status, "idle");
+  assert.equal(fallback.scheduler.pendingTimerCount, 0);
+});
+
+test("socket opened clears attempt deadline and publishes connected", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+
+  assert.equal(effects.status, "connected");
+  assert.equal(effects.stopFallbackCalls, 2);
+  scheduler.advanceBy(WEBSOCKET_ATTEMPT_TIMEOUT_MS);
+  assert.equal(effects.abortWebSocketAttemptCalls, 0);
+  assert.equal(effects.status, "connected");
+});
+
+test("cross-deployment sync waits for authoritative WebSocket initial sync", () => {
+  const { effects, lifecycle } = createLifecycle();
+  wake(lifecycle);
+
+  assert.equal(effects.startCrossDeploySyncCalls, 0);
+  openCurrent(lifecycle, effects);
+  assert.equal(effects.startCrossDeploySyncCalls, 0);
+
+  lifecycle.initialSyncReady();
+  lifecycle.socketOpened(effects.currentAttemptId);
+  lifecycle.initialSyncReady();
+  assert.equal(effects.startCrossDeploySyncCalls, 1);
+});
+
+test("fallback readiness starts cross-deployment sync once", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  reachFallback(lifecycle, scheduler, effects);
+
+  assert.equal(effects.startCrossDeploySyncCalls, 0);
+  lifecycle.fallbackReady();
+  lifecycle.fallbackReady();
+  assert.equal(effects.startCrossDeploySyncCalls, 1);
+});
+
+test("successful fallback upgrade restores normal retry path", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  reachFallback(lifecycle, scheduler, effects);
+  scheduler.advanceBy(WEBSOCKET_UPGRADE_INTERVAL_MS);
+  openCurrent(lifecycle, effects);
+
+  failCurrent(lifecycle, effects);
+
+  assert.equal(effects.status, "reconnecting");
+  assert.equal(effects.startFallbackCalls, 1);
+  scheduler.advanceBy(WEBSOCKET_RETRY_DELAYS_MS[0]);
+  assert.equal(effects.connectWebSocketCalls, 6);
+  assert.equal(effects.startFallbackCalls, 1);
+});
+
+test("manual reconnect wakes an eligible idle client and rearms inactivity", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+
+  lifecycle.reconnectNow();
+
+  assert.equal(effects.connectWebSocketCalls, 2);
+  assert.equal(effects.status, "connecting");
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+  assert.equal(effects.status, "idle");
+});
+
+test("manual reconnect during fallback starts an immediate upgrade attempt", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  reachFallback(lifecycle, scheduler, effects);
+
+  lifecycle.reconnectNow();
+
+  assert.equal(effects.connectWebSocketCalls, 5);
+  assert.equal(effects.status, "fallback");
+});
+
+test("manual reconnect is a no-op while WebSocket is connected", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+  const connectedAttemptId = effects.currentAttemptId;
+
+  lifecycle.reconnectNow();
+
+  assert.equal(effects.connectWebSocketCalls, 1);
+  assert.equal(effects.abortWebSocketAttemptCalls, 0);
+  assert.equal(effects.currentAttemptId, connectedAttemptId);
+  assert.equal(effects.status, "connected");
+  assert.equal(scheduler.pendingTimerCount, 1);
+});
+
+test("lifecycle instances hibernate and wake independently", () => {
+  const first = createLifecycle();
+  const second = createLifecycle();
+  wake(first.lifecycle);
+  wake(second.lifecycle);
+  openCurrent(first.lifecycle, first.effects);
+  openCurrent(second.lifecycle, second.effects);
+
+  first.scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+  assert.equal(first.effects.status, "idle");
+  assert.equal(second.effects.status, "connected");
+
+  first.lifecycle.recordActivity();
+  assert.equal(first.effects.status, "connecting");
+  assert.equal(second.effects.connectWebSocketCalls, 1);
+});
+
+test("dispose stops transports, cancels timers, and publishes no later status", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  failCurrent(lifecycle, effects);
+  const statusesBeforeDispose = effects.statuses.length;
+
+  lifecycle.dispose();
+  assert.equal(effects.stopAllTransportsCalls, 2);
+  assert.equal(effects.statuses.length, statusesBeforeDispose);
+  assert.equal(scheduler.pendingTimerCount, 0);
+
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS + WEBSOCKET_UPGRADE_INTERVAL_MS);
+  lifecycle.setDialogOpen(false);
+  lifecycle.setVisibility(false);
+  lifecycle.recordActivity();
+  openCurrent(lifecycle, effects);
+  lifecycle.initialSyncReady();
+  lifecycle.fallbackReady();
+  failCurrent(lifecycle, effects);
+  lifecycle.reconnectNow();
+
+  assert.equal(effects.connectWebSocketCalls, 1);
+  assert.equal(effects.startCrossDeploySyncCalls, 0);
+  assert.equal(effects.statuses.length, statusesBeforeDispose);
+});

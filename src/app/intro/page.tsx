@@ -17,6 +17,7 @@ import {
   type MarkdownConnectionStatus,
 } from "@/features/markdown-sync/application/connection-lifecycle";
 import { markdownConnectionPresentation } from "@/features/markdown-sync/application/connection-status-presentation";
+import { shouldRecordMarkdownActivity } from "@/features/markdown-sync/application/preview-activity";
 import {
   MarkdownPendingEditCoordinator,
   resolveMarkdownWebSocketSync,
@@ -129,7 +130,8 @@ function IntroPageContent() {
     setWsStatus(status);
   }, []);
 
-  const noteMarkdownActivity = useCallback(() => {
+  const noteMarkdownActivity = useCallback((event?: React.SyntheticEvent) => {
+    if (!shouldRecordMarkdownActivity(event?.target ?? null)) return;
     lifecycleRef.current?.recordActivity();
   }, []);
 
@@ -2230,6 +2232,7 @@ function IntroPageContent() {
                 {/* macOS-style Window Control Dots */}
                 <div className="group/dots mr-2 flex shrink-0 items-center gap-[6px] px-1 py-1">
                   <button
+                    data-markdown-preview-close
                     onClick={() => setIsDialogOpen(false)}
                     className="relative flex h-3 w-3 items-center justify-center rounded-full border border-[#E0443E] bg-[#FF5F56] transition-colors focus:outline-none active:bg-[#BF403A]"
                     aria-label="Close"
@@ -2341,6 +2344,14 @@ function IntroPageContent() {
                     />
                     {connectionPresentation.label}
                   </button>
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                    className="sr-only"
+                  >
+                    {connectionPresentation.title}
+                  </span>
                 </div>
               </div>
             </div>

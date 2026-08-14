@@ -302,7 +302,7 @@ test("markdown preview panel records local activity without backdrop or mousemov
 
   assert.match(
     introPage,
-    /const noteMarkdownActivity = useCallback\(\(\) => \{\s*lifecycleRef\.current\?\.recordActivity\(\);\s*\}, \[\]\)/,
+    /const noteMarkdownActivity = useCallback\([\s\S]{0,220}shouldRecordMarkdownActivity\(event\?\.target \?\? null\)[\s\S]{0,120}lifecycleRef\.current\?\.recordActivity\(\)/,
   );
   const backdropStart = introPage.indexOf(
     'className={cn(\n            "fixed inset-0',
@@ -327,6 +327,10 @@ test("markdown preview panel records local activity without backdrop or mousemov
   assert.match(panelOpening, /onWheelCapture=\{noteMarkdownActivity\}/);
   assert.match(panelOpening, /onTouchStartCapture=\{noteMarkdownActivity\}/);
   assert.doesNotMatch(panelOpening, /onMouseMove/);
+  assert.match(
+    introPage,
+    /<button\s+data-markdown-preview-close[\s\S]{0,120}onClick=\{\(\) => setIsDialogOpen\(false\)\}/,
+  );
 });
 
 test("markdown mutation handlers wake transport before changing content", async () => {
@@ -373,6 +377,19 @@ test("markdown transport badge uses presentation actions for wake and reconnect"
     introPage,
     /disabled=\{connectionPresentation\.action === "none"\}/,
   );
+  const badgeStart = introPage.indexOf(
+    "if (connectionPresentation.action === \"wake\")",
+  );
+  const liveStatusStart = introPage.indexOf('role="status"', badgeStart);
+  const badgeEnd = introPage.lastIndexOf("</button>", liveStatusStart);
+  assert.notEqual(badgeStart, -1);
+  assert.notEqual(liveStatusStart, -1);
+  assert.notEqual(badgeEnd, -1);
+  assert.ok(badgeEnd < liveStatusStart, "live status is outside action button");
+  const liveStatus = introPage.slice(liveStatusStart, liveStatusStart + 300);
+  assert.match(liveStatus, /aria-live="polite"/);
+  assert.match(liveStatus, /aria-atomic="true"/);
+  assert.match(liveStatus, /connectionPresentation\.title/);
 });
 
 test("intro transport stop helpers own all timers and use safe intentional close metadata", async () => {

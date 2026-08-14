@@ -561,7 +561,9 @@ function IntroPageContent() {
           }
           pendingWebSocketContentRef.current = null;
           applyContent(incomingContent);
-          lifecycleRef.current?.initialSyncReady();
+          if (data.initial === true) {
+            lifecycleRef.current?.initialSyncReady();
+          }
         }
       } catch (err) {
         console.error("WS error parsing message:", err);

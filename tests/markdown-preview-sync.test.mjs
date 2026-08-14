@@ -135,6 +135,19 @@ test("intro transport lifecycle delegates WebSocket attempt outcomes to the cont
   assert.doesNotMatch(introPage, /reconnectTimeoutRef/);
 });
 
+test("WebSocket broadcasts start backend polling only after authoritative initial sync", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /applyContent\(incomingContent\);\s*if\s*\(data\.initial\s*===\s*true\)\s*\{\s*lifecycleRef\.current\?\.initialSyncReady\(\);\s*\}/
+  );
+  assert.doesNotMatch(
+    introPage,
+    /applyContent\(incomingContent\);\s*lifecycleRef\.current\?\.initialSyncReady\(\)/
+  );
+});
+
 test("intro transport lifecycle hibernates and resumes with page eligibility", async () => {
   const introPage = await source("src/app/intro/page.tsx");
 

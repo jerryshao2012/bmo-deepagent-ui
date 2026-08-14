@@ -18,6 +18,7 @@ import {
 } from "@/features/markdown-sync/application/connection-lifecycle";
 import { markdownConnectionPresentation } from "@/features/markdown-sync/application/connection-status-presentation";
 import { shouldRecordMarkdownActivity } from "@/features/markdown-sync/application/preview-activity";
+import { PreviewFocusRestoration } from "@/features/markdown-sync/application/preview-focus-restoration";
 import {
   MarkdownPendingEditCoordinator,
   resolveMarkdownWebSocketSync,
@@ -69,6 +70,7 @@ function IntroPageContent() {
     useState<MarkdownConnectionStatus>("disconnected");
   const [sharedText, setSharedText] = useState<string>("");
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
+  const [autoCloseSeconds, setAutoCloseSeconds] = useState<number | null>(null);
   const [isTelemetryFullscreen, setIsTelemetryFullscreen] =
     useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
@@ -78,6 +80,15 @@ function IntroPageContent() {
   const [isRemovingAssets, setIsRemovingAssets] = useState(false);
 
   const previewRef = useRef<HTMLDivElement>(null);
+  const markdownPreviewTriggerRef = useRef<HTMLButtonElement>(null);
+  const focusRestorationRef = useRef<PreviewFocusRestoration | null>(null);
+  const restorePreviewFocusPendingRef = useRef(false);
+  if (focusRestorationRef.current === null) {
+    focusRestorationRef.current = new PreviewFocusRestoration({
+      request: (callback) => globalThis.requestAnimationFrame(callback),
+      cancel: (handle) => globalThis.cancelAnimationFrame(handle),
+    });
+  }
 
   // Function to clear session cookies
   const handleClearCookies = () => {
@@ -134,6 +145,26 @@ function IntroPageContent() {
     lifecycleRef.current?.recordActivity();
   }, []);
 
+  const openMarkdownPreview = useCallback(() => {
+    focusRestorationRef.current?.cancel();
+    restorePreviewFocusPendingRef.current = false;
+    isDialogOpenRef.current = true;
+    setIsDialogOpen(true);
+  }, []);
+
+  const closeMarkdownPreview = useCallback(
+    (sourceLifecycle?: MarkdownConnectionLifecycle) => {
+      const lifecycle = lifecycleRef.current;
+      if (sourceLifecycle && lifecycle !== sourceLifecycle) return;
+      isDialogOpenRef.current = false;
+      lifecycle?.setDialogOpen(false);
+      setAutoCloseSeconds(null);
+      restorePreviewFocusPendingRef.current = true;
+      setIsDialogOpen(false);
+    },
+    []
+  );
+
   const applyContent = useCallback(
     (content: string) => {
       contentVersionRef.current += 1;
@@ -143,6 +174,22 @@ function IntroPageContent() {
     },
     [threadId]
   );
+
+  useEffect(() => {
+    if (isDialogOpen || !restorePreviewFocusPendingRef.current) return;
+    restorePreviewFocusPendingRef.current = false;
+    focusRestorationRef.current?.schedule(
+      () => markdownPreviewTriggerRef.current?.focus(),
+      () => !isDialogOpenRef.current
+    );
+  }, [isDialogOpen]);
+
+  useEffect(() => {
+    return () => {
+      focusRestorationRef.current?.cancel();
+      restorePreviewFocusPendingRef.current = false;
+    };
+  }, []);
 
   // Prevent background body scroll when the telemetry dialog is open
   useEffect(() => {
@@ -717,7 +764,10 @@ function IntroPageContent() {
   useEffect(() => {
     if (!threadId) return;
 
-    const lifecycle = new MarkdownConnectionLifecycle({
+    // Callbacks need the instance identity while it is being constructed.
+    let lifecycle: MarkdownConnectionLifecycle;
+    // eslint-disable-next-line prefer-const
+    lifecycle = new MarkdownConnectionLifecycle({
       connectWebSocket: connectWS,
       abortWebSocketAttempt,
       startFallback: startFallbackSSE,
@@ -725,6 +775,11 @@ function IntroPageContent() {
       startCrossDeploySync: startCrossDeployPolling,
       stopAllTransports,
       setStatus: updateWsStatus,
+      setAutoCloseCountdown: (seconds) => {
+        if (lifecycleRef.current !== lifecycle) return;
+        setAutoCloseSeconds(seconds);
+      },
+      requestAutoClose: () => closeMarkdownPreview(lifecycle),
     });
     lifecycleRef.current = lifecycle;
 
@@ -745,7 +800,10 @@ function IntroPageContent() {
       window.removeEventListener("pagehide", handlePageHide);
       window.removeEventListener("pageshow", handlePageShow);
       lifecycle.dispose();
-      if (lifecycleRef.current === lifecycle) lifecycleRef.current = null;
+      if (lifecycleRef.current === lifecycle) {
+        setAutoCloseSeconds(null);
+        lifecycleRef.current = null;
+      }
     };
   }, [
     threadId,
@@ -756,6 +814,7 @@ function IntroPageContent() {
     stopAllTransports,
     stopFallback,
     updateWsStatus,
+    closeMarkdownPreview,
   ]);
 
   useEffect(() => {
@@ -1567,12 +1626,14 @@ function IntroPageContent() {
 
           <div className="hidden select-none items-center gap-1 font-mono text-xs text-stone-500 sm:flex">
             <div className="tooltip-wrapper">
-              <span
-                onClick={() => setIsDialogOpen(true)}
+              <button
+                type="button"
+                ref={markdownPreviewTriggerRef}
+                onClick={openMarkdownPreview}
                 className="cursor-pointer underline decoration-stone-300 decoration-dotted underline-offset-2 transition hover:text-foreground"
               >
                 Collab Thread
-              </span>
+              </button>
             </div>
             : #{threadId}
           </div>
@@ -2229,7 +2290,8 @@ function IntroPageContent() {
                 <div className="group/dots mr-2 flex shrink-0 items-center gap-[6px] px-1 py-1">
                   <button
                     data-markdown-preview-close
-                    onClick={() => setIsDialogOpen(false)}
+                    type="button"
+                    onClick={() => closeMarkdownPreview()}
                     className="relative flex h-3 w-3 items-center justify-center rounded-full border border-[#E0443E] bg-[#FF5F56] transition-colors focus:outline-none active:bg-[#BF403A]"
                     aria-label="Close"
                   >
@@ -2351,6 +2413,28 @@ function IntroPageContent() {
                 </div>
               </div>
             </div>
+
+            {autoCloseSeconds !== null && (
+              <div
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+              >
+                <span>
+                  Closing in {autoCloseSeconds}{" "}
+                  {autoCloseSeconds === 1 ? "second" : "seconds"} due to
+                  inactivity.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => noteMarkdownActivity()}
+                  className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold text-amber-900 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  Keep open
+                </button>
+              </div>
+            )}
 
             {/* Custom Text Area Container - Stretches to fill remaining space */}
             <div className="selection:text-primary-foreground relative flex flex-1 flex-col overflow-hidden rounded-2xl border-0 bg-transparent transition duration-300 selection:bg-primary focus-within:border-indigo-500/60">

@@ -332,6 +332,175 @@ test("intro transport lifecycle hibernates and resumes with page eligibility", a
   assert.match(introPage, /lifecycleRef\.current\?\.reconnectNow\(\)/);
 });
 
+test("markdown preview state and helpers synchronously guard close and rapid reopen", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+  const stateSection = sourceSection(
+    introPage,
+    "const [isDialogOpen, setIsDialogOpen]",
+    "const updateWsStatus"
+  );
+  const helperSection = sourceSection(
+    introPage,
+    "const openMarkdownPreview",
+    "// Prevent background body scroll"
+  );
+  const closeHelper = sourceSection(
+    helperSection,
+    "const closeMarkdownPreview",
+    "useEffect(() =>"
+  );
+
+  assert.match(stateSection, /useState<number \| null>\(null\)/);
+  assert.match(
+    stateSection,
+    /markdownPreviewTriggerRef = useRef<HTMLButtonElement>\(null\)/
+  );
+  assert.match(
+    stateSection,
+    /focusRestorationRef = useRef<PreviewFocusRestoration \| null>/
+  );
+  assert.match(stateSection, /restorePreviewFocusPendingRef = useRef\(false\)/);
+  assert.match(
+    helperSection,
+    /openMarkdownPreview[\s\S]*focusRestorationRef\.current\?\.cancel\(\)[\s\S]*restorePreviewFocusPendingRef\.current = false[\s\S]*isDialogOpenRef\.current = true[\s\S]*setIsDialogOpen\(true\)/
+  );
+  assert.match(
+    closeHelper,
+    /if \(sourceLifecycle && lifecycle !== sourceLifecycle\) return;/
+  );
+  const refClose = closeHelper.indexOf("isDialogOpenRef.current = false");
+  const lifecycleClose = closeHelper.indexOf("lifecycle?.setDialogOpen(false)");
+  const reactClose = closeHelper.indexOf("setIsDialogOpen(false)");
+  assert.ok(refClose !== -1 && refClose < lifecycleClose);
+  assert.ok(lifecycleClose < reactClose);
+  assert.match(closeHelper, /setAutoCloseSeconds\(null\)/);
+  assert.match(closeHelper, /restorePreviewFocusPendingRef\.current = true/);
+  assert.doesNotMatch(closeHelper, /\.schedule\(/);
+});
+
+test("markdown preview restores opener focus only from a closed post-commit effect", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+  const postCommitEffect = sourceSection(
+    introPage,
+    "useEffect(() => {\n    if (isDialogOpen || !restorePreviewFocusPendingRef.current) return;",
+    "// Load initial content from localStorage"
+  );
+
+  assert.match(
+    postCommitEffect,
+    /restorePreviewFocusPendingRef\.current = false/
+  );
+  assert.match(postCommitEffect, /focusRestorationRef\.current\?\.schedule\(/);
+  assert.match(
+    postCommitEffect,
+    /markdownPreviewTriggerRef\.current\?\.focus\(\)/
+  );
+  assert.match(postCommitEffect, /\(\) => !isDialogOpenRef\.current/);
+  assert.match(postCommitEffect, /\}, \[isDialogOpen\]\);/);
+  assert.match(
+    postCommitEffect,
+    /return \(\) => \{[\s\S]*focusRestorationRef\.current\?\.cancel\(\)[\s\S]*restorePreviewFocusPendingRef\.current = false/
+  );
+});
+
+test("markdown lifecycle effects reject stale controllers and clean up owned countdown", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+  const lifecycleSection = sourceSection(
+    introPage,
+    "// One controller owns retries",
+    "const publishContent"
+  );
+
+  assert.match(lifecycleSection, /let lifecycle: MarkdownConnectionLifecycle;/);
+  assert.match(
+    lifecycleSection,
+    /setAutoCloseCountdown:\s*\(seconds\) => \{\s*if \(lifecycleRef\.current !== lifecycle\) return;\s*setAutoCloseSeconds\(seconds\);\s*\}/
+  );
+  assert.match(
+    lifecycleSection,
+    /requestAutoClose:\s*\(\) => \{?\s*(?:return )?closeMarkdownPreview\(lifecycle\)/
+  );
+  const cleanup = sourceSection(
+    lifecycleSection,
+    "return () => {",
+    "  }, ["
+  );
+  const dispose = cleanup.indexOf("lifecycle.dispose()");
+  const clearRef = cleanup.indexOf("lifecycleRef.current = null");
+  assert.ok(dispose !== -1 && dispose < clearRef);
+  assert.match(
+    cleanup,
+    /if \(lifecycleRef\.current === lifecycle\) \{[\s\S]*setAutoCloseSeconds\(null\)[\s\S]*lifecycleRef\.current = null/
+  );
+  assert.match(lifecycleSection, /closeMarkdownPreview,/);
+  assert.match(
+    lifecycleSection,
+    /lifecycleRef\.current\?\.setDialogOpen\(isDialogOpen\)/
+  );
+});
+
+test("markdown preview warning and controls are accessible and use local activity", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+  const opener = sourceSection(
+    introPage,
+    '<div className="hidden select-none items-center gap-1',
+    '<a\n            href="/chat"'
+  );
+  const modalHeader = sourceSection(
+    introPage,
+    "{/* Modal Header */}",
+    "{/* Custom Text Area Container"
+  );
+
+  assert.match(
+    opener,
+    /<button\s+type="button"\s+ref=\{markdownPreviewTriggerRef\}\s+onClick=\{openMarkdownPreview\}/
+  );
+  assert.match(opener, /Collab Thread/);
+  assert.match(
+    modalHeader,
+    /data-markdown-preview-close[\s\S]{0,160}type="button"[\s\S]{0,160}onClick=\{\(\) => closeMarkdownPreview\(\)\}/
+  );
+  assert.match(modalHeader, /autoCloseSeconds !== null/);
+  assert.match(modalHeader, /role="status"/);
+  assert.match(modalHeader, /aria-live="polite"/);
+  assert.match(modalHeader, /aria-atomic="true"/);
+  assert.match(
+    modalHeader,
+    /Closing in \{autoCloseSeconds\}\{" "\}\s*\{autoCloseSeconds === 1 \? "second" : "seconds"\} due to\s*inactivity\./
+  );
+  assert.match(
+    modalHeader,
+    /<button[\s\S]{0,120}type="button"[\s\S]{0,160}onClick=\{\(\) => noteMarkdownActivity\(\)\}[\s\S]{0,400}Keep open/
+  );
+});
+
+test("remote markdown paths never record local preview activity", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+  const remoteSections = [
+    sourceSection(
+      introPage,
+      "const applyContent",
+      "// Prevent background body scroll"
+    ),
+    sourceSection(
+      introPage,
+      "const pollBackendOnce",
+      "const startCrossDeployPolling"
+    ),
+    sourceSection(introPage, "const startFallbackSSE", "const connectWS"),
+    sourceSection(
+      introPage,
+      "const connectWS",
+      "// One controller owns retries"
+    ),
+  ];
+
+  for (const section of remoteSections) {
+    assert.doesNotMatch(section, /noteMarkdownActivity\(/);
+  }
+});
+
 test("markdown preview panel records local activity without backdrop or mousemove wakeups", async () => {
   const introPage = await source("src/app/intro/page.tsx");
 
@@ -364,7 +533,7 @@ test("markdown preview panel records local activity without backdrop or mousemov
   assert.doesNotMatch(panelOpening, /onMouseMove/);
   assert.match(
     introPage,
-    /<button\s+data-markdown-preview-close[\s\S]{0,120}onClick=\{\(\) => setIsDialogOpen\(false\)\}/,
+    /<button\s+data-markdown-preview-close[\s\S]{0,160}onClick=\{\(\) => closeMarkdownPreview\(\)\}/,
   );
 });
 

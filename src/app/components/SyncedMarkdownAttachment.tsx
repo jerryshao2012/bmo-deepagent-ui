@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Download, FileArchive, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { markdownAttachmentLabel } from "@/lib/markdown-attachment-types";
 import {
   downloadMarkdownAsset,
   formatMarkdownAttachmentSize,
@@ -27,9 +28,10 @@ export function SyncedMarkdownAttachment({
 }) {
   const [isDownloading, setIsDownloading] = useState(false);
   const formattedSize = formatMarkdownAttachmentSize(size);
+  const attachmentLabel = markdownAttachmentLabel(filename);
   const description = formattedSize
-    ? `ZIP archive · ${formattedSize}`
-    : "ZIP archive";
+    ? `${attachmentLabel} · ${formattedSize}`
+    : attachmentLabel;
 
   const handleDownload = async () => {
     if (isDownloading) return;

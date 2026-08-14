@@ -87,6 +87,40 @@ test("falls back to Attachment for an unknown filename", () => {
   assert.ok(screen.getByText("Attachment · 1.5 MiB"));
 });
 
+test("uses archive icons only for archive filenames", () => {
+  const archive = render(
+    <SyncedMarkdownAttachment
+      markdownId="123456"
+      assetId="1b14e924-5f0e-4fdb-b85d-4dddf8bc4271"
+      filename="bundle.7z"
+      size={1572864}
+      allowDownload={true}
+      light={true}
+    />
+  );
+  assert.ok(archive.container.querySelector("svg.lucide-file-archive"));
+  cleanup();
+
+  for (const filename of ["quarterly-plan.docx", "bundle.unknown"]) {
+    const attachment = render(
+      <SyncedMarkdownAttachment
+        markdownId="123456"
+        assetId="1b14e924-5f0e-4fdb-b85d-4dddf8bc4271"
+        filename={filename}
+        size={1572864}
+        allowDownload={true}
+        light={true}
+      />
+    );
+    assert.ok(attachment.container.querySelector("svg.lucide-file"));
+    assert.equal(
+      attachment.container.querySelector("svg.lucide-file-archive"),
+      null
+    );
+    cleanup();
+  }
+});
+
 test("omits separator and size when attachment size is missing or malformed", () => {
   for (const size of [null, Number.NaN, Number.POSITIVE_INFINITY, -1]) {
     render(

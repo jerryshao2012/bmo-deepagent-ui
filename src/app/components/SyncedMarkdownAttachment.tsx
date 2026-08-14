@@ -1,10 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import { Download, FileArchive, Loader2 } from "lucide-react";
+import { Download, File, FileArchive, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { markdownAttachmentLabel } from "@/lib/markdown-attachment-types";
+import {
+  markdownArchiveLabel,
+  markdownAttachmentLabel,
+} from "@/lib/markdown-attachment-types";
 import {
   downloadMarkdownAsset,
   formatMarkdownAttachmentSize,
@@ -29,6 +32,7 @@ export function SyncedMarkdownAttachment({
   const [isDownloading, setIsDownloading] = useState(false);
   const formattedSize = formatMarkdownAttachmentSize(size);
   const attachmentLabel = markdownAttachmentLabel(filename);
+  const isArchive = markdownArchiveLabel(filename) !== null;
   const description = formattedSize
     ? `${attachmentLabel} · ${formattedSize}`
     : attachmentLabel;
@@ -64,7 +68,11 @@ export function SyncedMarkdownAttachment({
         )}
         aria-hidden="true"
       >
-        <FileArchive className="h-5 w-5" />
+        {isArchive ? (
+          <FileArchive className="h-5 w-5" />
+        ) : (
+          <File className="h-5 w-5" />
+        )}
       </span>
       <span className="min-w-0 flex-1">
         <span

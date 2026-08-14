@@ -156,9 +156,17 @@ function IntroPageContent() {
       pendingBackendContentRef.current = null;
       backendFailureCountRef.current = 0;
       backendNextRetryAtRef.current = 0;
-      void browserMarkdownStore.load(threadId).then((cached) => {
-        if (cached && activeThreadIdRef.current === threadId) applyContent(cached);
-      });
+      void pendingEditCoordinatorRef.current
+        .readCurrent(threadId, () => browserMarkdownStore.load(threadId))
+        .then((cachedRead) => {
+          if (
+            cachedRead.current &&
+            cachedRead.value &&
+            activeThreadIdRef.current === threadId
+          ) {
+            applyContent(cachedRead.value);
+          }
+        });
     }
   }, [threadId, applyContent]);
 
@@ -247,13 +255,18 @@ function IntroPageContent() {
     const requestVersion = contentVersionRef.current;
     crossDeployPollInFlightGenerationRef.current = generation;
     try {
-      const remoteContent = (await backendStore.load(threadId)) ?? "";
+      const backendRead = await pendingEditCoordinatorRef.current.readCurrent(
+        threadId,
+        () => backendStore.load(threadId)
+      );
       if (
         generation !== crossDeployPollGenerationRef.current ||
         activeThreadIdRef.current !== threadId
       ) {
         return;
       }
+      if (!backendRead.current) return;
+      const remoteContent = backendRead.value ?? "";
       resetBackendMirrorBackoff();
       if (
         requestVersion !== contentVersionRef.current ||

@@ -62,6 +62,10 @@ export interface PendingEditCoordinatorScheduler {
   clearTimeout(handle: unknown): void;
 }
 
+export type MarkdownCurrentRead<T> =
+  | { readonly current: true; readonly value: T }
+  | { readonly current: false };
+
 const FALLBACK_WRITE_RETRY_MS = 1_000;
 
 const platformScheduler: PendingEditCoordinatorScheduler = {
@@ -93,6 +97,7 @@ function isAbortError(error: unknown): boolean {
 export class MarkdownPendingEditCoordinator {
   private activeFallback: ActiveFallback | null = null;
   private currentThreadId: string | null = null;
+  private editGeneration = 0;
   private nextFallbackGeneration = 1;
   private nextOperationId = 1;
   private pendingEdit: PendingMarkdownEdit | null = null;
@@ -105,6 +110,7 @@ export class MarkdownPendingEditCoordinator {
     if (this.currentThreadId === threadId) return;
     this.stopFallback();
     this.currentThreadId = threadId;
+    this.editGeneration += 1;
     if (this.pendingEdit?.threadId !== threadId) this.pendingEdit = null;
   }
 
@@ -120,6 +126,7 @@ export class MarkdownPendingEditCoordinator {
       immediate,
       threadId,
     });
+    this.editGeneration += 1;
     this.pendingEdit = edit;
     const active = this.activeFallback;
     if (active?.threadId === threadId && active.initialSeen) {
@@ -131,6 +138,28 @@ export class MarkdownPendingEditCoordinator {
 
   pendingForThread(threadId: string): PendingMarkdownEdit | null {
     return this.pendingEdit?.threadId === threadId ? this.pendingEdit : null;
+  }
+
+  async readCurrent<T>(
+    threadId: string,
+    read: () => Promise<T>
+  ): Promise<MarkdownCurrentRead<T>> {
+    if (
+      this.currentThreadId !== threadId ||
+      this.pendingForThread(threadId) !== null
+    ) {
+      return { current: false };
+    }
+    const generation = this.editGeneration;
+    const value = await read();
+    if (
+      this.currentThreadId !== threadId ||
+      this.editGeneration !== generation ||
+      this.pendingForThread(threadId) !== null
+    ) {
+      return { current: false };
+    }
+    return { current: true, value };
   }
 
   acknowledgeWebSocket(threadId: string, operationId: number): boolean {

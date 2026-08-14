@@ -325,3 +325,36 @@ test("WebSocket resolver applies remote sync when no local edit is pending", () 
     { action: "apply" }
   );
 });
+
+test("delayed browser cache read cannot replace a newer pending local edit", async () => {
+  const coordinator = new MarkdownPendingEditCoordinator();
+  coordinator.switchThread("111111");
+  const cacheLoad = deferred<string | null>();
+
+  const read = coordinator.readCurrent("111111", () => cacheLoad.promise);
+  const localEdit = coordinator.publish("111111", "new local", false);
+  cacheLoad.resolve("stale cache");
+
+  assert.deepEqual(await read, { current: false });
+  assert.equal(
+    coordinator.pendingForThread("111111")?.operationId,
+    localEdit.operationId
+  );
+});
+
+test("backend read cannot apply while its mirrored edit still awaits WebSocket acknowledgement", async () => {
+  const coordinator = new MarkdownPendingEditCoordinator();
+  coordinator.switchThread("111111");
+  const backendLoad = deferred<string | null>();
+
+  const read = coordinator.readCurrent("111111", () => backendLoad.promise);
+  const localEdit = coordinator.publish("111111", "new local", false);
+  // Backend mirror completion does not acknowledge the independent WebSocket write.
+  backendLoad.resolve("older remote");
+
+  assert.deepEqual(await read, { current: false });
+  assert.equal(
+    coordinator.pendingForThread("111111")?.operationId,
+    localEdit.operationId
+  );
+});

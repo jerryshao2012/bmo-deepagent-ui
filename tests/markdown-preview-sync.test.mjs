@@ -115,6 +115,31 @@ test("new local markdown wins over stale asynchronous sync responses", async () 
     introPage,
     /pendingEditCoordinatorRef\.current\.pendingForThread\(threadId\) !==\s*null\s*\|\|\s*requestVersion !== contentVersionRef\.current/
   );
+  const cacheLoadStart = introPage.indexOf(
+    "// Load initial content from localStorage once threadId resolves",
+  );
+  const cacheLoadEnd = introPage.indexOf(
+    "// ── Cross-deployment sync",
+    cacheLoadStart,
+  );
+  const cacheLoadBlock = introPage.slice(cacheLoadStart, cacheLoadEnd);
+  assert.match(
+    cacheLoadBlock,
+    /pendingEditCoordinatorRef\.current\s*\.readCurrent\([\s\S]*browserMarkdownStore\.load\(threadId\)/,
+  );
+  assert.match(cacheLoadBlock, /cachedRead\.current/);
+
+  const backendPollStart = introPage.indexOf("const pollBackendOnce");
+  const backendPollEnd = introPage.indexOf(
+    "const startCrossDeployPolling",
+    backendPollStart,
+  );
+  const backendPollBlock = introPage.slice(backendPollStart, backendPollEnd);
+  assert.match(
+    backendPollBlock,
+    /pendingEditCoordinatorRef\.current\.readCurrent\([\s\S]*backendStore\.load\(threadId\)/,
+  );
+  assert.match(backendPollBlock, /if \(!backendRead\.current\) return/);
 });
 
 test("intro transport lifecycle delegates WebSocket attempt outcomes to the controller", async () => {
@@ -304,7 +329,7 @@ test("cross-deployment polls discard stopped generations and serialize each acti
   );
   assert.match(
     introPage,
-    /await backendStore\.load\(threadId\)[\s\S]{0,300}generation !== crossDeployPollGenerationRef\.current[\s\S]{0,200}activeThreadIdRef\.current !== threadId[\s\S]{0,200}resetBackendMirrorBackoff\(\)/
+    /await pendingEditCoordinatorRef\.current\.readCurrent\([\s\S]{0,180}backendStore\.load\(threadId\)[\s\S]{0,300}generation !== crossDeployPollGenerationRef\.current[\s\S]{0,200}activeThreadIdRef\.current !== threadId[\s\S]{0,200}backendRead\.current[\s\S]{0,200}resetBackendMirrorBackoff\(\)/
   );
   assert.match(
     introPage,

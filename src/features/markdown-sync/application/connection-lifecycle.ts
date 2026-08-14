@@ -39,6 +39,7 @@ export class MarkdownConnectionLifecycle {
   private dialogOpen = false;
   private visible = true;
   private sleeping = true;
+  private ineligibleReconciled = false;
   private disposed = false;
   private fallbackActive = false;
   private upgradeAttempt = false;
@@ -210,7 +211,7 @@ export class MarkdownConnectionLifecycle {
 
   private applyEligibility(): void {
     if (!this.isEligible()) {
-      if (!this.sleeping) this.hibernate();
+      if (!this.sleeping || !this.ineligibleReconciled) this.hibernate();
       return;
     }
 
@@ -225,6 +226,7 @@ export class MarkdownConnectionLifecycle {
     this.webSocketOpen = false;
     this.crossDeploySyncStarted = false;
     this.sleeping = false;
+    this.ineligibleReconciled = false;
     this.effects.stopFallback();
     this.armInactivityTimer();
     this.effects.setStatus("connecting");
@@ -241,6 +243,7 @@ export class MarkdownConnectionLifecycle {
     this.webSocketOpen = false;
     this.crossDeploySyncStarted = false;
     this.sleeping = true;
+    this.ineligibleReconciled = true;
     this.effects.stopAllTransports();
     this.effects.setStatus("idle");
   }

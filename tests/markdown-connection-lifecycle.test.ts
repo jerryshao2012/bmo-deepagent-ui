@@ -119,6 +119,23 @@ function reachFallback(
   }
 }
 
+test("exports exact markdown connection timing values", () => {
+  assert.equal(MARKDOWN_INACTIVITY_MS, 300_000);
+  assert.equal(WEBSOCKET_ATTEMPT_TIMEOUT_MS, 10_000);
+  assert.deepEqual(WEBSOCKET_RETRY_DELAYS_MS, [1_000, 2_000, 4_000]);
+  assert.equal(WEBSOCKET_UPGRADE_INTERVAL_MS, 60_000);
+});
+
+test("initial ineligible reconciliation publishes idle and stops transports once", () => {
+  const { effects, lifecycle } = createLifecycle();
+
+  lifecycle.setDialogOpen(false);
+  lifecycle.setVisibility(false);
+
+  assert.equal(effects.status, "idle");
+  assert.equal(effects.stopAllTransportsCalls, 1);
+});
+
 test("closed dialog and hidden tab remain idle", () => {
   const closed = createLifecycle();
   closed.lifecycle.setVisibility(true);
@@ -151,11 +168,11 @@ test("connected visible dialog hibernates exactly after five minutes", () => {
 
   scheduler.advanceBy(MARKDOWN_INACTIVITY_MS - 1);
   assert.equal(effects.status, "connected");
-  assert.equal(effects.stopAllTransportsCalls, 0);
+  assert.equal(effects.stopAllTransportsCalls, 1);
 
   scheduler.advanceBy(1);
   assert.equal(effects.status, "idle");
-  assert.equal(effects.stopAllTransportsCalls, 1);
+  assert.equal(effects.stopAllTransportsCalls, 2);
 });
 
 test("activity resets inactivity timer and wakes eligible idle client", () => {
@@ -361,7 +378,7 @@ test("dispose stops transports, cancels timers, and publishes no later status", 
   const statusesBeforeDispose = effects.statuses.length;
 
   lifecycle.dispose();
-  assert.equal(effects.stopAllTransportsCalls, 1);
+  assert.equal(effects.stopAllTransportsCalls, 2);
   assert.equal(effects.statuses.length, statusesBeforeDispose);
 
   scheduler.advanceBy(MARKDOWN_INACTIVITY_MS + WEBSOCKET_UPGRADE_INTERVAL_MS);

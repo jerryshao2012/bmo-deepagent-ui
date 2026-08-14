@@ -350,7 +350,9 @@ export class MarkdownConnectionLifecycle {
 
       this.closeRequested = true;
       this.idleCycleEpoch += 1;
+      const closeEpoch = this.idleCycleEpoch;
       this.publishCountdown(null);
+      if (!this.isCurrentCloseRequest(closeEpoch)) return;
       this.effects.requestAutoClose();
     }, MARKDOWN_COUNTDOWN_TICK_MS);
     this.countdownTimer = timer;
@@ -363,6 +365,16 @@ export class MarkdownConnectionLifecycle {
       this.dialogOpen &&
       this.visible &&
       !this.closeRequested
+    );
+  }
+
+  private isCurrentCloseRequest(epoch: number): boolean {
+    return (
+      epoch === this.idleCycleEpoch &&
+      !this.disposed &&
+      this.dialogOpen &&
+      this.visible &&
+      this.closeRequested
     );
   }
 

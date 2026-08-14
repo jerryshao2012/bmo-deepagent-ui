@@ -616,6 +616,39 @@ test("activity before zero cancels close while zero before activity stays latche
   assert.equal(afterZero.scheduler.pendingTimerCount, 0);
 });
 
+for (const action of ["visibility", "dialog", "dispose"] as const) {
+  test(`zero tick suppresses close after null effect reentrant ${action}`, () => {
+    const { effects, lifecycle, scheduler } = createLifecycle();
+    wake(lifecycle);
+    openCurrent(lifecycle, effects);
+    scheduler.advanceBy(
+      MARKDOWN_INACTIVITY_MS + 4 * MARKDOWN_COUNTDOWN_TICK_MS,
+    );
+    effects.onSetAutoCloseCountdown = (seconds) => {
+      if (seconds !== null) return;
+      effects.onSetAutoCloseCountdown = undefined;
+      if (action === "visibility") lifecycle.setVisibility(false);
+      if (action === "dialog") lifecycle.setDialogOpen(false);
+      if (action === "dispose") lifecycle.dispose();
+    };
+
+    scheduler.advanceBy(MARKDOWN_COUNTDOWN_TICK_MS);
+
+    assert.deepEqual(effects.countdowns, [5, 4, 3, 2, 1, null]);
+    assert.equal(lifecycle.isEligible(), false);
+    assert.equal(effects.requestAutoCloseCalls, 0);
+    assert.equal(effects.connectWebSocketCalls, 1);
+    assert.equal(
+      effects.stopAllTransportsCalls,
+      action === "dispose" ? 3 : 2,
+    );
+    assert.equal(scheduler.pendingTimerCount, 0);
+
+    lifecycle.recordActivity();
+    assert.equal(effects.connectWebSocketCalls, 1);
+  });
+}
+
 test("synchronous auto-close can reopen same lifecycle for a second close cycle", () => {
   const { effects, lifecycle, scheduler } = createLifecycle();
   effects.onRequestAutoClose = () => lifecycle.setDialogOpen(false);

@@ -28,7 +28,6 @@ import {
   canStartSyncedImageGesture,
   deleteMarkdownAssets,
   insertSyncedImageMarkdown,
-  isSupportedMarkdownAssetFile,
   removeSyncedMarkdownWorkspace,
   shouldApplySyncedImageUpload,
   uploadMarkdownAssets,
@@ -911,8 +910,7 @@ function IntroPageContent() {
     const files = Array.from(event.clipboardData.items)
       .filter((item) => item.kind === "file")
       .map((item) => item.getAsFile())
-      .filter((file): file is File => file !== null)
-      .filter(isSupportedMarkdownAssetFile);
+      .filter((file): file is File => file !== null);
     if (files.length === 0) return;
     event.preventDefault();
     processMarkdownAssetFiles(
@@ -935,9 +933,7 @@ function IntroPageContent() {
     event: React.DragEvent<HTMLTextAreaElement>,
   ) => {
     noteMarkdownActivity();
-    const files = Array.from(event.dataTransfer.files).filter(
-      isSupportedMarkdownAssetFile,
-    );
+    const files = Array.from(event.dataTransfer.files);
     if (files.length === 0) return;
     event.preventDefault();
     processMarkdownAssetFiles(

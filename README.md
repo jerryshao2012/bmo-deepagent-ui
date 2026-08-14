@@ -65,14 +65,23 @@ it for managed environment. Restore normal TLS validation when no longer needed.
 Settings dialog stores backend connection in browser. Environment variables provide
 deployment defaults and server-side credentials.
 
-| Variable                        | Purpose                                                       |
-| ------------------------------- | ------------------------------------------------------------- |
-| `NEXT_PUBLIC_LANGGRAPH_URL`     | Default LangGraph backend URL exposed to browser.             |
-| `NEXT_PUBLIC_ASSISTANT_ID`      | Default assistant ID, commonly `research`.                    |
-| `BACKEND_API_URL`               | Server-side backend override for proxy and media routes.      |
-| `UPLOAD_API_KEY`                | Server-side API key forwarded to protected backend routes.    |
-| `NEXT_PUBLIC_LANGSMITH_API_KEY` | Optional client-side key for local development only.          |
-| `MARKDOWN_STORAGE_DIR`          | Server-side storage directory for synchronized Markdown data. |
+| Variable                                            | Purpose                                                       |
+| --------------------------------------------------- | ------------------------------------------------------------- |
+| `NEXT_PUBLIC_LANGGRAPH_URL`                         | Default LangGraph backend URL exposed to browser.             |
+| `NEXT_PUBLIC_ASSISTANT_ID`                          | Default assistant ID, commonly `research`.                    |
+| `NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED` | Build-time gate for new extended Markdown attachment uploads. |
+| `BACKEND_API_URL`                                   | Server-side backend override for proxy and media routes.      |
+| `UPLOAD_API_KEY`                                    | Server-side API key forwarded to protected backend routes.    |
+| `NEXT_PUBLIC_LANGSMITH_API_KEY`                     | Optional client-side key for local development only.          |
+| `MARKDOWN_STORAGE_DIR`                              | Server-side storage directory for synchronized Markdown data. |
+
+`NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED` defaults to `true`. Set it
+to exact lowercase `false` before building to stop only new 7z, TAR, TAR.GZ,
+TGZ, and Microsoft Office selections. Images and ZIP files remain selectable;
+already stored attachment cards, rendering, and downloads remain supported.
+Because Next.js compiles this public value into client code, changing runtime
+environment alone has no effect: rebuild image after changing it. Coordinate
+backend upload gate separately.
 
 Never expose production secrets through `NEXT_PUBLIC_*` variables. Container
 deployments can start from [`.env.docker.example`](.env.docker.example); keep real

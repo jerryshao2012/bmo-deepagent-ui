@@ -21,6 +21,10 @@ const dockerEnvExample = await readFile(
   path.join(repoRoot, ".env.docker.example"),
   "utf8"
 );
+const dockerfileSource = await readFile(
+  path.join(repoRoot, "Dockerfile"),
+  "utf8"
+);
 const pinnedImage = "docker.io/jerryshao2013/deepagent-ui:latest";
 const resolvedBackendUrl =
   "https://deep-research-agent-testseed.env.example.test";
@@ -639,7 +643,7 @@ test("build then Docker Hub login then push writes exact atomic manifest", async
   );
   assert.match(
     log,
-    /^docker <build> <--platform> <linux\/amd64> <--build-arg> <NEXT_PUBLIC_LANGGRAPH_URL=https:\/\/deep-research-agent-testseed\.env\.example\.test> <--build-arg> <NEXT_PUBLIC_ASSISTANT_ID=docker-assistant> <-t> <docker\.io\/jerryshao2013\/deepagent-ui:latest> <.+>$/m
+    /^docker <build> <--platform> <linux\/amd64> <--build-arg> <NEXT_PUBLIC_LANGGRAPH_URL=https:\/\/deep-research-agent-testseed\.env\.example\.test> <--build-arg> <NEXT_PUBLIC_ASSISTANT_ID=docker-assistant> <--build-arg> <NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED=true> <-t> <docker\.io\/jerryshao2013\/deepagent-ui:latest> <.+>$/m
   );
   assert.match(
     log,
@@ -669,6 +673,66 @@ test("build then Docker Hub login then push writes exact atomic manifest", async
   assert.equal(contextExistsAfter, false);
   assert.deepEqual(tempManifestFiles, []);
 });
+
+test("Docker image compiles the extended attachment default into the Next client", () => {
+  const arg = "ARG NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED=true";
+  const env =
+    "ENV NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED=$NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED";
+  const build = "RUN NEXT_TELEMETRY_DISABLED=1 yarn build";
+
+  assert.ok(dockerfileSource.includes(arg), dockerfileSource);
+  assert.ok(dockerfileSource.includes(env), dockerfileSource);
+  assert.ok(
+    dockerfileSource.indexOf(arg) < dockerfileSource.indexOf(env) &&
+      dockerfileSource.indexOf(env) < dockerfileSource.indexOf(build),
+    dockerfileSource
+  );
+});
+
+test("tracked Docker environment documents enabled extended attachments by default", () => {
+  assert.match(
+    dockerEnvExample,
+    /^NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED="true"$/m
+  );
+});
+
+test("build forwards an explicit disabled extended attachment gate exactly once", async () => {
+  const { result, log } = await runBuild({
+    dockerEnv: `NEXT_PUBLIC_ASSISTANT_ID=docker-assistant
+NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED=false
+`,
+    exportedPat: "explicit-disabled-gate-pat",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    log.match(
+      /<--build-arg> <NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED=false>/g
+    )?.length,
+    1,
+    log
+  );
+});
+
+for (const invalidValue of ["TRUE", "False", "1", "yes", ""]) {
+  test(`build rejects invalid extended attachment gate ${JSON.stringify(
+    invalidValue
+  )} before container access`, async () => {
+    const { result, log, manifest } = await runBuild({
+      dockerEnv: `NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED=${invalidValue}\n`,
+      existingManifest: priorManifest,
+      exportedPat: "unused-invalid-gate-pat",
+    });
+
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(
+      result.stderr,
+      /NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED.*exactly.*true.*false/i
+    );
+    assert.doesNotMatch(log, /^docker\b/m);
+    assert.deepEqual(manifest, priorManifest);
+  });
+}
 
 test("build rejects unsafe resolver output before container runtime and preserves manifest bytes", async () => {
   for (const output of [

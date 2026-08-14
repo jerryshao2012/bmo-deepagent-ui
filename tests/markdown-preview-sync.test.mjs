@@ -6,6 +6,41 @@ import test from "node:test";
 const source = async (relativePath) =>
   readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
 
+const sourceSection = (text, startAnchor, endAnchor) => {
+  const startIndex = text.indexOf(startAnchor);
+  const endIndex = text.indexOf(endAnchor);
+  assert.notEqual(
+    startIndex,
+    -1,
+    `Missing source section start anchor: ${startAnchor}`
+  );
+  assert.notEqual(
+    endIndex,
+    -1,
+    `Missing source section end anchor: ${endAnchor}`
+  );
+  assert.ok(
+    endIndex > startIndex,
+    "Source section end anchor must follow start anchor"
+  );
+  return text.slice(startIndex, endIndex);
+};
+
+test("source sections reject missing or reversed anchors", () => {
+  assert.throws(
+    () => sourceSection("start then end", "missing", "end"),
+    /Missing source section start anchor/
+  );
+  assert.throws(
+    () => sourceSection("start then end", "start", "missing"),
+    /Missing source section end anchor/
+  );
+  assert.throws(
+    () => sourceSection("end before start", "start", "end"),
+    /Source section end anchor must follow start anchor/
+  );
+});
+
 test("HTTP fallback never publishes untouched browser state during polling", async () => {
   const introPage = await source("src/app/intro/page.tsx");
 
@@ -505,21 +540,83 @@ test("synced attachments use canonical type-neutral links and a dedicated card",
   const markdownContent = await source(
     "src/app/components/MarkdownContent.tsx"
   );
+  const attachmentRenderer = sourceSection(
+    markdownContent,
+    "const attachmentId = parseSyncedAttachmentHref",
+    "// Document links"
+  );
 
-  assert.match(markdownContent, /parseSyncedAttachmentHref\(href\)/);
-  assert.match(markdownContent, /parseSyncedAttachmentSize\(title\)/);
-  assert.match(markdownContent, /<SyncedMarkdownAttachment/);
-  assert.match(markdownContent, /filename=\{[^}]+\}/);
-  assert.doesNotMatch(markdownContent, /__markdown-zip/);
+  assert.match(attachmentRenderer, /parseSyncedAttachmentHref\(href\)/);
+  assert.match(attachmentRenderer, /parseSyncedAttachmentSize\(title\)/);
+  assert.match(attachmentRenderer, /<SyncedMarkdownAttachment/);
+  assert.match(attachmentRenderer, /filename=\{[^}]+\}/);
+  assert.doesNotMatch(markdownContent, /__markdown-(?:zip|7z|tar|tgz|office)/);
+  assert.doesNotMatch(
+    attachmentRenderer,
+    /__markdown-attachment\/(?:zip|7z|tar|tgz|office)/
+  );
 });
 
-test("intro asset gestures accept mixed images and attachments", async () => {
-  const introPage = await source("src/app/intro/page.tsx");
+test("intro asset gestures validate every non-null pasted and dropped file", async () => {
+  const [introPage, assetHelpers] = await Promise.all([
+    source("src/app/intro/page.tsx"),
+    source("src/lib/markdown-images.ts"),
+  ]);
+  const assetPipeline = sourceSection(
+    introPage,
+    "const processMarkdownAssetFiles",
+    "const handleMarkdownAssetPaste"
+  );
+  const pasteHandler = sourceSection(
+    introPage,
+    "const handleMarkdownAssetPaste",
+    "const handleMarkdownAssetDragOver"
+  );
+  const dropHandler = sourceSection(
+    introPage,
+    "const handleMarkdownAssetDrop",
+    "const handleCopy"
+  );
 
   assert.match(introPage, /onPaste=\{handleMarkdownAssetPaste\}/);
   assert.match(introPage, /onDrop=\{handleMarkdownAssetDrop\}/);
-  assert.match(introPage, /isSupportedMarkdownAssetFile/);
-  assert.match(introPage, /validateMarkdownAssetFiles/);
+  assert.doesNotMatch(
+    introPage,
+    /\.filter\(\s*isSupportedMarkdownAssetFile\s*\)/
+  );
+  assert.match(
+    pasteHandler,
+    /Array\.from\(event\.clipboardData\.items\)[\s\S]*?\.filter\(\(item\) => item\.kind === "file"\)[\s\S]*?\.map\(\(item\) => item\.getAsFile\(\)\)[\s\S]*?\.filter\(\(file\): file is File => file !== null\);/
+  );
+  assert.match(
+    dropHandler,
+    /const files = Array\.from\(event\.dataTransfer\.files\);/
+  );
+  for (const handler of [pasteHandler, dropHandler]) {
+    assert.match(handler, /if \(files\.length === 0\) return;/);
+    assert.match(handler, /event\.preventDefault\(\);/);
+    assert.match(handler, /processMarkdownAssetFiles\(\s*files,/);
+  }
+  assert.equal(
+    assetPipeline.match(/validateMarkdownAssetFiles\(files\)/g)?.length,
+    1
+  );
+  assert.equal(assetPipeline.match(/uploadMarkdownAssets\(/g)?.length, 1);
+  assert.equal(assetPipeline.match(/buildSyncedAssetMarkdown\(/g)?.length, 1);
+  assert.doesNotMatch(
+    introPage,
+    /(?:zip|7z|tar|tgz|office)(?:Files?|Handlers?|Uploads?)/i
+  );
+  const sharedValidator = sourceSection(
+    assetHelpers,
+    "export function validateMarkdownAssetFiles",
+    "export function parseContentDispositionFilename"
+  );
+  assert.match(sharedValidator, /isSupportedMarkdownAssetFile\(file\)/);
+  assert.match(
+    introPage,
+    /const failureCount = rejected\.length \+ response\.errors\.length;/
+  );
   assert.match(introPage, /buildSyncedAssetMarkdown/);
   assert.match(introPage, /uploadMarkdownAssets/);
   assert.match(introPage, /UPLOADING ATTACHMENTS/);

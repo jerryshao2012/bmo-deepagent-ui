@@ -66,8 +66,15 @@ class ImmutableReadonlySet<T> implements ReadonlySet<T> {
 
   intersection<U>(other: ReadonlySetLike<U>): Set<T & U> {
     const result = new Set<T & U>();
-    for (const value of this.#values) {
-      if (other.has(value as unknown as U)) result.add(value as T & U);
+    if (this.size <= other.size) {
+      for (const value of this.#values) {
+        if (other.has(value as unknown as U)) result.add(value as T & U);
+      }
+      return result;
+    }
+    const iterator = other.keys();
+    for (let next = iterator.next(); !next.done; next = iterator.next()) {
+      if (this.has(next.value as unknown as T)) result.add(next.value as T & U);
     }
     return result;
   }
@@ -175,7 +182,7 @@ export const MARKDOWN_ARCHIVE_FORMATS: readonly MarkdownArchiveFormat[] =
         "",
         "application/octet-stream",
         "application/zip",
-        "application/x-zip",
+        "application/x-zip-compressed",
       ]),
       extended: false,
     }),

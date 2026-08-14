@@ -35,7 +35,7 @@ const archiveCases = [
       "",
       "application/octet-stream",
       "application/zip",
-      "application/x-zip",
+      "application/x-zip-compressed",
     ],
   },
   {
@@ -256,6 +256,20 @@ test("accepts every archive suffix only with a matching MIME", () => {
   );
   assert.equal(
     isSupportedMarkdownArchiveFile({
+      name: "bundle.zip",
+      type: "application/x-zip-compressed",
+    }),
+    true
+  );
+  assert.equal(
+    isSupportedMarkdownArchiveFile({
+      name: "bundle.zip",
+      type: "application/x-zip",
+    }),
+    false
+  );
+  assert.equal(
+    isSupportedMarkdownArchiveFile({
       name: "bundle.zip.exe",
       type: "application/zip",
     }),
@@ -368,6 +382,15 @@ test("archive content types cannot be mutated through runtime casts", () => {
   assert.throws(() => mutableContentTypes.clear(), TypeError);
   assert.equal(isMarkdownArchiveContentType("image/png"), false);
   assert.equal(isMarkdownArchiveContentType("application/zip"), true);
+});
+
+test("readonly Set intersection follows the smaller operand's order", () => {
+  const smallerOther = new Set(["application/gzip", "application/zip"]);
+
+  assert.deepEqual(
+    [...MARKDOWN_ARCHIVE_CONTENT_TYPES.intersection(smallerOther)],
+    ["application/gzip", "application/zip"]
+  );
 });
 
 test("exported archive and Office catalogs are deeply immutable", () => {

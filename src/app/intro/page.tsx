@@ -459,6 +459,15 @@ function IntroPageContent() {
           if (
             data.initial &&
             !data.authoritative &&
+            pendingContent !== null
+          ) {
+            lastPollPushedRef.current = pendingContent;
+            void sendFallbackUpdate(pendingContent, true);
+            return;
+          }
+          if (
+            data.initial &&
+            !data.authoritative &&
             !data.content &&
             sharedTextRef.current
           ) {

@@ -175,7 +175,7 @@ test("fallback initial sync preserves and accepts pending WebSocket content befo
 
   assert.match(
     introPage,
-    /const pendingContent:[\s\S]{0,100}pendingWebSocketContentRef\.current[\s\S]{0,700}data\.initial[\s\S]{0,100}sendFallbackUpdate\(pendingContent\)/
+    /const pendingContent:[\s\S]{0,100}pendingWebSocketContentRef\.current[\s\S]{0,300}data\.initial[\s\S]{0,200}sendFallbackUpdate\(pendingContent(?:, true)?\)/
   );
   assert.match(
     introPage,
@@ -184,6 +184,15 @@ test("fallback initial sync preserves and accepts pending WebSocket content befo
   assert.match(
     introPage,
     /pendingWebSocketContentRef\.current === pendingUpdate\.content[\s\S]{0,120}pendingWebSocketContentRef\.current = null/
+  );
+});
+
+test("fallback nonauthoritative initial state cannot acknowledge a pending empty delete", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /data\.initial\s*&&\s*!data\.authoritative\s*&&\s*pendingContent !== null[\s\S]{0,250}sendFallbackUpdate\(pendingContent, true\);[\s\S]{0,80}return;/
   );
 });
 
@@ -278,6 +287,24 @@ test("cross-machine markdown updates converge every local transport", async () =
     introPage,
     /pendingFallbackUpdateRef\.current = \{\s*content:\s*remoteContent/
   );
+  assert.match(
+    introPage,
+    /ws\.onopen = async \(\) => \{[\s\S]{0,700}await browserMarkdownStore\.load\(threadId\)[\s\S]{0,350}ws\.send\(JSON\.stringify\(\{ type: "init", content: localContent \}\)\)/
+  );
+  assert.match(
+    introPage,
+    /const startCrossDeployPolling[\s\S]{0,350}void pollBackendOnce\(generation\);[\s\S]{0,200}window\.setInterval/
+  );
+
+  const remotePollStart = introPage.indexOf("const pollBackendOnce");
+  const remotePollEnd = introPage.indexOf(
+    "const startCrossDeployPolling",
+    remotePollStart,
+  );
+  assert.notEqual(remotePollStart, -1);
+  assert.notEqual(remotePollEnd, -1);
+  const remotePollBlock = introPage.slice(remotePollStart, remotePollEnd);
+  assert.doesNotMatch(remotePollBlock, /lifecycleRef\.current/);
 });
 
 test("synced assets are opt-in and ordinary markdown images keep existing rendering", async () => {

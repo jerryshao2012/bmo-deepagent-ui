@@ -13,6 +13,7 @@ import {
   MarkdownConnectionLifecycle,
   type MarkdownConnectionStatus,
 } from "@/features/markdown-sync/application/connection-lifecycle";
+import { MarkdownPendingEditCoordinator } from "@/features/markdown-sync/application/pending-edit-coordinator";
 import { clearRememberedLogin } from "@/lib/remembered-login";
 import {
   buildSyncedAssetMarkdown,
@@ -96,16 +97,13 @@ function IntroPageContent() {
   const crossDeployPollInFlightGenerationRef = useRef<number | null>(null);
   const lastBackendSyncRef = useRef<string | null>(null);
   const contentVersionRef = useRef(0);
-  const pendingWebSocketContentRef = useRef<string | null>(null);
+  const pendingEditCoordinatorRef = useRef(
+    new MarkdownPendingEditCoordinator()
+  );
   const pendingBackendContentRef = useRef<string | null>(null);
   const backendWriteInFlightRef = useRef(false);
   const backendFailureCountRef = useRef(0);
   const backendNextRetryAtRef = useRef(0);
-  const pendingFallbackUpdateRef = useRef<{
-    content: string;
-    immediate: boolean;
-  } | null>(null);
-  const fallbackWriteInFlightRef = useRef(false);
   const assetOperationEpochRef = useRef(0);
   const activeAssetUploadPromiseRef = useRef<Promise<void> | null>(null);
   const isRemovingAssetsRef = useRef(false);
@@ -146,11 +144,10 @@ function IntroPageContent() {
   useEffect(() => {
     if (threadId) {
       contentVersionRef.current += 1;
-      pendingWebSocketContentRef.current = null;
+      pendingEditCoordinatorRef.current.switchThread(threadId);
       pendingBackendContentRef.current = null;
       backendFailureCountRef.current = 0;
       backendNextRetryAtRef.current = 0;
-      pendingFallbackUpdateRef.current = null;
       void browserMarkdownStore.load(threadId).then((cached) => {
         if (cached && activeThreadIdRef.current === threadId) applyContent(cached);
       });
@@ -265,6 +262,11 @@ function IntroPageContent() {
         console.log("[Cross-Deploy] Received remote content from backend");
         lastBackendSyncRef.current = remoteContent;
         lastPollPushedRef.current = remoteContent;
+        const pendingEdit = pendingEditCoordinatorRef.current.publish(
+          threadId,
+          remoteContent,
+          false
+        );
 
         const activeSocket = wsRef.current;
         if (
@@ -272,17 +274,14 @@ function IntroPageContent() {
           activeSocket.readyState !== WebSocket.CLOSING &&
           activeSocket.readyState !== WebSocket.CLOSED
         ) {
-          pendingWebSocketContentRef.current = remoteContent;
           if (activeSocket.readyState === WebSocket.OPEN) {
             activeSocket.send(
-              JSON.stringify({ type: "update", content: remoteContent }),
+              JSON.stringify({
+                type: "update",
+                content: pendingEdit.content,
+              })
             );
           }
-        } else {
-          pendingFallbackUpdateRef.current = {
-            content: remoteContent,
-            immediate: false,
-          };
         }
         applyContent(remoteContent);
       }
@@ -317,62 +316,6 @@ function IntroPageContent() {
       void pollBackendOnce(generation);
     }, 4000);
   }, [threadId, pollBackendOnce, stopCrossDeployPolling]);
-
-  const sendFallbackUpdate = useCallback(
-    async (val: string, immediate = false) => {
-      pendingFallbackUpdateRef.current = { content: val, immediate };
-      if (fallbackWriteInFlightRef.current) return;
-      fallbackWriteInFlightRef.current = true;
-
-      try {
-        while (pendingFallbackUpdateRef.current !== null) {
-          const pendingUpdate: {
-            content: string;
-            immediate: boolean;
-          } = pendingFallbackUpdateRef.current;
-          const response = await fetch("/api/ws-fallback", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              threadId,
-              type: "update",
-              content: pendingUpdate.content,
-              immediate: pendingUpdate.immediate,
-            }),
-          });
-          if (activeThreadIdRef.current !== threadId) return;
-          if (!response.ok) {
-            throw new Error(`HTTP fallback returned ${response.status}`);
-          }
-          const acceptedLatestUpdate =
-            pendingFallbackUpdateRef.current === pendingUpdate;
-          if (
-            pendingWebSocketContentRef.current === pendingUpdate.content
-          ) {
-            pendingWebSocketContentRef.current = null;
-          }
-          if (
-            acceptedLatestUpdate &&
-            wsStatusRef.current === "fallback" &&
-            eventSourceRef.current !== null
-          ) {
-            fallbackInitializedRef.current = true;
-            lifecycleRef.current?.fallbackReady();
-          }
-          if (acceptedLatestUpdate) {
-            pendingFallbackUpdateRef.current = null;
-          }
-        }
-      } catch (err) {
-        console.error("Failed to send content update via HTTP fallback:", err);
-      } finally {
-        fallbackWriteInFlightRef.current = false;
-      }
-    },
-    [threadId]
-  );
 
   const closeWebSocket = useCallback(
     (code: number, reason: string, attemptId?: number) => {
@@ -414,6 +357,7 @@ function IntroPageContent() {
   );
 
   const stopFallback = useCallback(() => {
+    pendingEditCoordinatorRef.current.stopFallback();
     const eventSource = eventSourceRef.current;
     eventSourceRef.current = null;
     if (eventSource) {
@@ -447,6 +391,50 @@ function IntroPageContent() {
       `/api/ws-fallback?threadId=${encodeURIComponent(threadId)}`
     );
     eventSourceRef.current = eventSource;
+    const fallbackGeneration = pendingEditCoordinatorRef.current.startFallback(
+      threadId,
+      async (pendingEdit, { signal }) => {
+        const response = await fetch("/api/ws-fallback", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            threadId: pendingEdit.threadId,
+            type: "update",
+            content: pendingEdit.content,
+            immediate: pendingEdit.immediate,
+          }),
+          signal,
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP fallback returned ${response.status}`);
+        }
+      },
+      {
+        onReady: () => {
+          if (
+            eventSourceRef.current !== eventSource ||
+            activeThreadIdRef.current !== threadId
+          ) {
+            return;
+          }
+          fallbackInitializedRef.current = true;
+          lifecycleRef.current?.fallbackReady();
+        },
+        onWriteError: (error) => {
+          if (
+            eventSourceRef.current === eventSource &&
+            activeThreadIdRef.current === threadId
+          ) {
+            console.error(
+              "Failed to send content update via HTTP fallback:",
+              error
+            );
+          }
+        },
+      }
+    );
 
     eventSource.addEventListener("sync", (event) => {
       if (eventSourceRef.current !== eventSource) return;
@@ -454,54 +442,39 @@ function IntroPageContent() {
         const data = JSON.parse(event.data);
         if (data.type === "sync") {
           const incomingContent: string = data.content ?? "";
-          const pendingContent: string | null =
-            pendingWebSocketContentRef.current;
-          if (
-            data.initial &&
-            !data.authoritative &&
-            pendingContent !== null
-          ) {
-            lastPollPushedRef.current = pendingContent;
-            void sendFallbackUpdate(pendingContent, true);
-            return;
-          }
+          let pendingEdit =
+            pendingEditCoordinatorRef.current.pendingForThread(threadId);
           if (
             data.initial &&
             !data.authoritative &&
             !data.content &&
+            pendingEdit === null &&
             sharedTextRef.current
           ) {
             lastPollPushedRef.current = sharedTextRef.current;
-            void sendFallbackUpdate(sharedTextRef.current, true);
-            return;
+            pendingEdit = pendingEditCoordinatorRef.current.publish(
+              threadId,
+              sharedTextRef.current,
+              true
+            );
           }
 
-          if (pendingContent !== null) {
-            if (incomingContent !== pendingContent) {
-              if (data.initial) {
-                void sendFallbackUpdate(pendingContent);
-              }
-              return;
-            }
-            pendingWebSocketContentRef.current = null;
-          }
-
-          if (
-            pendingFallbackUpdateRef.current !== null &&
-            incomingContent !== pendingFallbackUpdateRef.current.content
-          ) {
+          if (data.initial && pendingEdit !== null) {
+            lastPollPushedRef.current = pendingEdit.content;
+            pendingEditCoordinatorRef.current.markFallbackInitialSeen(
+              fallbackGeneration
+            );
             return;
           }
-          if (
-            pendingFallbackUpdateRef.current?.content === incomingContent
-          ) {
-            pendingFallbackUpdateRef.current = null;
+          if (pendingEdit !== null) {
+            return;
           }
           lastPollPushedRef.current = incomingContent;
           applyContent(incomingContent);
-          if (data.initial || pendingContent !== null) {
-            fallbackInitializedRef.current = true;
-            lifecycleRef.current?.fallbackReady();
+          if (data.initial) {
+            pendingEditCoordinatorRef.current.markFallbackInitialSeen(
+              fallbackGeneration
+            );
           }
         }
       } catch (err) {
@@ -542,12 +515,10 @@ function IntroPageContent() {
         ) {
           return;
         }
-        if (pendingFallbackUpdateRef.current !== null) {
-          const pendingUpdate = pendingFallbackUpdateRef.current;
-          void sendFallbackUpdate(
-            pendingUpdate.content,
-            pendingUpdate.immediate
-          );
+        if (
+          pendingEditCoordinatorRef.current.pendingForThread(threadId) !== null
+        ) {
+          pendingEditCoordinatorRef.current.flushFallback(fallbackGeneration);
           return;
         }
         if (!fallbackInitializedRef.current) return;
@@ -567,7 +538,8 @@ function IntroPageContent() {
         if (
           eventSourceRef.current !== eventSource ||
           activeThreadIdRef.current !== threadId ||
-          pendingFallbackUpdateRef.current !== null ||
+          pendingEditCoordinatorRef.current.pendingForThread(threadId) !==
+            null ||
           requestVersion !== contentVersionRef.current
         ) {
           return;
@@ -584,7 +556,7 @@ function IntroPageContent() {
         // Silently ignore transient poll failures
       }
     }, 3000);
-  }, [threadId, sendFallbackUpdate, applyContent]);
+  }, [threadId, applyContent]);
 
   const connectWS = useCallback((attemptId: number) => {
     if (!threadId) return;
@@ -637,21 +609,32 @@ function IntroPageContent() {
         const data = JSON.parse(event.data);
         if (data.type === "sync") {
           const incomingContent: string = data.content ?? "";
+          const pendingEdit =
+            pendingEditCoordinatorRef.current.pendingForThread(threadId);
           if (
-            pendingWebSocketContentRef.current !== null &&
-            incomingContent !== pendingWebSocketContentRef.current
+            pendingEdit !== null &&
+            incomingContent !== pendingEdit.content
           ) {
-            const pendingContent = pendingWebSocketContentRef.current;
             if (data.initial === true && ws.readyState === WebSocket.OPEN) {
               ws.send(
-                JSON.stringify({ type: "update", content: pendingContent }),
+                JSON.stringify({
+                  type: "update",
+                  content: pendingEdit.content,
+                  immediate: pendingEdit.immediate,
+                })
               );
               lifecycleRef.current?.initialSyncReady();
             }
             return;
           }
-          if (incomingContent === pendingWebSocketContentRef.current) {
-            pendingWebSocketContentRef.current = null;
+          if (
+            pendingEdit !== null &&
+            incomingContent === pendingEdit.content
+          ) {
+            pendingEditCoordinatorRef.current.acknowledgeWebSocket(
+              threadId,
+              pendingEdit.operationId
+            );
           }
           applyContent(incomingContent);
           if (data.initial === true) {
@@ -749,20 +732,26 @@ function IntroPageContent() {
   const publishContent = useCallback(
     (value: string, immediate = false) => {
       applyContent(value);
+      const pendingEdit = pendingEditCoordinatorRef.current.publish(
+        threadId,
+        value,
+        immediate
+      );
       const activeSocket = wsRef.current;
       if (activeSocket?.readyState === WebSocket.OPEN) {
-        pendingWebSocketContentRef.current = value;
         activeSocket.send(
-          JSON.stringify({ type: "update", content: value, immediate }),
+          JSON.stringify({
+            type: "update",
+            content: pendingEdit.content,
+            immediate: pendingEdit.immediate,
+          })
         );
       } else if (wsStatusRef.current === "fallback") {
-        void sendFallbackUpdate(value, immediate);
-      } else {
-        pendingWebSocketContentRef.current = value;
+        pendingEditCoordinatorRef.current.flushActiveFallback(threadId);
       }
       void syncContentToBackend(value);
     },
-    [applyContent, sendFallbackUpdate, syncContentToBackend],
+    [threadId, applyContent, syncContentToBackend]
   );
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {

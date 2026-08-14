@@ -29,7 +29,7 @@ test("HTTP fallback distinguishes initial empty state from an explicit delete", 
   );
   assert.match(
     introPage,
-    /data\.initial\s*&&\s*!data\.authoritative\s*&&\s*!data\.content\s*&&\s*sharedTextRef\.current/
+    /data\.initial\s*&&\s*!data\.authoritative\s*&&\s*!data\.content\s*&&\s*pendingEdit === null\s*&&\s*sharedTextRef\.current/
   );
 });
 
@@ -109,11 +109,11 @@ test("new local markdown wins over stale asynchronous sync responses", async () 
   );
   assert.match(
     introPage,
-    /pendingWebSocketContentRef\.current !== null\s*&&\s*incomingContent !== pendingWebSocketContentRef\.current/
+    /const pendingEdit =\s*pendingEditCoordinatorRef\.current\.pendingForThread\(threadId\)/
   );
   assert.match(
     introPage,
-    /pendingFallbackUpdateRef\.current !== null\s*\|\|\s*requestVersion !== contentVersionRef\.current/
+    /pendingEditCoordinatorRef\.current\.pendingForThread\(threadId\) !==\s*null\s*\|\|\s*requestVersion !== contentVersionRef\.current/
   );
 });
 
@@ -153,7 +153,7 @@ test("local markdown queues for WebSocket wake unless fallback is active", async
 
   assert.match(
     introPage,
-    /else if \(wsStatusRef\.current === "fallback"\) \{\s*void sendFallbackUpdate\(value, immediate\);\s*\} else \{\s*pendingWebSocketContentRef\.current = value;\s*\}/
+    /applyContent\(value\);[\s\S]{0,220}pendingEditCoordinatorRef\.current\.publish\([\s\S]{0,100}threadId,[\s\S]{0,80}value,[\s\S]{0,80}immediate[\s\S]{0,500}else if \(wsStatusRef\.current === "fallback"\) \{\s*pendingEditCoordinatorRef\.current\.flushActiveFallback/
   );
 });
 
@@ -162,11 +162,11 @@ test("WebSocket initial sync resends a newer pending edit before becoming ready"
 
   assert.match(
     introPage,
-    /pendingWebSocketContentRef\.current !== null[\s\S]{0,300}data\.initial === true[\s\S]{0,300}JSON\.stringify\(\{\s*type: "update",\s*content: pendingContent[\s\S]{0,200}initialSyncReady\(\)/
+    /pendingEdit !== null[\s\S]{0,250}data\.initial === true[\s\S]{0,300}JSON\.stringify\(\{\s*type: "update",\s*content: pendingEdit\.content[\s\S]{0,200}initialSyncReady\(\)/
   );
   assert.match(
     introPage,
-    /incomingContent === pendingWebSocketContentRef\.current[\s\S]{0,160}pendingWebSocketContentRef\.current = null/
+    /incomingContent === pendingEdit\.content[\s\S]{0,300}acknowledgeWebSocket\([\s\S]{0,100}threadId,[\s\S]{0,100}pendingEdit\.operationId/
   );
 });
 
@@ -175,15 +175,15 @@ test("fallback initial sync preserves and accepts pending WebSocket content befo
 
   assert.match(
     introPage,
-    /const pendingContent:[\s\S]{0,100}pendingWebSocketContentRef\.current[\s\S]{0,300}data\.initial[\s\S]{0,200}sendFallbackUpdate\(pendingContent(?:, true)?\)/
+    /const fallbackGeneration =\s*pendingEditCoordinatorRef\.current\.startFallback\([\s\S]{0,500}signal[\s\S]{0,500}fallbackReady\(\)/
   );
   assert.match(
     introPage,
-    /acceptedLatestUpdate[\s\S]{0,200}fallbackInitializedRef\.current = true;[\s\S]{0,100}fallbackReady\(\)/
+    /pendingEditCoordinatorRef\.current\.pendingForThread\(threadId\)[\s\S]{0,1000}markFallbackInitialSeen\([\s\S]{0,80}fallbackGeneration/
   );
   assert.match(
     introPage,
-    /pendingWebSocketContentRef\.current === pendingUpdate\.content[\s\S]{0,120}pendingWebSocketContentRef\.current = null/
+    /pendingEditCoordinatorRef\.current\.stopFallback\(\)/
   );
 });
 
@@ -192,7 +192,7 @@ test("fallback nonauthoritative initial state cannot acknowledge a pending empty
 
   assert.match(
     introPage,
-    /data\.initial\s*&&\s*!data\.authoritative\s*&&\s*pendingContent !== null[\s\S]{0,250}sendFallbackUpdate\(pendingContent, true\);[\s\S]{0,80}return;/
+    /data\.initial\s*&&\s*pendingEdit !== null[\s\S]{0,250}markFallbackInitialSeen\([\s\S]{0,80}fallbackGeneration[\s\S]{0,100}return;/
   );
 });
 
@@ -281,11 +281,7 @@ test("cross-machine markdown updates converge every local transport", async () =
   );
   assert.match(
     introPage,
-    /pendingWebSocketContentRef\.current = remoteContent/
-  );
-  assert.match(
-    introPage,
-    /pendingFallbackUpdateRef\.current = \{\s*content:\s*remoteContent/
+    /pendingEditCoordinatorRef\.current\.publish\(\s*threadId,\s*remoteContent,\s*false/
   );
   assert.match(
     introPage,
@@ -305,6 +301,9 @@ test("cross-machine markdown updates converge every local transport", async () =
   assert.notEqual(remotePollEnd, -1);
   const remotePollBlock = introPage.slice(remotePollStart, remotePollEnd);
   assert.doesNotMatch(remotePollBlock, /lifecycleRef\.current/);
+  assert.doesNotMatch(introPage, /pendingWebSocketContentRef/);
+  assert.doesNotMatch(introPage, /pendingFallbackUpdateRef/);
+  assert.doesNotMatch(introPage, /fallbackWriteInFlightRef/);
 });
 
 test("synced assets are opt-in and ordinary markdown images keep existing rendering", async () => {

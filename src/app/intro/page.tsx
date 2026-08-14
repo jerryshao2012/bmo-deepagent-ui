@@ -290,91 +290,94 @@ function IntroPageContent() {
     }
   }, []);
 
-  const pollBackendOnce = useCallback(async (generation: number) => {
-    if (
-      !threadId ||
-      generation !== crossDeployPollGenerationRef.current ||
-      activeThreadIdRef.current !== threadId ||
-      Date.now() < backendNextRetryAtRef.current
-    ) {
-      return;
-    }
-
-    if (pendingBackendContentRef.current !== null) {
-      void syncContentToBackend(pendingBackendContentRef.current);
-      return;
-    }
-    if (crossDeployPollInFlightGenerationRef.current === generation) return;
-
-    const backendStore = createConfiguredBackendMarkdownSyncStore();
-    if (!backendStore) return;
-    const requestVersion = contentVersionRef.current;
-    crossDeployPollInFlightGenerationRef.current = generation;
-    try {
-      const backendRead = await pendingEditCoordinatorRef.current.readCurrent(
-        threadId,
-        () => backendStore.load(threadId)
-      );
+  const pollBackendOnce = useCallback(
+    async (generation: number) => {
       if (
+        !threadId ||
         generation !== crossDeployPollGenerationRef.current ||
-        activeThreadIdRef.current !== threadId
+        activeThreadIdRef.current !== threadId ||
+        Date.now() < backendNextRetryAtRef.current
       ) {
         return;
       }
-      if (!backendRead.current) return;
-      const remoteContent = backendRead.value;
-      resetBackendMirrorBackoff();
-      if (
-        requestVersion !== contentVersionRef.current ||
-        pendingBackendContentRef.current !== null
-      ) {
+
+      if (pendingBackendContentRef.current !== null) {
+        void syncContentToBackend(pendingBackendContentRef.current);
         return;
       }
-      const localContent = sharedTextRef.current;
-      if (
-        shouldApplyRemoteMarkdown(
-          remoteContent,
-          localContent,
-          lastBackendSyncRef.current
-        )
-      ) {
-        console.log("[Cross-Deploy] Received remote content from backend");
-        lastBackendSyncRef.current = remoteContent;
-        lastPollPushedRef.current = remoteContent;
-        const activeSocket = wsRef.current;
-        if (activeSocket?.readyState === WebSocket.OPEN) {
-          activeSocket.send(
-            JSON.stringify({ type: "update", content: remoteContent })
-          );
-        } else {
-          pendingEditCoordinatorRef.current.publish(
-            threadId,
-            remoteContent,
-            false
-          );
+      if (crossDeployPollInFlightGenerationRef.current === generation) return;
+
+      const backendStore = createConfiguredBackendMarkdownSyncStore();
+      if (!backendStore) return;
+      const requestVersion = contentVersionRef.current;
+      crossDeployPollInFlightGenerationRef.current = generation;
+      try {
+        const backendRead = await pendingEditCoordinatorRef.current.readCurrent(
+          threadId,
+          () => backendStore.load(threadId)
+        );
+        if (
+          generation !== crossDeployPollGenerationRef.current ||
+          activeThreadIdRef.current !== threadId
+        ) {
+          return;
         }
-        applyContent(remoteContent);
+        if (!backendRead.current) return;
+        const remoteContent = backendRead.value;
+        resetBackendMirrorBackoff();
+        if (
+          requestVersion !== contentVersionRef.current ||
+          pendingBackendContentRef.current !== null
+        ) {
+          return;
+        }
+        const localContent = sharedTextRef.current;
+        if (
+          shouldApplyRemoteMarkdown(
+            remoteContent,
+            localContent,
+            lastBackendSyncRef.current
+          )
+        ) {
+          console.log("[Cross-Deploy] Received remote content from backend");
+          lastBackendSyncRef.current = remoteContent;
+          lastPollPushedRef.current = remoteContent;
+          const activeSocket = wsRef.current;
+          if (activeSocket?.readyState === WebSocket.OPEN) {
+            activeSocket.send(
+              JSON.stringify({ type: "update", content: remoteContent })
+            );
+          } else {
+            pendingEditCoordinatorRef.current.publish(
+              threadId,
+              remoteContent,
+              false
+            );
+          }
+          applyContent(remoteContent);
+        }
+      } catch {
+        if (
+          generation !== crossDeployPollGenerationRef.current ||
+          activeThreadIdRef.current !== threadId
+        ) {
+          return;
+        }
+        deferBackendMirrorRetry();
+      } finally {
+        if (crossDeployPollInFlightGenerationRef.current === generation) {
+          crossDeployPollInFlightGenerationRef.current = null;
+        }
       }
-    } catch {
-      if (
-        generation !== crossDeployPollGenerationRef.current ||
-        activeThreadIdRef.current !== threadId
-      ) {
-        return;
-      }
-      deferBackendMirrorRetry();
-    } finally {
-      if (crossDeployPollInFlightGenerationRef.current === generation) {
-        crossDeployPollInFlightGenerationRef.current = null;
-      }
-    }
-  }, [
-    threadId,
-    syncContentToBackend,
-    applyContent,
-    deferBackendMirrorRetry,
-    resetBackendMirrorBackoff,
-  ]);
+    },
+    [
+      threadId,
+      syncContentToBackend,
+      applyContent,
+      deferBackendMirrorRetry,
+      resetBackendMirrorBackoff,
+    ]
+  );
 
   const startCrossDeployPolling = useCallback(() => {
     if (!threadId) return;
@@ -416,14 +419,14 @@ function IntroPageContent() {
         socket.close(code, reason);
       }
     },
-    [],
+    []
   );
 
   const abortWebSocketAttempt = useCallback(
     (attemptId: number) => {
       closeWebSocket(4000, "attempt timeout", attemptId);
     },
-    [closeWebSocket],
+    [closeWebSocket]
   );
 
   const stopFallback = useCallback(() => {
@@ -628,137 +631,140 @@ function IntroPageContent() {
     }, 3000);
   }, [threadId, applyContent]);
 
-  const connectWS = useCallback((attemptId: number) => {
-    if (!threadId) return;
+  const connectWS = useCallback(
+    (attemptId: number) => {
+      if (!threadId) return;
 
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/api/ws?threadId=${threadId}`;
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const host = window.location.host;
+      const wsUrl = `${protocol}//${host}/api/ws?threadId=${threadId}`;
 
-    console.log("Attempting WebSocket connection for thread:", threadId);
-    let ws: WebSocket;
+      console.log("Attempting WebSocket connection for thread:", threadId);
+      let ws: WebSocket;
 
-    try {
-      ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-      wsAttemptIdRef.current = attemptId;
-    } catch {
-      console.error("WebSocket constructor failed", {
-        threadId,
-        status: wsStatusRef.current,
-      });
-      lifecycleRef.current?.connectionFailed(attemptId);
-      return;
-    }
-
-    ws.onopen = async () => {
-      if (
-        wsRef.current !== ws ||
-        wsAttemptIdRef.current !== attemptId
-      ) {
+      try {
+        ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+        wsAttemptIdRef.current = attemptId;
+      } catch {
+        console.error("WebSocket constructor failed", {
+          threadId,
+          status: wsStatusRef.current,
+        });
+        lifecycleRef.current?.connectionFailed(attemptId);
         return;
       }
-      console.log("WebSocket connected for thread:", threadId);
-      setSocket(ws);
-      lifecycleRef.current?.socketOpened(attemptId);
 
-      // Retrieve local offline content from localStorage and initialize sync on the server
-      const localContent = (await browserMarkdownStore.load(threadId)) || "";
-      if (
-        wsRef.current === ws &&
-        wsAttemptIdRef.current === attemptId &&
-        ws.readyState === WebSocket.OPEN
-      ) {
-        ws.send(JSON.stringify({ type: "init", content: localContent }));
-      }
-    };
-
-    ws.onmessage = (event) => {
-      if (wsRef.current !== ws || wsAttemptIdRef.current !== attemptId) return;
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "sync") {
-          const incomingContent: string = data.content ?? "";
-          const pendingEdit =
-            pendingEditCoordinatorRef.current.pendingForThread(threadId);
-          const resolution = resolveMarkdownWebSocketSync({
-            incoming: {
-              content: incomingContent,
-              initial: data.initial,
-              clientId: data.clientId,
-              operationId: data.operationId,
-            },
-            localClientId: markdownClientIdRef.current,
-            pendingEdit,
-          });
-          if (
-            resolution.action === "resend" &&
-            pendingEdit !== null &&
-            data.initial === true &&
-            ws.readyState === WebSocket.OPEN
-          ) {
-            ws.send(
-              JSON.stringify({
-                type: "update",
-                content: pendingEdit.content,
-                immediate: pendingEdit.immediate,
-                clientId: markdownClientIdRef.current,
-                operationId: pendingEdit.operationId,
-              })
-            );
-            lifecycleRef.current?.initialSyncReady();
-            return;
-          }
-          if (resolution.action !== "apply") return;
-          if (resolution.acknowledgeOperationId !== undefined) {
-            pendingEditCoordinatorRef.current.acknowledgeWebSocket(
-              threadId,
-              resolution.acknowledgeOperationId
-            );
-          }
-          applyContent(incomingContent);
-          if (data.initial === true) {
-            lifecycleRef.current?.initialSyncReady();
-          }
+      ws.onopen = async () => {
+        if (wsRef.current !== ws || wsAttemptIdRef.current !== attemptId) {
+          return;
         }
-      } catch (err) {
-        console.error("WS error parsing message:", err);
-      }
-    };
+        console.log("WebSocket connected for thread:", threadId);
+        setSocket(ws);
+        lifecycleRef.current?.socketOpened(attemptId);
 
-    ws.onclose = (event) => {
-      console.log("[Markdown WS] Transport closed", {
-        threadId,
-        code: event.code,
-        reason: event.reason,
-        status: wsStatusRef.current,
-        intentional: false,
-      });
-      if (wsRef.current !== ws || wsAttemptIdRef.current !== attemptId) return;
-      wsRef.current = null;
-      wsAttemptIdRef.current = null;
-      setSocket(null);
-      lifecycleRef.current?.connectionFailed(attemptId);
-    };
+        // Retrieve local offline content from localStorage and initialize sync on the server
+        const localContent = (await browserMarkdownStore.load(threadId)) || "";
+        if (
+          wsRef.current === ws &&
+          wsAttemptIdRef.current === attemptId &&
+          ws.readyState === WebSocket.OPEN
+        ) {
+          ws.send(JSON.stringify({ type: "init", content: localContent }));
+        }
+      };
 
-    ws.onerror = () => {
-      if (wsRef.current !== ws || wsAttemptIdRef.current !== attemptId) return;
-      wsRef.current = null;
-      wsAttemptIdRef.current = null;
-      setSocket(null);
-      ws.onopen = null;
-      ws.onmessage = null;
-      ws.onerror = null;
-      ws.onclose = null;
-      if (
-        ws.readyState === WebSocket.OPEN ||
-        ws.readyState === WebSocket.CONNECTING
-      ) {
-        ws.close();
-      }
-      lifecycleRef.current?.connectionFailed(attemptId);
-    };
-  }, [threadId, applyContent]);
+      ws.onmessage = (event) => {
+        if (wsRef.current !== ws || wsAttemptIdRef.current !== attemptId)
+          return;
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "sync") {
+            const incomingContent: string = data.content ?? "";
+            const pendingEdit =
+              pendingEditCoordinatorRef.current.pendingForThread(threadId);
+            const resolution = resolveMarkdownWebSocketSync({
+              incoming: {
+                content: incomingContent,
+                initial: data.initial,
+                clientId: data.clientId,
+                operationId: data.operationId,
+              },
+              localClientId: markdownClientIdRef.current,
+              pendingEdit,
+            });
+            if (
+              resolution.action === "resend" &&
+              pendingEdit !== null &&
+              data.initial === true &&
+              ws.readyState === WebSocket.OPEN
+            ) {
+              ws.send(
+                JSON.stringify({
+                  type: "update",
+                  content: pendingEdit.content,
+                  immediate: pendingEdit.immediate,
+                  clientId: markdownClientIdRef.current,
+                  operationId: pendingEdit.operationId,
+                })
+              );
+              lifecycleRef.current?.initialSyncReady();
+              return;
+            }
+            if (resolution.action !== "apply") return;
+            if (resolution.acknowledgeOperationId !== undefined) {
+              pendingEditCoordinatorRef.current.acknowledgeWebSocket(
+                threadId,
+                resolution.acknowledgeOperationId
+              );
+            }
+            applyContent(incomingContent);
+            if (data.initial === true) {
+              lifecycleRef.current?.initialSyncReady();
+            }
+          }
+        } catch (err) {
+          console.error("WS error parsing message:", err);
+        }
+      };
+
+      ws.onclose = (event) => {
+        console.log("[Markdown WS] Transport closed", {
+          threadId,
+          code: event.code,
+          reason: event.reason,
+          status: wsStatusRef.current,
+          intentional: false,
+        });
+        if (wsRef.current !== ws || wsAttemptIdRef.current !== attemptId)
+          return;
+        wsRef.current = null;
+        wsAttemptIdRef.current = null;
+        setSocket(null);
+        lifecycleRef.current?.connectionFailed(attemptId);
+      };
+
+      ws.onerror = () => {
+        if (wsRef.current !== ws || wsAttemptIdRef.current !== attemptId)
+          return;
+        wsRef.current = null;
+        wsAttemptIdRef.current = null;
+        setSocket(null);
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        if (
+          ws.readyState === WebSocket.OPEN ||
+          ws.readyState === WebSocket.CONNECTING
+        ) {
+          ws.close();
+        }
+        lifecycleRef.current?.connectionFailed(attemptId);
+      };
+    },
+    [threadId, applyContent]
+  );
 
   // One controller owns retries, fallback upgrades, and transport hibernation.
   useEffect(() => {
@@ -875,7 +881,7 @@ function IntroPageContent() {
     } catch (error) {
       console.error("Failed to remove synced attachments:", error);
       toast.warning(
-        "Content removed, but some attachment storage could not be cleaned up.",
+        "Content removed, but some attachment storage could not be cleaned up."
       );
     } finally {
       isRemovingAssetsRef.current = false;
@@ -896,13 +902,15 @@ function IntroPageContent() {
   const processMarkdownAssetFiles = (
     files: readonly File[],
     selectionStart: number,
-    selectionEnd: number,
+    selectionEnd: number
   ) => {
-    if (!canStartSyncedImageGesture({
-      markdownId: threadId,
-      uploadActive: activeAssetUploadPromiseRef.current !== null,
-      removalActive: isRemovingAssetsRef.current,
-    })) {
+    if (
+      !canStartSyncedImageGesture({
+        markdownId: threadId,
+        uploadActive: activeAssetUploadPromiseRef.current !== null,
+        removalActive: isRemovingAssetsRef.current,
+      })
+    ) {
       return;
     }
 
@@ -919,13 +927,18 @@ function IntroPageContent() {
 
     const operation = (async () => {
       try {
-        const response = await uploadMarkdownAssets(markdownIdAtStart, accepted);
-        if (!shouldApplySyncedImageUpload({
+        const response = await uploadMarkdownAssets(
           markdownIdAtStart,
-          currentMarkdownId: activeThreadIdRef.current,
-          epochAtStart: operationEpoch,
-          currentEpoch: assetOperationEpochRef.current,
-        })) {
+          accepted
+        );
+        if (
+          !shouldApplySyncedImageUpload({
+            markdownIdAtStart,
+            currentMarkdownId: activeThreadIdRef.current,
+            epochAtStart: operationEpoch,
+            currentEpoch: assetOperationEpochRef.current,
+          })
+        ) {
           return;
         }
 
@@ -944,7 +957,9 @@ function IntroPageContent() {
         const failureCount = rejected.length + response.errors.length;
         if (failureCount > 0) {
           toast.warning(
-            `${failureCount} attachment${failureCount === 1 ? "" : "s"} could not be uploaded.`,
+            `${failureCount} attachment${
+              failureCount === 1 ? "" : "s"
+            } could not be uploaded.`
           );
         }
       } catch (error) {
@@ -963,7 +978,7 @@ function IntroPageContent() {
   };
 
   const handleMarkdownAssetPaste = (
-    event: React.ClipboardEvent<HTMLTextAreaElement>,
+    event: React.ClipboardEvent<HTMLTextAreaElement>
   ) => {
     noteMarkdownActivity();
     const files = Array.from(event.clipboardData.items)
@@ -975,12 +990,12 @@ function IntroPageContent() {
     processMarkdownAssetFiles(
       files,
       event.currentTarget.selectionStart,
-      event.currentTarget.selectionEnd,
+      event.currentTarget.selectionEnd
     );
   };
 
   const handleMarkdownAssetDragOver = (
-    event: React.DragEvent<HTMLTextAreaElement>,
+    event: React.DragEvent<HTMLTextAreaElement>
   ) => {
     if (event.dataTransfer.types.includes("Files")) {
       event.preventDefault();
@@ -989,7 +1004,7 @@ function IntroPageContent() {
   };
 
   const handleMarkdownAssetDrop = (
-    event: React.DragEvent<HTMLTextAreaElement>,
+    event: React.DragEvent<HTMLTextAreaElement>
   ) => {
     noteMarkdownActivity();
     const files = Array.from(event.dataTransfer.files);
@@ -998,7 +1013,7 @@ function IntroPageContent() {
     processMarkdownAssetFiles(
       files,
       event.currentTarget.selectionStart,
-      event.currentTarget.selectionEnd,
+      event.currentTarget.selectionEnd
     );
   };
 
@@ -1363,8 +1378,6 @@ function IntroPageContent() {
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
-
-
 
   // Handle mouse move for interactive card 3D tilt
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -2233,8 +2246,8 @@ function IntroPageContent() {
             with deterministic safety.
           </h2>
           <p className="mx-auto mt-6 max-w-xl text-sm leading-relaxed text-stone-400">
-            Launch the workspace, initialize your collaborative thread, and
-            build production-grade agent loops today.
+            Launch the demo, initialize your collaborative thread, and build
+            production-grade agent loops today.
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -2242,12 +2255,12 @@ function IntroPageContent() {
               href="/chat"
               className="card-elevated flex h-11 items-center justify-center gap-2 rounded-full bg-[#FF8A42] px-8 py-3 font-semibold text-white transition hover:scale-[1.03]"
             >
-              Launch Workspace
+              Launch Demo
               <ChevronRight className="h-4 w-4" />
             </a>
           </div>
 
-          <div className="mt-12 font-mono text-[10px] uppercase tracking-widest text-white/35">
+          <div className="mt-10 flex flex-col items-center gap-3 font-mono text-[10px] uppercase tracking-widest text-white/35">
             <a
               href="https://medium.com/@jerry.shao/harness-engineering-building-production-grade-ai-systems-beyond-prompts-and-context-5fcdffdd6b4c"
               target="_blank"
@@ -2256,6 +2269,16 @@ function IntroPageContent() {
             >
               Harness Engineering: Building Production-Grade AI Systems Beyond
               Prompts and Context
+              <ChevronRight className="h-3 w-3 rotate-[-45deg]" />
+            </a>
+            <a
+              href="https://medium.com/@jerry.shao/harness-engineering-part-2-how-a-deep-research-agent-becomes-a-production-system-5d22bf36f09f"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 border-b border-white/10 pb-0.5 transition-colors duration-200 hover:border-white/40 hover:text-white"
+            >
+              Harness Engineering, Part 2: How a Deep Research Agent Becomes a
+              Production System
               <ChevronRight className="h-3 w-3 rotate-[-45deg]" />
             </a>
           </div>

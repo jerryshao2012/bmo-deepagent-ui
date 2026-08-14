@@ -117,6 +117,52 @@ test("new local markdown wins over stale asynchronous sync responses", async () 
   );
 });
 
+test("intro transport lifecycle delegates WebSocket attempt outcomes to the controller", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /import\s*\{[\s\S]*MarkdownConnectionLifecycle[\s\S]*type MarkdownConnectionStatus[\s\S]*\}\s*from\s*["']@\/features\/markdown-sync\/application\/connection-lifecycle["']/
+  );
+  assert.match(introPage, /new MarkdownConnectionLifecycle\s*\(/);
+  assert.match(introPage, /connectWebSocket:\s*connectWS/);
+  assert.match(introPage, /abortWebSocketAttempt/);
+  assert.match(introPage, /connectionFailed\(attemptId\)/);
+  assert.match(introPage, /socketOpened\(attemptId\)/);
+  assert.match(introPage, /initialSyncReady\(\)/);
+  assert.match(introPage, /fallbackReady\(\)/);
+  assert.doesNotMatch(introPage, /hasFallenBackRef/);
+  assert.doesNotMatch(introPage, /reconnectTimeoutRef/);
+});
+
+test("intro transport lifecycle hibernates and resumes with page eligibility", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(introPage, /document\.visibilityState\s*===\s*["']visible["']/);
+  assert.match(introPage, /addEventListener\(["']visibilitychange["']/);
+  assert.match(introPage, /addEventListener\(["']pagehide["']/);
+  assert.match(introPage, /addEventListener\(["']pageshow["']/);
+  assert.match(introPage, /removeEventListener\(["']visibilitychange["']/);
+  assert.match(introPage, /removeEventListener\(["']pagehide["']/);
+  assert.match(introPage, /removeEventListener\(["']pageshow["']/);
+  assert.match(introPage, /lifecycle\.dispose\(\)/);
+  assert.match(introPage, /lifecycleRef\.current\?\.setDialogOpen\(isDialogOpen\)/);
+  assert.match(introPage, /lifecycleRef\.current\?\.reconnectNow\(\)/);
+});
+
+test("intro transport stop helpers own all timers and use safe intentional close metadata", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(introPage, /const closeWebSocket = useCallback/);
+  assert.match(introPage, /const stopFallback = useCallback/);
+  assert.match(introPage, /const stopCrossDeployPolling = useCallback/);
+  assert.match(introPage, /const stopAllTransports = useCallback/);
+  assert.match(introPage, /closeWebSocket\(1000,\s*["']hibernate["']/);
+  assert.match(introPage, /closeWebSocket\(4000,\s*["']attempt timeout["'],\s*attemptId\)/);
+  assert.match(introPage, /intentional:\s*true/);
+  assert.match(introPage, /stopFallback\(\);[\s\S]*stopCrossDeployPolling\(\)/);
+});
+
 test("cross-machine markdown updates converge every local transport", async () => {
   const [introPage, server] = await Promise.all([
     source("src/app/intro/page.tsx"),

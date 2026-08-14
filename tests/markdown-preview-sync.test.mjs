@@ -153,16 +153,31 @@ test("synced attachments use canonical type-neutral links and a dedicated card",
   const markdownContent = await source(
     "src/app/components/MarkdownContent.tsx"
   );
+  const attachmentRenderer = markdownContent.slice(
+    markdownContent.indexOf("const attachmentId = parseSyncedAttachmentHref"),
+    markdownContent.indexOf("// Document links")
+  );
 
-  assert.match(markdownContent, /parseSyncedAttachmentHref\(href\)/);
-  assert.match(markdownContent, /parseSyncedAttachmentSize\(title\)/);
-  assert.match(markdownContent, /<SyncedMarkdownAttachment/);
-  assert.match(markdownContent, /filename=\{[^}]+\}/);
-  assert.doesNotMatch(markdownContent, /__markdown-zip/);
+  assert.match(attachmentRenderer, /parseSyncedAttachmentHref\(href\)/);
+  assert.match(attachmentRenderer, /parseSyncedAttachmentSize\(title\)/);
+  assert.match(attachmentRenderer, /<SyncedMarkdownAttachment/);
+  assert.match(attachmentRenderer, /filename=\{[^}]+\}/);
+  assert.doesNotMatch(markdownContent, /__markdown-(?:zip|7z|tar|tgz|office)/);
+  assert.doesNotMatch(
+    attachmentRenderer,
+    /__markdown-attachment\/(?:zip|7z|tar|tgz|office)/
+  );
 });
 
 test("intro asset gestures validate every non-null pasted and dropped file", async () => {
-  const introPage = await source("src/app/intro/page.tsx");
+  const [introPage, assetHelpers] = await Promise.all([
+    source("src/app/intro/page.tsx"),
+    source("src/lib/markdown-images.ts"),
+  ]);
+  const assetPipeline = introPage.slice(
+    introPage.indexOf("const processMarkdownAssetFiles"),
+    introPage.indexOf("const handleMarkdownAssetPaste")
+  );
   const pasteHandler = introPage.slice(
     introPage.indexOf("const handleMarkdownAssetPaste"),
     introPage.indexOf("const handleMarkdownAssetDragOver")
@@ -174,7 +189,10 @@ test("intro asset gestures validate every non-null pasted and dropped file", asy
 
   assert.match(introPage, /onPaste=\{handleMarkdownAssetPaste\}/);
   assert.match(introPage, /onDrop=\{handleMarkdownAssetDrop\}/);
-  assert.doesNotMatch(introPage, /isSupportedMarkdownAssetFile/);
+  assert.doesNotMatch(
+    introPage,
+    /\.filter\(\s*isSupportedMarkdownAssetFile\s*\)/
+  );
   assert.match(
     pasteHandler,
     /Array\.from\(event\.clipboardData\.items\)[\s\S]*?\.filter\(\(item\) => item\.kind === "file"\)[\s\S]*?\.map\(\(item\) => item\.getAsFile\(\)\)[\s\S]*?\.filter\(\(file\): file is File => file !== null\);/
@@ -188,10 +206,21 @@ test("intro asset gestures validate every non-null pasted and dropped file", asy
     assert.match(handler, /event\.preventDefault\(\);/);
     assert.match(handler, /processMarkdownAssetFiles\(\s*files,/);
   }
-  assert.match(
-    introPage,
-    /const \{ accepted, rejected \} = validateMarkdownAssetFiles\(files\);/
+  assert.equal(
+    assetPipeline.match(/validateMarkdownAssetFiles\(files\)/g)?.length,
+    1
   );
+  assert.equal(assetPipeline.match(/uploadMarkdownAssets\(/g)?.length, 1);
+  assert.equal(assetPipeline.match(/buildSyncedAssetMarkdown\(/g)?.length, 1);
+  assert.doesNotMatch(
+    introPage,
+    /(?:zip|7z|tar|tgz|office)(?:Files?|Handlers?|Uploads?)/i
+  );
+  const sharedValidator = assetHelpers.slice(
+    assetHelpers.indexOf("export function validateMarkdownAssetFiles"),
+    assetHelpers.indexOf("export function parseContentDispositionFilename")
+  );
+  assert.match(sharedValidator, /isSupportedMarkdownAssetFile\(file\)/);
   assert.match(
     introPage,
     /const failureCount = rejected\.length \+ response\.errors\.length;/

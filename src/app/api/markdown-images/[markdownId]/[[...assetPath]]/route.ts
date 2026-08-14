@@ -44,7 +44,7 @@ function assetSuffix(assetPath: string[] | undefined): string | null {
 
 async function proxyMarkdownImageRequest(
   request: NextRequest,
-  context: RouteContext,
+  context: RouteContext
 ): Promise<Response> {
   const { markdownId, assetPath } = await context.params;
   if (!/^\d{6}$/.test(markdownId)) {
@@ -62,7 +62,10 @@ async function proxyMarkdownImageRequest(
 
   const authorization = backendAuthorization(request);
   if (!authorization) {
-    return errorResponse("Markdown image backend credentials are not configured", 401);
+    return errorResponse(
+      "Markdown image backend credentials are not configured",
+      401
+    );
   }
 
   const contentLength = Number(request.headers.get("content-length") || "0");
@@ -80,7 +83,7 @@ async function proxyMarkdownImageRequest(
         headers: { "X-API-Key": authorization },
         body,
         cache: "no-store",
-      },
+      }
     );
   } catch {
     return errorResponse("Markdown image backend is unavailable", 502);
@@ -92,6 +95,7 @@ async function proxyMarkdownImageRequest(
     "content-disposition",
     "content-length",
     "content-type",
+    "x-content-type-options",
   ]) {
     const value = backendResponse.headers.get(name);
     if (value) headers.set(name, value);

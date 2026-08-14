@@ -3,7 +3,10 @@ import { execFileSync } from "node:child_process";
 import test from "node:test";
 import { NextRequest } from "next/server";
 
-import { POST as proxyImageUpload } from "../src/app/api/markdown-images/[markdownId]/[[...assetPath]]/route";
+import {
+  GET as proxyImageGet,
+  POST as proxyImageUpload,
+} from "../src/app/api/markdown-images/[markdownId]/[[...assetPath]]/route";
 import {
   MARKDOWN_ARCHIVE_FORMATS,
   MARKDOWN_OFFICE_FAMILIES,
@@ -175,6 +178,75 @@ test("asset proxy preserves Office filenames and wrong MIME values on the existi
   }
 });
 
+test("asset proxy preserves backend bytes, status, and security headers for view and download", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalUploadKey = process.env.UPLOAD_API_KEY;
+  const assetId = "1b14e924-5f0e-4fdb-b85d-4dddf8bc4271";
+  const contentDisposition = "attachment; filename*=UTF-8''r%C3%A9sum%C3%A9.7z";
+  const expectedBytes = new Uint8Array([0, 255, 66, 77, 128, 1]);
+  const forwardedUrls: string[] = [];
+  let responseIndex = 0;
+  process.env.UPLOAD_API_KEY = "server-only-key";
+  globalThis.fetch = async (input) => {
+    forwardedUrls.push(String(input));
+    const status = responseIndex++ === 0 ? 206 : 200;
+    return new Response(expectedBytes.slice(), {
+      status,
+      headers: {
+        "Cache-Control": "private, no-store",
+        "Content-Disposition": contentDisposition,
+        "Content-Type": "application/octet-stream",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  };
+
+  try {
+    for (const [assetPath, expectedStatus] of [
+      [[assetId], 206],
+      [[assetId, "download"], 200],
+    ] as const) {
+      const request = new NextRequest(
+        `http://localhost/api/markdown-images/123456/${assetPath.join("/")}`
+      );
+      const response = await proxyImageGet(request, {
+        params: Promise.resolve({
+          markdownId: "123456",
+          assetPath: [...assetPath],
+        }),
+      });
+
+      assert.equal(response.status, expectedStatus);
+      assert.deepEqual(
+        new Uint8Array(await response.arrayBuffer()),
+        expectedBytes
+      );
+      assert.equal(response.headers.get("cache-control"), "private, no-store");
+      assert.equal(
+        response.headers.get("content-disposition"),
+        contentDisposition
+      );
+      assert.equal(
+        response.headers.get("content-type"),
+        "application/octet-stream"
+      );
+      assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    }
+
+    assert.deepEqual(forwardedUrls, [
+      `http://localhost:2024/markdown-threads/123456/images/${assetId}`,
+      `http://localhost:2024/markdown-threads/123456/images/${assetId}/download`,
+    ]);
+    for (const forwardedUrl of forwardedUrls) {
+      assert.doesNotMatch(forwardedUrl, /zip|7z|tar|tgz|office|type/i);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalUploadKey === undefined) delete process.env.UPLOAD_API_KEY;
+    else process.env.UPLOAD_API_KEY = originalUploadKey;
+  }
+});
+
 test("parses only canonical synced-image logical paths", () => {
   const id = "1b14e924-5f0e-4fdb-b85d-4dddf8bc4271";
 
@@ -220,7 +292,22 @@ test("parses only canonical type-neutral attachment paths", () => {
     parseSyncedAttachmentHref(`/__markdown-attachment/not-a-uuid`),
     null
   );
-  assert.equal(parseSyncedAttachmentHref(`/__markdown-zip/${id}`), null);
+  for (const prefix of [
+    "__markdown-zip",
+    "__markdown-7z",
+    "__markdown-tar",
+    "__markdown-tgz",
+    "__markdown-office",
+  ]) {
+    assert.equal(parseSyncedAttachmentHref(`/${prefix}/${id}`), null);
+  }
+  for (const formatSpecificPath of [
+    `/__markdown-attachment/zip/${id}`,
+    `/__markdown-attachment/${id}.7z`,
+    `/__markdown-attachment/${id}/tar`,
+  ]) {
+    assert.equal(parseSyncedAttachmentHref(formatSpecificPath), null);
+  }
 });
 
 test("builds mixed image and attachment Markdown in upload order", () => {

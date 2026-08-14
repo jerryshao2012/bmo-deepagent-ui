@@ -17,7 +17,8 @@ export class BackendMarkdownSyncStore implements MarkdownSyncStore {
     if (!response.ok)
       throw new Error(`Markdown sync load failed (${response.status})`);
     const data = await response.json();
-    return data?.values?.markdown_content ?? "";
+    const content = data?.values?.markdown_content;
+    return typeof content === "string" ? content : null;
   }
 
   async save(markdownId: string, content: string): Promise<void> {
@@ -26,7 +27,8 @@ export class BackendMarkdownSyncStore implements MarkdownSyncStore {
       headers: this.headers(),
       body: JSON.stringify({ values: { markdown_content: content } }),
     });
-    if (!response.ok) throw new Error(`Markdown sync failed (${response.status})`);
+    if (!response.ok)
+      throw new Error(`Markdown sync failed (${response.status})`);
   }
 
   async remove(markdownId: string): Promise<void> {

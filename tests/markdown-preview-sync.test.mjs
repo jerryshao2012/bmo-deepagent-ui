@@ -370,6 +370,11 @@ test("cross-machine markdown updates converge every local transport", async () =
   assert.notEqual(remotePollEnd, -1);
   const remotePollBlock = introPage.slice(remotePollStart, remotePollEnd);
   assert.doesNotMatch(remotePollBlock, /lifecycleRef\.current/);
+  assert.match(
+    remotePollBlock,
+    /const remoteContent = backendRead\.value;[\s\S]*shouldApplyRemoteMarkdown\(\s*remoteContent,\s*localContent,\s*lastBackendSyncRef\.current\s*\)/,
+  );
+  assert.doesNotMatch(remotePollBlock, /backendRead\.value\s*\?\?/);
   const backendRelayStart = remotePollBlock.indexOf(
     "if (activeSocket?.readyState === WebSocket.OPEN)",
   );

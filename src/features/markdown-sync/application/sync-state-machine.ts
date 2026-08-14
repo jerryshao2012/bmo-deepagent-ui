@@ -16,24 +16,35 @@ export function backendMirrorRetryDelay(consecutiveFailures: number): number {
   );
 }
 
+export function shouldApplyRemoteMarkdown(
+  remote: string | null,
+  local: string,
+  lastSynced: string | null
+): remote is string {
+  return remote !== null && remote !== local && remote !== lastSynced;
+}
+
 export function editMarkdown(
   state: MarkdownSyncState,
   content: string
 ): MarkdownSyncState {
-  return { ...state, version: state.version + 1, content, pendingWrite: content };
+  return {
+    ...state,
+    version: state.version + 1,
+    content,
+    pendingWrite: content,
+  };
 }
 
 export function acceptRemoteMarkdown(
   state: MarkdownSyncState,
-  remote: string,
+  remote: string | null,
   requestVersion: number
 ): MarkdownSyncState {
   if (
     requestVersion !== state.version ||
     state.pendingWrite !== null ||
-    !remote ||
-    remote === state.content ||
-    remote === state.lastSynced
+    !shouldApplyRemoteMarkdown(remote, state.content, state.lastSynced)
   ) {
     return state;
   }

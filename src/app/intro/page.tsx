@@ -8,7 +8,10 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { BrowserMarkdownSyncStore } from "@/features/markdown-sync/infrastructure/browser-markdown-sync-store";
 import { createConfiguredBackendMarkdownSyncStore } from "@/features/markdown-sync/infrastructure/backend-markdown-sync-store";
-import { backendMirrorRetryDelay } from "@/features/markdown-sync/application/sync-state-machine";
+import {
+  backendMirrorRetryDelay,
+  shouldApplyRemoteMarkdown,
+} from "@/features/markdown-sync/application/sync-state-machine";
 import {
   MarkdownConnectionLifecycle,
   type MarkdownConnectionStatus,
@@ -266,7 +269,7 @@ function IntroPageContent() {
         return;
       }
       if (!backendRead.current) return;
-      const remoteContent = backendRead.value ?? "";
+      const remoteContent = backendRead.value;
       resetBackendMirrorBackoff();
       if (
         requestVersion !== contentVersionRef.current ||
@@ -276,9 +279,11 @@ function IntroPageContent() {
       }
       const localContent = sharedTextRef.current;
       if (
-        remoteContent &&
-        remoteContent !== localContent &&
-        remoteContent !== lastBackendSyncRef.current
+        shouldApplyRemoteMarkdown(
+          remoteContent,
+          localContent,
+          lastBackendSyncRef.current
+        )
       ) {
         console.log("[Cross-Deploy] Received remote content from backend");
         lastBackendSyncRef.current = remoteContent;

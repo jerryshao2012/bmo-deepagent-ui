@@ -45,9 +45,9 @@ GitHub authorization callback URL: ${BACKEND_URL}/auth/callback/github
 GitHub homepage / frontend origin: ${AZURE_UI_URL}
 ```
 
-It atomically stores only environment resource ID, default domain, application names, and derived endpoints in ignored `.resolved-azure-endpoints.json`. First resolution or any metadata change prints `ACTION REQUIRED`; both deployment scripts repeat the provider notice before application mutation and require process-local `OAUTH_REDIRECTS_CONFIRMED=true`. Unchanged endpoint metadata prints a non-blocking informational reminder. Confirmation is never persisted.
+It atomically stores only environment resource ID, default domain, application names, and derived endpoints in ignored `../../../.resolved-azure-endpoints.json`. First resolution or any metadata change prints `ACTION REQUIRED`; both deployment scripts repeat the provider notice before application mutation and require process-local `OAUTH_REDIRECTS_CONFIRMED=true`. Unchanged endpoint metadata prints a non-blocking informational reminder. Confirmation is never persisted.
 
-UI build receives resolved `BACKEND_URL`; UI Azure runtime receives resolved `AZURE_UI_URL` for `PASSKEY_ORIGIN`, `AUTH_URL`, and `NEXTAUTH_URL`. Backend deployment injects resolved `FRONTEND_URLS` directly as runtime configuration without persisting it in `.env.docker`, then backend derives passkey origins and RP IDs. OAuth callback URLs are configured from resolved backend URL before application deployment.
+UI build receives resolved `BACKEND_URL`; UI Azure runtime receives resolved `AZURE_UI_URL` for `PASSKEY_ORIGIN`, `AUTH_URL`, and `NEXTAUTH_URL`. Backend deployment injects resolved `FRONTEND_URLS` directly as runtime configuration without persisting it in `../../../.env.docker`, then backend derives passkey origins and RP IDs. OAuth callback URLs are configured from resolved backend URL before application deployment.
 
 No placeholder Container App or application deployment is allowed solely to discover a URL. Bootstrap sequence is resource group, Container Apps environment, endpoint resolution. Each application then needs one production build and one deployment. If environment does not exist, resolver fails with an explicit instruction to run infrastructure bootstrap; it does not create infrastructure during a build.
 
@@ -65,9 +65,9 @@ UI runtime also receives:
 - exact Container Apps browser origin in `PASSKEY_ORIGIN`
 - `PASSKEY_PROXY_ID=web-bff`
 
-Backend runtime derives its RP-ID/origin allowlist from `FRONTEND_URLS` and receives the matching proxy ID and secret. Local `.env.docker` files must not contain either the rotated or compromised secret.
+Backend runtime derives its RP-ID/origin allowlist from `FRONTEND_URLS` and receives the matching proxy ID and secret. Local `../../../.env.docker` files must not contain either the rotated or compromised secret.
 
-Backend `.env.docker` removes `FRONTEND_URLS`, duplicated `PASSKEY_ORIGINS`, `PASSKEY_RP_ID(S)`, and the proxy secret; deployment supplies resolved/runtime settings. Frontend `.env.docker` does not carry production `PASSKEY_ORIGIN`, proxy ID, or proxy secret; deployment supplies derived/runtime settings.
+Backend `../../../.env.docker` removes `FRONTEND_URLS`, duplicated `PASSKEY_ORIGINS`, `PASSKEY_RP_ID(S)`, and the proxy secret; deployment supplies resolved/runtime settings. Frontend `../../../.env.docker` does not carry production `PASSKEY_ORIGIN`, proxy ID, or proxy secret; deployment supplies derived/runtime settings.
 
 ## Alternatives rejected
 
@@ -83,7 +83,7 @@ Deployment scripts configure the Key Vault reference before updating container e
 
 Current Azure UI has no deployed proxy credential and returns `passkeys_unavailable`, so there is no functioning old Azure passkey path to preserve during rotation. Resolve Azure endpoints before builds. Build and deploy backend with the new secret and canonical derivation first, then build and deploy Azure UI with matching Key Vault reference. Each real application is built and deployed once. Vercel remains a reserved derived origin/RP ID and receives no mutation in this rollout. OAuth remains enabled for enrollment and recovery.
 
-Backend must be rebuilt after removing the compromised secret from its Docker build context. UI does not embed `.env.docker`; it may reuse a verified image only when its embedded `BACKEND_URL` exactly matches the resolver output for the unchanged environment. Environment recreation always forces an Azure UI rebuild. Both Azure app updates force named revisions so Key Vault values are fetched at startup. In single-revision mode Azure moves traffic only after a revision is ready. The deployment records prior revisions for diagnostics but never rolls traffic back to an image or revision containing the compromised secret; failure leaves passkeys disabled until a new safe revision is deployed.
+Backend must be rebuilt after removing the compromised secret from its Docker build context. UI does not embed `../../../.env.docker`; it may reuse a verified image only when its embedded `BACKEND_URL` exactly matches the resolver output for the unchanged environment. Environment recreation always forces an Azure UI rebuild. Both Azure app updates force named revisions so Key Vault values are fetched at startup. In single-revision mode Azure moves traffic only after a revision is ready. The deployment records prior revisions for diagnostics but never rolls traffic back to an image or revision containing the compromised secret; failure leaves passkeys disabled until a new safe revision is deployed.
 
 After both safe revisions are ready, the old credential is considered revoked because neither app nor Key Vault contains it. Old backend revisions receive zero traffic and are deactivated or removed as rollback targets.
 
@@ -92,7 +92,7 @@ Rollback never restores the compromised secret. After backend cutover, only revi
 ## Verification
 
 - Deployment tests assert both scripts use the Key Vault reference and runtime `secretRef`.
-- Local `.env.docker` files and new image filesystems contain no `PASSKEY_PROXY_SECRET` value or compromised secret.
+- Local `../../../.env.docker` files and new image filesystems contain no `PASSKEY_PROXY_SECRET` value or compromised secret.
 - Both Azure revisions become ready with zero crash loops.
 - Live configuration shows both apps use expected Key Vault reference, backend UAI, UI system identity, and runtime `secretRef`, with no plaintext value or log disclosure.
 - UI `/api/auth/passkeys` returns the backend's exact unauthenticated rejection (`403 {"code":"passkey_request_rejected"}`), not `503`, `404`, or `500`.

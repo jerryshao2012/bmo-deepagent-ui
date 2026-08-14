@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a tested one-command UI image build, ACR push, and deployment flow for an existing Azure Container App while making every Azure-facing script select the subscription declared in `env.sh`.
+**Goal:** Add a tested one-command UI image build, ACR push, and deployment flow for an existing Azure Container App while making every Azure-facing script select the subscription declared in `../../../env.sh`.
 
-**Architecture:** A side-effect-free Azure subscription helper gives all Azure scripts one fail-fast account-selection contract. A separate `deploy-azure-container-app.sh` reuses the container-runtime adapter, validates existing Azure resources, builds and pushes `latest`, configures a Key Vault-backed secret, creates a uniquely suffixed single-mode revision, and verifies the exact deployed marker without changing infrastructure policy.
+**Architecture:** A side-effect-free Azure subscription helper gives all Azure scripts one fail-fast account-selection contract. A separate `../../../deploy-azure-container-app.sh` reuses the container-runtime adapter, validates existing Azure resources, builds and pushes `latest`, configures a Key Vault-backed secret, creates a uniquely suffixed single-mode revision, and verifies the exact deployed marker without changing infrastructure policy.
 
 **Tech Stack:** Bash 3.2, Azure CLI, Azure Container Apps, Azure Container Registry, Azure Key Vault, Apple Container, Podman, Docker, Node.js built-in test runner, Yarn, Prettier
 
@@ -14,13 +14,13 @@
 
 - Read and follow `@superpowers:test-driven-development` before implementation.
 - Use `@superpowers:verification-before-completion` before claiming completion.
-- Treat the current uncommitted `env.sh` edit as user-owned and in scope. Preserve its
+- Treat the current uncommitted `../../../env.sh` edit as user-owned and in scope. Preserve its
   exact `AZURE_SUBSCRIPTION_ID`; never reset, replace, or stage unrelated changes.
 - Do not run real `az`, registry, Key Vault, or deployment mutations in tests.
 - Maintain Bash 3.2 compatibility: no associative arrays, `mapfile`, `${var,,}`, or
   Bash 4-only features.
-- Never print ACR access tokens, Key Vault values, `.env` contents, or credentials.
-- Private `secrets.sh` is ignored and untracked. Never inspect, copy, stage, or
+- Never print ACR access tokens, Key Vault values, `../../../.env` contents, or credentials.
+- Private `../../../secrets.sh` is ignored and untracked. Never inspect, copy, stage, or
   force-add it; update tracked `secrets.sh.example` and let operators regenerate their
   own local copy.
 - Do not create Azure resources or change identity, RBAC, ingress, scaling, revision
@@ -28,43 +28,43 @@
 
 ## File structure
 
-- Create `scripts/azure-subscription.sh`: reusable Azure login/subscription guard;
+- Create `../../../scripts/azure-subscription.sh`: reusable Azure login/subscription guard;
   no action when sourced.
-- Modify `env.sh`: add overridable `CONTAINER_APP_NAME` while preserving the user's
+- Modify `../../../env.sh`: add overridable `CONTAINER_APP_NAME` while preserving the user's
   subscription value and all other current content.
-- Modify `build.sh`: select Azure subscription before resource-group access and call
+- Modify `../../../build.sh`: select Azure subscription before resource-group access and call
   shared container build-readiness policy.
-- Modify `deploy.sh`: select Azure subscription before App Service/backend access.
-- Do not inspect or modify private `secrets.sh`; it is ignored and untracked. Modify
+- Modify `../../../deploy.sh`: select Azure subscription before App Service/backend access.
+- Do not inspect or modify private `../../../secrets.sh`; it is ignored and untracked. Modify
   tracked `secrets.sh.example`, and have operators regenerate their local copy.
-- Modify `scripts/container-runtime.sh`: own Apple builder capacity policy used by
+- Modify `../../../scripts/container-runtime.sh`: own Apple builder capacity policy used by
   local Azure image builds.
-- Create `deploy-azure-container-app.sh`: existing-resource preflight, image build,
+- Create `../../../deploy-azure-container-app.sh`: existing-resource preflight, image build,
   ACR login/push, Key Vault reference, Container App update, and exact verification.
-- Create `tests/azure-subscription.test.mjs`: helper behavior and call-order contract.
-- Modify `tests/container-runtime.test.mjs`: shared build-readiness behavior.
-- Create `tests/deploy-azure-container-app.test.mjs`: black-box deployment contract
+- Create `../../../tests/azure-subscription.test.mjs`: helper behavior and call-order contract.
+- Modify `../../../tests/container-runtime.test.mjs`: shared build-readiness behavior.
+- Create `../../../tests/deploy-azure-container-app.test.mjs`: black-box deployment contract
   with fake executables.
-- Modify `tests/deployment-security.test.mjs`: static security and non-mutation
+- Modify `../../../tests/deployment-security.test.mjs`: static security and non-mutation
   boundaries.
-- Create `documents/deployment/azure-container-apps.md`: active operator guide.
-- Modify `documents/deployment/azure-app-service.md`: explicit subscription selection.
-- Modify `README.md` and `documents/README.md`: link the new deployment path.
+- Create `../../deployment/azure-container-apps.md`: active operator guide.
+- Modify `../../deployment/azure-app-service.md`: explicit subscription selection.
+- Modify `../../../README.md` and `../../README.md`: link the new deployment path.
 
 ### Task 1: Add shared Azure subscription selection
 
 **Files:**
 
-- Create: `scripts/azure-subscription.sh`
-- Create: `tests/azure-subscription.test.mjs`
-- Modify: `env.sh`
-- Modify: `build.sh`
-- Modify: `deploy.sh`
+- Create: `../../../scripts/azure-subscription.sh`
+- Create: `../../../tests/azure-subscription.test.mjs`
+- Modify: `../../../env.sh`
+- Modify: `../../../build.sh`
+- Modify: `../../../deploy.sh`
 - Modify: `secrets.sh.example`
 
 - [ ] **Step 1: Write helper RED tests**
 
-Create `tests/azure-subscription.test.mjs` with a temporary fake `az` executable and
+Create `../../../tests/azure-subscription.test.mjs` with a temporary fake `az` executable and
 these cases:
 
 ```javascript
@@ -119,11 +119,11 @@ Run:
 node --test tests/azure-subscription.test.mjs
 ```
 
-Expected: FAIL because `scripts/azure-subscription.sh` does not exist.
+Expected: FAIL because `../../../scripts/azure-subscription.sh` does not exist.
 
 - [ ] **Step 3: Implement minimal subscription helper**
 
-Create `scripts/azure-subscription.sh`:
+Create `../../../scripts/azure-subscription.sh`:
 
 ```bash
 #!/bin/bash
@@ -204,7 +204,7 @@ for (const [script, firstResourceCall] of scriptContracts) {
 }
 ```
 
-Also assert `env.sh` contains an overridable default:
+Also assert `../../../env.sh` contains an overridable default:
 
 ```javascript
 assert.match(
@@ -225,14 +225,14 @@ Expected: call-order/default tests FAIL while helper unit tests remain green.
 
 - [ ] **Step 7: Integrate helper without overwriting user configuration**
 
-Add only this setting to `env.sh` after `ENV_NAME`:
+Add only this setting to `../../../env.sh` after `ENV_NAME`:
 
 ```bash
 export CONTAINER_APP_NAME="${CONTAINER_APP_NAME:-bmo-deepagent-ui-$SEED}"
 ```
 
-In `build.sh`, `deploy.sh`, and tracked `secrets.sh.example`, source the helper after
-`env.sh`, verify `az` exists where the script does not already do so, and call:
+In `../../../build.sh`, `../../../deploy.sh`, and tracked `secrets.sh.example`, source the helper after
+`../../../env.sh`, verify `az` exists where the script does not already do so, and call:
 
 ```bash
 select_azure_subscription
@@ -252,7 +252,7 @@ node --test tests/azure-subscription.test.mjs
 git diff --check
 ```
 
-Expected: syntax and tests PASS; only the existing `env.sh` subscription value plus
+Expected: syntax and tests PASS; only the existing `../../../env.sh` subscription value plus
 new overridable app name appear in the intended diff.
 
 Commit:
@@ -266,10 +266,10 @@ git commit -m "feat: select configured Azure subscription"
 
 **Files:**
 
-- Modify: `scripts/container-runtime.sh`
-- Modify: `tests/container-runtime.test.mjs`
-- Modify: `build.sh`
-- Modify: `tests/deployment-security.test.mjs`
+- Modify: `../../../scripts/container-runtime.sh`
+- Modify: `../../../tests/container-runtime.test.mjs`
+- Modify: `../../../build.sh`
+- Modify: `../../../tests/deployment-security.test.mjs`
 
 - [ ] **Step 1: Write RED behavioral tests for build readiness**
 
@@ -316,7 +316,7 @@ for (const runtime of ["podman", "docker"]) {
 }
 ```
 
-Preserve current `build.sh` semantics: any nonzero `container builder status` means no
+Preserve current `../../../build.sh` semantics: any nonzero `container builder status` means no
 usable builder was found, so readiness attempts `container builder start --memory 8G`.
 Do not require the status command's nonzero code to propagate. Cover exact failure
 propagation for builder stop, delete, and start commands.
@@ -333,23 +333,23 @@ Expected: FAIL because `ensure_container_cli_build_ready` is undefined.
 
 - [ ] **Step 3: Move Apple capacity policy into helper**
 
-Add `ensure_container_cli_build_ready` to `scripts/container-runtime.sh`. It must:
+Add `ensure_container_cli_build_ready` to `../../../scripts/container-runtime.sh`. It must:
 
 1. call `ensure_container_cli_ready` and propagate status;
 2. immediately return for Podman/Docker;
 3. query Apple builder JSON;
-4. use Node to read memory/state as current `build.sh` does;
+4. use Node to read memory/state as current `../../../build.sh` does;
 5. stop/delete an undersized existing builder; and
 6. start missing/undersized builder with `--memory 8G`, or start a sufficient stopped
    builder without changing its memory.
 
-Replace the inline Apple builder block in `build.sh` with:
+Replace the inline Apple builder block in `../../../build.sh` with:
 
 ```bash
 ensure_container_cli_build_ready
 ```
 
-Update static deployment tests to locate memory policy in the helper, not `build.sh`.
+Update static deployment tests to locate memory policy in the helper, not `../../../build.sh`.
 
 - [ ] **Step 4: Run tests and confirm GREEN**
 
@@ -374,13 +374,13 @@ git commit -m "refactor: share container build readiness"
 
 **Files:**
 
-- Create: `deploy-azure-container-app.sh`
-- Create: `tests/deploy-azure-container-app.test.mjs`
+- Create: `../../../deploy-azure-container-app.sh`
+- Create: `../../../tests/deploy-azure-container-app.test.mjs`
 
 - [ ] **Step 1: Build black-box fake-command harness**
 
 Create a temporary repository fixture containing copies of the deployment script and
-both helpers, plus sanitized `env.sh`/`.env.docker`. Fake commands must log each argv
+both helpers, plus sanitized `../../../env.sh`/`../../../.env.docker`. Fake commands must log each argv
 item as `<value>`, accept scenario variables, and never access Azure.
 
 Import `access` and `constants` from `node:fs/promises`/`node:fs`, then add an entry
@@ -450,10 +450,10 @@ Expected: FAIL because the deployment script does not exist.
 
 - [ ] **Step 4: Implement script configuration and preflight**
 
-Create `deploy-azure-container-app.sh` with `set -eo pipefail`, resolve its own
-directory, source `env.sh`, `scripts/azure-subscription.sh`, and
-`scripts/container-runtime.sh`, then load optional `.env.docker` using the existing
-line-oriented parser from `deploy.sh`.
+Create `../../../deploy-azure-container-app.sh` with `set -eo pipefail`, resolve its own
+directory, source `../../../env.sh`, `../../../scripts/azure-subscription.sh`, and
+`../../../scripts/container-runtime.sh`, then load optional `../../../.env.docker` using the existing
+line-oriented parser from `../../../deploy.sh`.
 
 After creating the file, make the operator entry point executable:
 
@@ -522,8 +522,8 @@ git commit -m "feat: validate Azure Container App deployment"
 
 **Files:**
 
-- Modify: `deploy-azure-container-app.sh`
-- Modify: `tests/deploy-azure-container-app.test.mjs`
+- Modify: `../../../deploy-azure-container-app.sh`
+- Modify: `../../../tests/deploy-azure-container-app.test.mjs`
 
 - [ ] **Step 1: Write build/push RED tests**
 
@@ -553,8 +553,8 @@ assert.equal(stdinLog, "fake-acr-token");
 assert.doesNotMatch(result.stdout + result.stderr, /fake-acr-token/);
 ```
 
-Inspect the staged context during fake build and assert `.env`, `.env.docker`, `.git`,
-`.next`, and `node_modules` are absent; `Dockerfile` and
+Inspect the staged context during fake build and assert `../../../.env`, `../../../.env.docker`, `.git`,
+`.next`, and `node_modules` are absent; `../../../Dockerfile` and
 `public/deployment-version.txt` are present.
 
 Add table-driven build, ACR token, login, and push failures. Each exact nonzero status
@@ -630,9 +630,9 @@ git commit -m "feat: push UI image to Azure registry"
 
 **Files:**
 
-- Modify: `deploy-azure-container-app.sh`
-- Modify: `tests/deploy-azure-container-app.test.mjs`
-- Modify: `tests/deployment-security.test.mjs`
+- Modify: `../../../deploy-azure-container-app.sh`
+- Modify: `../../../tests/deploy-azure-container-app.test.mjs`
+- Modify: `../../../tests/deployment-security.test.mjs`
 
 - [ ] **Step 1: Write secret/update RED tests**
 
@@ -750,8 +750,8 @@ git commit -m "feat: update Azure Container App revision"
 
 **Files:**
 
-- Modify: `deploy-azure-container-app.sh`
-- Modify: `tests/deploy-azure-container-app.test.mjs`
+- Modify: `../../../deploy-azure-container-app.sh`
+- Modify: `../../../tests/deploy-azure-container-app.test.mjs`
 
 - [ ] **Step 1: Write readiness RED tests**
 
@@ -831,17 +831,17 @@ git commit -m "feat: verify Azure Container App deployment"
 
 **Files:**
 
-- Create: `documents/deployment/azure-container-apps.md`
-- Modify: `documents/deployment/azure-app-service.md`
-- Modify: `README.md`
-- Modify: `documents/README.md`
+- Create: `../../deployment/azure-container-apps.md`
+- Modify: `../../deployment/azure-app-service.md`
+- Modify: `../../../README.md`
+- Modify: `../../README.md`
 - Verify: all implementation/test files from Tasks 1-6
 
 - [ ] **Step 1: Write the Container Apps operator guide**
 
 Document the exact contract from the approved spec:
 
-- separate `deploy-azure-container-app.sh` versus App Service `deploy.sh`;
+- separate `../../../deploy-azure-container-app.sh` versus App Service `../../../deploy.sh`;
 - existing resource group, ACR, environment, UI/backend apps, Key Vault, identity,
   roles, external ingress, target port 3000, single-revision mode, registry pull, and
   storage prerequisites;
@@ -859,8 +859,8 @@ Link only current official Microsoft documentation already listed in the design 
 - [ ] **Step 2: Update navigation and App Service guide**
 
 Add the Container Apps guide beside App Service/AWS/Oracle deployment links in
-`README.md` and `documents/README.md`. Update App Service prerequisites/deploy flow to
-state that `deploy.sh` selects and verifies `AZURE_SUBSCRIPTION_ID` before resource
+`../../../README.md` and `../../README.md`. Update App Service prerequisites/deploy flow to
+state that `../../../deploy.sh` selects and verifies `AZURE_SUBSCRIPTION_ID` before resource
 access.
 
 - [ ] **Step 3: Format docs and run shell/focused tests**
@@ -901,7 +901,7 @@ git diff -- env.sh
 rg -n 'AZURE_SUBSCRIPTION_ID|az account set|--subscription' --glob '*.sh' .
 ```
 
-Expected: `env.sh` retains the user's exact subscription ID and adds only the approved
+Expected: `../../../env.sh` retains the user's exact subscription ID and adds only the approved
 Container App default; no Azure script contains a literal subscription UUID; no
 unrelated file is staged or modified.
 

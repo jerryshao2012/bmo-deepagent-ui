@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make `build.sh` and `build-aws.sh` automatically use Apple `container`, daemonless Podman, or Docker in that priority order, with an explicit runtime override.
+**Goal:** Make `../../../build.sh` and `../../../build-aws.sh` automatically use Apple `container`, daemonless Podman, or Docker in that priority order, with an explicit runtime override.
 
 **Architecture:** Add one sourced Bash adapter that owns runtime selection, readiness checks, and command-shape differences. Keep provider-specific image arguments and Apple builder-memory policy in existing build scripts. Verify adapter behavior through real Bash execution against temporary fake CLI executables, then retain existing static deployment checks for script integration.
 
@@ -12,19 +12,19 @@
 
 ## File map
 
-- Create `scripts/container-runtime.sh`: runtime selection and common build/login/push/readiness interface.
-- Create `tests/container-runtime.test.mjs`: behavioral tests that source helper in Bash and integration checks for both build scripts.
-- Modify `build.sh`: use adapter while retaining clean context and Apple-only 8 GiB builder setup.
-- Modify `build-aws.sh`: use adapter and omit unsupported `--progress plain` only for Podman.
-- Modify `tests/deployment-security.test.mjs`: update existing clean-context assertion to runtime-neutral build wrapper.
-- Modify `documents/deployment/aws-ecs-fargate.md`: document runtime priority, overrides, readiness, and troubleshooting.
+- Create `../../../scripts/container-runtime.sh`: runtime selection and common build/login/push/readiness interface.
+- Create `../../../tests/container-runtime.test.mjs`: behavioral tests that source helper in Bash and integration checks for both build scripts.
+- Modify `../../../build.sh`: use adapter while retaining clean context and Apple-only 8 GiB builder setup.
+- Modify `../../../build-aws.sh`: use adapter and omit unsupported `--progress plain` only for Podman.
+- Modify `../../../tests/deployment-security.test.mjs`: update existing clean-context assertion to runtime-neutral build wrapper.
+- Modify `../../deployment/aws-ecs-fargate.md`: document runtime priority, overrides, readiness, and troubleshooting.
 
 ### Task 1: Runtime selection
 
 **Files:**
 
-- Create: `tests/container-runtime.test.mjs`
-- Create: `scripts/container-runtime.sh`
+- Create: `../../../tests/container-runtime.test.mjs`
+- Create: `../../../scripts/container-runtime.sh`
 
 - [ ] **Step 1: Write failing runtime-selection tests**
 
@@ -171,7 +171,7 @@ Run:
 node --test tests/container-runtime.test.mjs
 ```
 
-Expected: tests fail because `scripts/container-runtime.sh` does not exist and
+Expected: tests fail because `../../../scripts/container-runtime.sh` does not exist and
 `select_container_cli` is unavailable.
 
 - [ ] **Step 3: Implement minimal Bash 3.2-compatible selection**
@@ -227,8 +227,8 @@ git commit -m "feat: select available container runtime"
 
 **Files:**
 
-- Modify: `tests/container-runtime.test.mjs`
-- Modify: `scripts/container-runtime.sh`
+- Modify: `../../../tests/container-runtime.test.mjs`
+- Modify: `../../../scripts/container-runtime.sh`
 
 - [ ] **Step 1: Append failing readiness tests**
 
@@ -335,7 +335,7 @@ Expected: new tests fail because readiness/build/login/push functions are undefi
 
 - [ ] **Step 4: Implement minimal adapters**
 
-Append to `scripts/container-runtime.sh`:
+Append to `../../../scripts/container-runtime.sh`:
 
 ```bash
 ensure_container_cli_ready() {
@@ -417,13 +417,13 @@ git commit -m "feat: adapt container runtime commands"
 
 **Files:**
 
-- Modify: `tests/container-runtime.test.mjs`
+- Modify: `../../../tests/container-runtime.test.mjs`
 - Modify: `tests/deployment-security.test.mjs:95-118`
 - Modify: `build.sh:1-92`
 
 - [ ] **Step 1: Write failing integration assertions**
 
-Append a test that reads `build.sh` and verifies shared adapter use plus Apple-only
+Append a test that reads `../../../build.sh` and verifies shared adapter use plus Apple-only
 builder configuration:
 
 ```js
@@ -458,10 +458,10 @@ node --test tests/container-runtime.test.mjs
 node --test --test-name-pattern='^local container build' tests/deployment-security.test.mjs
 ```
 
-Expected: integration test fails because `build.sh` does not source or call adapter;
+Expected: integration test fails because `../../../build.sh` does not source or call adapter;
 updated security test fails because script still calls literal `container build`.
 
-- [ ] **Step 3: Integrate adapter in `build.sh`**
+- [ ] **Step 3: Integrate adapter in `../../../build.sh`**
 
 After `source ./env.sh`, source helper, select runtime, and report it:
 
@@ -523,7 +523,7 @@ git commit -m "feat: support multiple runtimes in local image build"
 
 **Files:**
 
-- Modify: `tests/container-runtime.test.mjs`
+- Modify: `../../../tests/container-runtime.test.mjs`
 - Modify: `build-aws.sh:1-88`
 
 - [ ] **Step 1: Write failing AWS integration test**
@@ -553,7 +553,7 @@ Run: `node --test tests/container-runtime.test.mjs`
 Expected: AWS integration test fails because script still calls Apple `container`
 directly.
 
-- [ ] **Step 3: Integrate adapter in `build-aws.sh`**
+- [ ] **Step 3: Integrate adapter in `../../../build-aws.sh`**
 
 After environment loading, source helper, select runtime, and report it:
 
@@ -618,7 +618,7 @@ Document supported runtime requirements:
 - automatic priority is Apple `container`, Podman, then Docker;
 - `CONTAINER_CLI=container|podman|docker` forces deterministic selection;
 - Apple path starts its container system and retains 8 GiB local builder policy where
-  used by `build.sh`;
+  used by `../../../build.sh`;
 - Podman path runs `podman info` and does not start/manage daemon or machine;
 - Docker path requires a running daemon and never starts Docker automatically.
 
@@ -659,12 +659,12 @@ git commit -m "docs: describe image build runtime selection"
 
 **Files:**
 
-- Verify: `scripts/container-runtime.sh`
-- Verify: `build.sh`
-- Verify: `build-aws.sh`
-- Verify: `tests/container-runtime.test.mjs`
-- Verify: `tests/deployment-security.test.mjs`
-- Verify: `documents/deployment/aws-ecs-fargate.md`
+- Verify: `../../../scripts/container-runtime.sh`
+- Verify: `../../../build.sh`
+- Verify: `../../../build-aws.sh`
+- Verify: `../../../tests/container-runtime.test.mjs`
+- Verify: `../../../tests/deployment-security.test.mjs`
+- Verify: `../../deployment/aws-ecs-fargate.md`
 
 - [ ] **Step 1: Run Bash and focused runtime verification**
 

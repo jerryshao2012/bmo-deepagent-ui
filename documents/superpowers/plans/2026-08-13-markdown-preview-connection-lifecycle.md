@@ -12,20 +12,20 @@
 
 ## File map
 
-- Create `src/features/markdown-sync/application/connection-lifecycle.ts`: lifecycle states, timing constants, injected scheduler, and transport-effect controller.
-- Create `tests/markdown-connection-lifecycle.test.ts`: deterministic controller tests with fake scheduler and two-browser simulation.
-- Create `runtime/websocket-heartbeat.cjs`: protocol ping/pong installation and cleanup for `ws` server.
-- Create `tests/markdown-websocket-heartbeat.test.mjs`: responsive/unresponsive client and cleanup tests.
-- Modify `server.cjs`: install heartbeat and clear it during graceful shutdown.
-- Modify `tests/markdown-sync-architecture.test.mjs`: declare heartbeat as custom-runtime boundary.
-- Modify `src/app/intro/page.tsx`: wire controller to WebSocket, fallback, polling, dialog, visibility, activity, queued edits, and status badge.
-- Modify `tests/markdown-preview-sync.test.mjs`: source-level integration contracts for intentional sleep, WebSocket-first wake, and pending-edit handling.
+- Create `../../../src/features/markdown-sync/application/connection-lifecycle.ts`: lifecycle states, timing constants, injected scheduler, and transport-effect controller.
+- Create `../../../tests/markdown-connection-lifecycle.test.ts`: deterministic controller tests with fake scheduler and two-browser simulation.
+- Create `../../../runtime/websocket-heartbeat.cjs`: protocol ping/pong installation and cleanup for `ws` server.
+- Create `../../../tests/markdown-websocket-heartbeat.test.mjs`: responsive/unresponsive client and cleanup tests.
+- Modify `../../../server.cjs`: install heartbeat and clear it during graceful shutdown.
+- Modify `../../../tests/markdown-sync-architecture.test.mjs`: declare heartbeat as custom-runtime boundary.
+- Modify `../../../src/app/intro/page.tsx`: wire controller to WebSocket, fallback, polling, dialog, visibility, activity, queued edits, and status badge.
+- Modify `../../../tests/markdown-preview-sync.test.mjs`: source-level integration contracts for intentional sleep, WebSocket-first wake, and pending-edit handling.
 
 ### Task 1: Client connection lifecycle controller
 
 **Files:**
-- Create: `tests/markdown-connection-lifecycle.test.ts`
-- Create: `src/features/markdown-sync/application/connection-lifecycle.ts`
+- Create: `../../../tests/markdown-connection-lifecycle.test.ts`
+- Create: `../../../src/features/markdown-sync/application/connection-lifecycle.ts`
 
 - [ ] **Step 1: Write failing timing and eligibility tests**
 
@@ -293,8 +293,8 @@ git commit -m "feat: add markdown connection lifecycle controller"
 ### Task 2: Server WebSocket heartbeat
 
 **Files:**
-- Create: `runtime/websocket-heartbeat.cjs`
-- Create: `tests/markdown-websocket-heartbeat.test.mjs`
+- Create: `../../../runtime/websocket-heartbeat.cjs`
+- Create: `../../../tests/markdown-websocket-heartbeat.test.mjs`
 - Modify: `server.cjs:1-10,254-258,301-319`
 - Modify: `tests/markdown-sync-architecture.test.mjs:21-33`
 
@@ -382,7 +382,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Add failing server integration/architecture assertions**
 
-Extend source tests to require `runtime/websocket-heartbeat.cjs`, `installWebSocketHeartbeat(wss)`, and `stopWebSocketHeartbeat()` in shutdown.
+Extend source tests to require `../../../runtime/websocket-heartbeat.cjs`, `installWebSocketHeartbeat(wss)`, and `stopWebSocketHeartbeat()` in shutdown.
 
 - [ ] **Step 6: Install and clean up heartbeat in custom server**
 
@@ -413,7 +413,7 @@ git commit -m "feat: keep active markdown websockets healthy"
 
 **Files:**
 - Modify: `src/app/intro/page.tsx:1-578`
-- Modify: `tests/markdown-preview-sync.test.mjs`
+- Modify: `../../../tests/markdown-preview-sync.test.mjs`
 
 - [ ] **Step 1: Add failing source integration contracts**
 
@@ -549,7 +549,7 @@ git commit -m "feat: hibernate inactive markdown transports"
 
 **Files:**
 - Modify: `src/app/intro/page.tsx:150-606`
-- Modify: `tests/markdown-preview-sync.test.mjs`
+- Modify: `../../../tests/markdown-preview-sync.test.mjs`
 
 - [ ] **Step 1: Add failing pending-edit and WebSocket-first wake contracts**
 
@@ -639,7 +639,7 @@ git commit -m "fix: preserve markdown edits across transport wake"
 
 **Files:**
 - Modify: `src/app/intro/page.tsx:2008-2140`
-- Modify: `tests/markdown-preview-sync.test.mjs`
+- Modify: `../../../tests/markdown-preview-sync.test.mjs`
 
 - [ ] **Step 1: Write failing status/activity contracts**
 

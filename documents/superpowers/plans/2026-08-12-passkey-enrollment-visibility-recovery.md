@@ -16,9 +16,9 @@
 
 - Modify `webapp/passkeys.py`: exact live-session exception and non-recent credential listing.
 - Modify `tests/test_passkeys.py`: service and route regression coverage.
-- Modify `deploy.sh`: validate existing secret/registry references and omit
+- Modify `../../../deploy.sh`: validate existing secret/registry references and omit
   `properties.configuration.secrets` and registries from update payload.
-- Modify `build.sh`: roll back build-owned version state on build/login/push
+- Modify `../../../build.sh`: roll back build-owned version state on build/login/push
   failure and publish `.build_version` only after successful push.
 - Modify `scripts/render_azure_containerapp_config.py`: render only mutable
   template/environment fields.
@@ -31,22 +31,22 @@
 
 ### UI repository: `/Users/jerryshao/Documents/projects/IBM/ai/bmo-deepagent-ui`
 
-- Create `src/lib/passkey-enrollment-state.ts`: browser-local positive marker adapter.
-- Create `tests/passkey-enrollment-state.test.ts`: marker parsing, storage failure, and sticky semantics.
-- Modify `src/app/components/LoginProviders.tsx`: require configuration, WebAuthn support, and marker.
-- Modify `src/app/components/PasskeyManagementDialog.tsx`: set marker after authoritative positive results and map recoverable errors.
-- Modify `tests/passkey-login.test.tsx`: login visibility contract.
-- Modify `tests/passkey-management.test.tsx`: marker and error-recovery behavior.
-- Modify `package.json`: include new marker test in `test:passkeys`.
-- Modify `deploy-azure-container-app.sh`: validate all existing Key Vault-backed
+- Create `../../../src/lib/passkey-enrollment-state.ts`: browser-local positive marker adapter.
+- Create `../../../tests/passkey-enrollment-state.test.ts`: marker parsing, storage failure, and sticky semantics.
+- Modify `../../../src/app/components/LoginProviders.tsx`: require configuration, WebAuthn support, and marker.
+- Modify `../../../src/app/components/PasskeyManagementDialog.tsx`: set marker after authoritative positive results and map recoverable errors.
+- Modify `../../../tests/passkey-login.test.tsx`: login visibility contract.
+- Modify `../../../tests/passkey-management.test.tsx`: marker and error-recovery behavior.
+- Modify `../../../package.json`: include new marker test in `test:passkeys`.
+- Modify `../../../deploy-azure-container-app.sh`: validate all existing Key Vault-backed
   app secret references and remove `containerapp secret set`.
-- Modify `tests/deploy-azure-container-app.test.mjs`: require read-only secret
+- Modify `../../../tests/deploy-azure-container-app.test.mjs`: require read-only secret
   preflight and forbid secret/permission/identity mutation.
 
 ### Rollout artifacts
 
-- Backend `.resolved-azure-endpoints.json` and `.build_version`: existing ignored/generated files only.
-- UI `.resolved-azure-endpoints.json` and `.deployment-build.json`: existing ignored/generated files only.
+- Backend `../../../.resolved-azure-endpoints.json` and `.build_version`: existing ignored/generated files only.
+- UI `../../../.resolved-azure-endpoints.json` and `../../../.deployment-build.json`: existing ignored/generated files only.
 
 ## Task 1: Backend live-session semantics
 
@@ -144,9 +144,9 @@ git commit -m "fix: recover passkey management sessions"
 
 **Files:**
 
-- Create: `src/lib/passkey-enrollment-state.ts`
-- Create: `tests/passkey-enrollment-state.test.ts`
-- Modify: `package.json`
+- Create: `../../../src/lib/passkey-enrollment-state.ts`
+- Create: `../../../tests/passkey-enrollment-state.test.ts`
+- Modify: `../../../package.json`
 
 - [ ] **Step 1: Write failing marker tests**
 
@@ -166,7 +166,7 @@ export function rememberPasskeyEnrollment(
 
 - [ ] **Step 2: Add test script entry and run RED**
 
-Add `tests/passkey-enrollment-state.test.ts` to `test:passkeys`, then run:
+Add `../../../tests/passkey-enrollment-state.test.ts` to `test:passkeys`, then run:
 
 ```bash
 cd /Users/jerryshao/Documents/projects/IBM/ai/bmo-deepagent-ui
@@ -194,8 +194,8 @@ git commit -m "feat: remember successful passkey enrollment"
 
 **Files:**
 
-- Modify: `src/app/components/LoginProviders.tsx`
-- Modify: `tests/passkey-login.test.tsx`
+- Modify: `../../../src/app/components/LoginProviders.tsx`
+- Modify: `../../../tests/passkey-login.test.tsx`
 
 - [ ] **Step 1: Write failing visibility tests**
 
@@ -246,8 +246,8 @@ git commit -m "fix: hide passkey login before enrollment"
 
 **Files:**
 
-- Modify: `src/app/components/PasskeyManagementDialog.tsx`
-- Modify: `tests/passkey-management.test.tsx`
+- Modify: `../../../src/app/components/PasskeyManagementDialog.tsx`
+- Modify: `../../../tests/passkey-management.test.tsx`
 
 - [ ] **Step 1: Write failing marker tests**
 
@@ -368,9 +368,9 @@ git commit -m "fix: recover passkey management failures"
 
 **UI files:**
 
-- Modify: `deploy-azure-container-app.sh`
-- Modify: `tests/deploy-azure-container-app.test.mjs`
-- Modify: `tests/deployment-security.test.mjs`
+- Modify: `../../../deploy-azure-container-app.sh`
+- Modify: `../../../tests/deploy-azure-container-app.test.mjs`
+- Modify: `../../../tests/deployment-security.test.mjs`
 
 - [ ] **Step 1: Write failing backend deployment tests**
 
@@ -453,7 +453,7 @@ az rest --method patch \
 The exact named-revision readiness loop remains the completion gate. Fake-Azure
 tests assert the REST path never asks Azure CLI for secret values.
 
-Harden backend `build.sh` with a dedicated same-directory temporary backup of
+Harden backend `../../../build.sh` with a dedicated same-directory temporary backup of
 `webapp/config.py` and prior `.build_version` bytes/mode. Install an EXIT trap
 before version mutation. Until image push succeeds, any nonzero exit restores
 only those two build-owned paths byte-for-byte and returns the original status;
@@ -663,7 +663,7 @@ version `1.8.127`; never manually edit or reset either file.
 
 - [ ] **Step 4: Commit the build-owned version bump**
 
-`build.sh` increments `webapp/config.py` from `1.8.126` to `1.8.127`. Verify the
+`../../../build.sh` increments `webapp/config.py` from `1.8.126` to `1.8.127`. Verify the
 only new tracked backend diff is that exact one-step version change, then:
 
 ```bash
@@ -671,7 +671,7 @@ git add webapp/config.py
 git commit -m "chore: bump API version to 1.8.127"
 ```
 
-If build fails, rollback is automatic and verified by `build.sh`; do not deploy
+If build fails, rollback is automatic and verified by `../../../build.sh`; do not deploy
 and do not commit a version not present in a successfully pushed image.
 
 - [ ] **Step 5: Deploy existing backend app**
@@ -710,7 +710,7 @@ cd /Users/jerryshao/Documents/projects/IBM/ai/bmo-deepagent-ui
 CONTAINER_CLI=docker ./build.sh
 ```
 
-Expected: Docker Hub push succeeds and `.deployment-build.json` records
+Expected: Docker Hub push succeeds and `../../../.deployment-build.json` records
 `schemaVersion`, `deploymentMarker`, `image`, canonical `backendUrl`, and
 `assistantId`. UI URL remains resolver output, not a manifest field.
 
@@ -768,5 +768,5 @@ uv run python scripts/snapshot_azure_passkey_metadata.py compare \
 
 Expected: compare exits zero and reports unchanged security metadata. Inspect
 the normalized `revision` and `image` fields separately against `.build_version`
-and `.deployment-build.json`. Cleanup is recoverable and explicit only after
+and `../../../.deployment-build.json`. Cleanup is recoverable and explicit only after
 success; keep snapshot directory on mismatch for diagnosis.

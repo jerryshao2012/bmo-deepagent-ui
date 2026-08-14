@@ -2,14 +2,14 @@
 
 ## Goal
 
-Allow `build.sh` and `build-aws.sh` to build and push images with Apple's `container`
+Allow `../../../build.sh` and `../../../build-aws.sh` to build and push images with Apple's `container`
 CLI, daemonless Podman, or Docker CLI. Preserve existing Apple `container` behavior
 and make runtime selection automatic, with an explicit override for deterministic
 automation.
 
 ## Runtime selection
 
-Add a shared Bash helper at `scripts/container-runtime.sh`. Both build scripts source
+Add a shared Bash helper at `../../../scripts/container-runtime.sh`. Both build scripts source
 it and call one selection function before invoking a container runtime.
 
 Selection order:
@@ -52,17 +52,17 @@ arguments or logs.
 
 ## Script integration
 
-### `build.sh`
+### `../../../build.sh`
 
 Use shared selection, readiness, build, and push functions. Keep clean staged build
 context, `linux/amd64` target, build arguments, image name, and Docker Hub flow
 unchanged.
 
-Apple's builder-status and 8 GiB memory configuration remains in `build.sh`, guarded
+Apple's builder-status and 8 GiB memory configuration remains in `../../../build.sh`, guarded
 so it runs only when selected runtime is `container`. Podman and Docker manage their
 own build resources, so neither path attempts equivalent memory reconfiguration.
 
-### `build-aws.sh`
+### `../../../build-aws.sh`
 
 Use shared selection, readiness, build, ECR login, and push functions. Keep AWS
 authentication, ECR repository creation, `Dockerfile-aws`, `linux/amd64` target,
@@ -102,7 +102,7 @@ observable Bash helper behavior:
 - AWS build omits `--progress plain` only for Podman.
 
 Add integration assertions that both build scripts source and use shared helper, and
-that Apple-only builder-memory setup in `build.sh` is runtime-gated. Existing
+that Apple-only builder-memory setup in `../../../build.sh` is runtime-gated. Existing
 deployment security tests continue to cover clean staged context and minimum Apple
 builder memory.
 
@@ -110,7 +110,7 @@ Run focused deployment tests first, then repository lint and production build.
 
 ## Documentation
 
-Update `documents/deployment/aws-ecs-fargate.md` so local prerequisites and build flow
+Update `../../deployment/aws-ecs-fargate.md` so local prerequisites and build flow
 describe auto-detection, Apple preference, daemonless Podman, Docker support, and
 `CONTAINER_CLI` override.
 Update any other active documentation that still states build scripts require Apple

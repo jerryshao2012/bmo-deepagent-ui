@@ -8,7 +8,7 @@
 
 **Tech Stack:** Next.js 16, React 19, TypeScript, Node test runner, Testing Library, Tailwind, Yarn 4.
 
-**Design specs:** Backend repository `docs/superpowers/specs/2026-08-13-markdown-archive-attachments-design.md` and `docs/superpowers/specs/2026-08-13-markdown-office-attachments-design.md`.
+**Design specs:** Backend repository `../specs/2026-08-13-markdown-archive-attachments-design.md` and `../specs/2026-08-13-markdown-office-attachments-design.md`.
 
 **Backend prerequisite:** Complete and verify `2026-08-13-extended-markdown-archives-backend.md` before deploying or exercising frontend uploads against a live service.
 
@@ -16,23 +16,23 @@
 
 ## File map
 
-- Create `src/lib/markdown-attachment-types.ts`: archive table, complete Office extension/family table, response-type detection, labels, and shared upload gate.
-- Create `tests/markdown-attachment-types.test.ts`: archive MIME/suffix tests plus every Office extension, MIME independence, gating, and labels.
-- Modify `src/lib/markdown-images.ts`: use shared attachment helpers for clipboard/drop acceptance, errors, and authoritative attachment Markdown generation.
-- Modify `src/app/components/SyncedMarkdownAttachment.tsx`: render archive/Office descriptions without fetching bytes.
-- Modify `tests/markdown-images.test.ts`: mixed-format validation, ordered Markdown, limits, and proxy forwarding.
-- Modify `tests/synced-markdown-attachment.test.tsx`: format labels, download behavior, and fallback.
-- Modify `tests/markdown-preview-sync.test.mjs`: assert type-neutral URL contract remains unchanged.
+- Create `../../../src/lib/markdown-attachment-types.ts`: archive table, complete Office extension/family table, response-type detection, labels, and shared upload gate.
+- Create `../../../tests/markdown-attachment-types.test.ts`: archive MIME/suffix tests plus every Office extension, MIME independence, gating, and labels.
+- Modify `../../../src/lib/markdown-images.ts`: use shared attachment helpers for clipboard/drop acceptance, errors, and authoritative attachment Markdown generation.
+- Modify `../../../src/app/components/SyncedMarkdownAttachment.tsx`: render archive/Office descriptions without fetching bytes.
+- Modify `../../../tests/markdown-images.test.ts`: mixed-format validation, ordered Markdown, limits, and proxy forwarding.
+- Modify `../../../tests/synced-markdown-attachment.test.tsx`: format labels, download behavior, and fallback.
+- Modify `../../../tests/markdown-preview-sync.test.mjs`: assert type-neutral URL contract remains unchanged.
 - Modify `src/app/api/markdown-images/[markdownId]/[[...assetPath]]/route.ts`: forward backend nosniff header with existing safe response headers.
-- Modify `package.json`: include new pure helper test in `test:markdown-images`.
-- Modify `Dockerfile`, `build.sh`, `.env.docker.example`, and `README.md`: expose rollback-safe build-time upload gate.
-- Modify `tests/build-docker-hub.test.mjs`: assert standard container build forwards the gate.
+- Modify `../../../package.json`: include new pure helper test in `test:markdown-images`.
+- Modify `../../../Dockerfile`, `../../../build.sh`, `../../../.env.docker.example`, and `../../../README.md`: expose rollback-safe build-time upload gate.
+- Modify `../../../tests/build-docker-hub.test.mjs`: assert standard container build forwards the gate.
 
 ### Task 1: Add pure archive and Office attachment contract
 
 **Files:**
-- Create: `src/lib/markdown-attachment-types.ts`
-- Create: `tests/markdown-attachment-types.test.ts`
+- Create: `../../../src/lib/markdown-attachment-types.ts`
+- Create: `../../../tests/markdown-attachment-types.test.ts`
 - Modify: `package.json:17`
 
 - [ ] **Step 1: Write failing format-table tests**
@@ -204,7 +204,7 @@ git commit -m "feat: paste extended markdown attachments"
 
 **Files:**
 - Modify: `src/app/components/SyncedMarkdownAttachment.tsx:28-32`
-- Modify: `tests/synced-markdown-attachment.test.tsx`
+- Modify: `../../../tests/synced-markdown-attachment.test.tsx`
 
 - [ ] **Step 1: Write failing card-label tests**
 
@@ -268,7 +268,7 @@ git commit -m "feat: label markdown attachment cards"
 **Files:**
 - Modify: `tests/markdown-preview-sync.test.mjs:152-174`
 - Modify: `src/app/api/markdown-images/[markdownId]/[[...assetPath]]/route.ts:89-98`
-- Modify: `tests/markdown-images.test.ts`
+- Modify: `../../../tests/markdown-images.test.ts`
 - Verify: `src/app/components/MarkdownContent.tsx:795-845`
 - Verify: `src/app/intro/page.tsx:639-723`
 
@@ -307,13 +307,13 @@ git commit -m "fix: preserve attachment security headers"
 **Files:**
 - Modify: `Dockerfile:5-8`
 - Modify: `build.sh:403-431` and its config allowlist/parser sections
-- Modify: `.env.docker.example`
+- Modify: `../../../.env.docker.example`
 - Modify: `README.md:65-78`
-- Modify: `tests/build-docker-hub.test.mjs`
+- Modify: `../../../tests/build-docker-hub.test.mjs`
 
 - [ ] **Step 1: Write failing container-build contract test**
 
-Assert `Dockerfile` declares and exports `NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED`, and `build.sh` forwards it as a build arg with default `true`.
+Assert `../../../Dockerfile` declares and exports `NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED`, and `../../../build.sh` forwards it as a build arg with default `true`.
 
 - [ ] **Step 2: Run deployment contract test and confirm failure**
 
@@ -336,7 +336,7 @@ ENV NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED=$NEXT_PUBLIC_MARKDOWN_EXTE
 
 - [ ] **Step 4: Forward and document the build value**
 
-In `build.sh`, accept only `true` or `false`, default to `true`, and pass `--build-arg "NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED=$EXTENDED_ATTACHMENTS_ENABLED"`. Add example/documentation explaining: set `false` to stop new 7z/TAR and Office selections while stored cards/downloads remain supported.
+In `../../../build.sh`, accept only `true` or `false`, default to `true`, and pass `--build-arg "NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED=$EXTENDED_ATTACHMENTS_ENABLED"`. Add example/documentation explaining: set `false` to stop new 7z/TAR and Office selections while stored cards/downloads remain supported.
 
 - [ ] **Step 5: Run deployment contract test**
 

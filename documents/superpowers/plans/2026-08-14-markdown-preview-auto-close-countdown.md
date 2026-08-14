@@ -12,12 +12,12 @@
 
 ## File Map
 
-- Modify `src/features/markdown-sync/application/connection-lifecycle.ts`: countdown constants, effect contract, epoch-guarded timer state machine.
-- Modify `tests/markdown-connection-lifecycle.test.ts`: behavioral fake-timer coverage.
-- Modify `src/app/intro/page.tsx`: current-controller effects, synchronous close helper, warning UI, Keep open, focus restoration.
-- Modify `tests/markdown-preview-sync.test.mjs`: page wiring, accessibility, local-only activity, and stale-controller contracts.
-- Create `src/features/markdown-sync/application/preview-focus-restoration.ts`: cancelable deferred focus restoration.
-- Create `tests/markdown-preview-focus-restoration.test.ts`: behavioral focus scheduling/cancellation tests.
+- Modify `../../../src/features/markdown-sync/application/connection-lifecycle.ts`: countdown constants, effect contract, epoch-guarded timer state machine.
+- Modify `../../../tests/markdown-connection-lifecycle.test.ts`: behavioral fake-timer coverage.
+- Modify `../../../src/app/intro/page.tsx`: current-controller effects, synchronous close helper, warning UI, Keep open, focus restoration.
+- Modify `../../../tests/markdown-preview-sync.test.mjs`: page wiring, accessibility, local-only activity, and stale-controller contracts.
+- Create `../../../src/features/markdown-sync/application/preview-focus-restoration.ts`: cancelable deferred focus restoration.
+- Create `../../../tests/markdown-preview-focus-restoration.test.ts`: behavioral focus scheduling/cancellation tests.
 
 ### Task 1: Add epoch-guarded countdown to lifecycle
 
@@ -123,8 +123,8 @@ git commit -m "feat: add markdown preview auto-close countdown"
 **Files:**
 - Modify: `src/app/intro/page.tsx:65-145, 717-770, 1571, 2205-2365`
 - Test: `tests/markdown-preview-sync.test.mjs:315-385`
-- Create: `src/features/markdown-sync/application/preview-focus-restoration.ts`
-- Test: `tests/markdown-preview-focus-restoration.test.ts`
+- Create: `../../../src/features/markdown-sync/application/preview-focus-restoration.ts`
+- Test: `../../../tests/markdown-preview-focus-restoration.test.ts`
 
 - [ ] **Step 1: Write failing page contract test**
 
@@ -141,7 +141,7 @@ Require bounded source sections for:
 - focus scheduling occurs in a React effect after `isDialogOpen === false` has committed, not directly in the close event;
 - remote `applyContent`, WebSocket, SSE, and backend reconciliation sections not calling `noteMarkdownActivity()`.
 
-In `tests/markdown-preview-focus-restoration.test.ts`, use a fake animation-frame scheduler and fake focus counter to prove scheduled restoration runs once, cancellation prevents it, rescheduling replaces prior work, and `shouldRestore() === false` prevents focus.
+In `../../../tests/markdown-preview-focus-restoration.test.ts`, use a fake animation-frame scheduler and fake focus counter to prove scheduled restoration runs once, cancellation prevents it, rescheduling replaces prior work, and `shouldRestore() === false` prevents focus.
 
 - [ ] **Step 2: Run page test to verify RED**
 

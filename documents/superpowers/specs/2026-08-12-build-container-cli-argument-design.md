@@ -3,7 +3,7 @@
 ## Build runtime scope
 
 Add the same command-line runtime override to the frontend and backend
-`build.sh` scripts without removing either repository's existing environment
+`../../../build.sh` scripts without removing either repository's existing environment
 override. Frontend currently exposes `CONTAINER_CLI`; backend currently exposes
 the legacy name `CONTAINER_RUNTIME` and will also accept `CONTAINER_CLI` as the
 new cross-repository name.
@@ -50,7 +50,7 @@ compatible in both repositories.
 ## Implementation boundary
 
 Each repository gets a small Bash 3.2-compatible parser at the start of
-`build.sh`. The parser records the CLI override separately, then supplies it to
+`../../../build.sh`. The parser records the CLI override separately, then supplies it to
 the existing runtime-selection adapter. Backend normalizes the selected public
 option or environment alias into its existing internal `CONTAINER_RUNTIME`
 variable. This build-runtime option does not alter deployment behavior. Secrets,
@@ -79,7 +79,7 @@ Both Azure deployment scripts accept a dedicated boolean confirmation flag:
 The flag is equivalent to the existing process-local
 `OAUTH_REDIRECTS_CONFIRMED=true` override. Existing environment-based commands
 remain compatible, while the explicit flag takes precedence and supplies only
-the exact value `true`. Confirmation is never written to dotenv, `env.sh`, build
+the exact value `true`. Confirmation is never written to dotenv, `../../../env.sh`, build
 metadata, endpoint metadata, or Azure configuration.
 
 The flag accepts no value. Duplicate occurrences, value-bearing variants such as

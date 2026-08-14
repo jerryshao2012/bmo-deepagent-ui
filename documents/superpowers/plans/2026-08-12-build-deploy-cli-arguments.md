@@ -14,16 +14,16 @@
 
 UI worktree: `/Users/jerryshao/Documents/projects/IBM/ai/bmo-deepagent-ui/.worktrees/passkey-enrollment-recovery`
 
-- Modify `build.sh`: early runtime/help parser and CLI precedence.
-- Modify `deploy-azure-container-app.sh`: early OAuth-confirmation/help parser.
-- Modify `tests/build-docker-hub.test.mjs`: black-box build argument tests.
-- Modify `tests/deploy-azure-container-app.test.mjs`: black-box deploy argument tests.
-- Modify `README.md`: operator examples.
+- Modify `../../../build.sh`: early runtime/help parser and CLI precedence.
+- Modify `../../../deploy-azure-container-app.sh`: early OAuth-confirmation/help parser.
+- Modify `../../../tests/build-docker-hub.test.mjs`: black-box build argument tests.
+- Modify `../../../tests/deploy-azure-container-app.test.mjs`: black-box deploy argument tests.
+- Modify `../../../README.md`: operator examples.
 
 Backend worktree: `/Users/jerryshao/Documents/projects/IBM/ai/deep-research/.worktrees/passkey-enrollment-recovery`
 
-- Modify `build.sh`: early runtime/help parser and alias normalization.
-- Modify `deploy.sh`: dedicated OAuth-confirmation option.
+- Modify `../../../build.sh`: early runtime/help parser and alias normalization.
+- Modify `../../../deploy.sh`: dedicated OAuth-confirmation option.
 - Modify `tests/test_container_runtime_scripts.py`: runtime precedence tests.
 - Modify `tests/test_azure_persistence_scripts.py`: side-effect and deploy option tests.
 - Modify `documents/deployment/azure/README.md`: operator examples.
@@ -34,9 +34,9 @@ No generic parser module is added. Scripts have different security bootstraps an
 
 **Files:**
 
-- Modify: `build.sh` at script entry and protected-variable cleanup
-- Modify: `tests/build-docker-hub.test.mjs` in `runBuild` and runtime cases
-- Modify: `README.md`
+- Modify: `../../../build.sh` at script entry and protected-variable cleanup
+- Modify: `../../../tests/build-docker-hub.test.mjs` in `runBuild` and runtime cases
+- Modify: `../../../README.md`
 
 - [ ] **Step 1: Extend fixture argument support**
 
@@ -68,7 +68,7 @@ Cover CLI-over-environment precedence, environment-only fallback, missing/empty/
 node --test --test-isolation=none tests/build-docker-hub.test.mjs
 ```
 
-Expected: new cases fail because `build.sh` does not parse arguments.
+Expected: new cases fail because `../../../build.sh` does not parse arguments.
 
 - [ ] **Step 4: Implement minimal Bash 3.2 parser**
 
@@ -133,7 +133,7 @@ Document accepted forms, precedence, and environment compatibility.
 
 **Files:**
 
-- Modify: `build.sh` before `source env.sh` and build transaction
+- Modify: `../../../build.sh` before `source env.sh` and build transaction
 - Modify: `tests/test_container_runtime_scripts.py`
 - Modify: `tests/test_azure_persistence_scripts.py`
 - Modify: `documents/deployment/azure/README.md`
@@ -146,7 +146,7 @@ Mirror Task 1 forms/errors/help and prove:
 CLI -> CONTAINER_CLI -> CONTAINER_RUNTIME -> automatic selection
 ```
 
-Assert CLI overrides conflicting aliases; new `CONTAINER_CLI=podman` works; legacy `CONTAINER_RUNTIME=podman` works; matching aliases work; conflicting aliases without CLI exit 64 before `env.sh`, resolver, version mutation, credential loading, runtime startup, build, login, or push.
+Assert CLI overrides conflicting aliases; new `CONTAINER_CLI=podman` works; legacy `CONTAINER_RUNTIME=podman` works; matching aliases work; conflicting aliases without CLI exit 64 before `../../../env.sh`, resolver, version mutation, credential loading, runtime startup, build, login, or push.
 
 - [ ] **Step 2: Run RED**
 
@@ -198,9 +198,9 @@ Docs make `--container-cli podman` primary and retain both environment aliases.
 
 **Files:**
 
-- Modify: `deploy-azure-container-app.sh` before configuration loading
-- Modify: `tests/deploy-azure-container-app.test.mjs`
-- Modify: `README.md`
+- Modify: `../../../deploy-azure-container-app.sh` before configuration loading
+- Modify: `../../../tests/deploy-azure-container-app.test.mjs`
+- Modify: `../../../README.md`
 
 - [ ] **Step 1: Add failing deploy cases**
 
@@ -216,7 +216,7 @@ node --test --test-isolation=none \
 
 - [ ] **Step 3: Implement dedicated boolean parser**
 
-Before `env.sh` access:
+Before `../../../env.sh` access:
 
 ```bash
 CLI_OAUTH_REDIRECTS_CONFIRMED=false
@@ -239,7 +239,7 @@ while [ "$#" -gt 0 ]; do
 done
 ```
 
-After isolated `env.sh`, set exact true only when CLI flag was seen; otherwise restore caller environment. Never persist the value or add a false/short form.
+After isolated `../../../env.sh`, set exact true only when CLI flag was seen; otherwise restore caller environment. Never persist the value or add a false/short form.
 
 - [ ] **Step 4: Run GREEN and commit**
 
@@ -259,7 +259,7 @@ git commit -m "feat: add UI OAuth confirmation option"
 
 **Files:**
 
-- Modify: `deploy.sh` existing parser/help
+- Modify: `../../../deploy.sh` existing parser/help
 - Modify: `tests/test_azure_persistence_scripts.py`
 - Modify: `documents/deployment/azure/README.md`
 

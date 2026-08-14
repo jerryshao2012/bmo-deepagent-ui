@@ -3,25 +3,25 @@
 ## Goal
 
 Add a two-command Azure Container Apps deployment path for the UI while keeping the
-existing Azure App Service ZIP deployment in `deploy.sh` unchanged as a supported
+existing Azure App Service ZIP deployment in `../../../deploy.sh` unchanged as a supported
 target.
 
-`build.sh` builds the UI image locally and pushes `latest` to Docker Hub.
-`deploy-azure-container-app.sh` deploys that already-pushed image to an existing
+`../../../build.sh` builds the UI image locally and pushes `latest` to Docker Hub.
+`../../../deploy-azure-container-app.sh` deploys that already-pushed image to an existing
 Azure Container App and verifies that the new revision is serving the exact build.
 This mirrors the working backend deployment's Docker Hub authentication model and
 does not require Azure role-assignment permissions.
 
 ## Decisions
 
-- Keep App Service deployment in `deploy.sh`.
-- Add a separate `deploy-azure-container-app.sh` entry point.
-- Keep build and deployment separate: operators run `build.sh`, then
-  `deploy-azure-container-app.sh`.
+- Keep App Service deployment in `../../../deploy.sh`.
+- Add a separate `../../../deploy-azure-container-app.sh` entry point.
+- Keep build and deployment separate: operators run `../../../build.sh`, then
+  `../../../deploy-azure-container-app.sh`.
 - Require an existing resource group, UI Container App, backend Container App, Key
   Vault, system identity, ingress, networking, scaling, and storage configuration.
 - Build through the shared runtime priority: Apple Container, Podman, then Docker.
-  Allow the existing `CONTAINER_CLI` override for `build.sh`; deployment has no
+  Allow the existing `CONTAINER_CLI` override for `../../../build.sh`; deployment has no
   container-runtime dependency.
 - Push and deploy only `docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest`.
 - Reuse the backend's Docker Hub account and `DOCKER-HUB-PAT` Key Vault secret.
@@ -37,7 +37,7 @@ does not require Azure role-assignment permissions.
 
 ## Configuration
 
-`env.sh` remains the shared Azure configuration source. It owns:
+`../../../env.sh` remains the shared Azure configuration source. It owns:
 
 - `AZURE_SUBSCRIPTION_ID`
 - `RESOURCE_GROUP`
@@ -50,40 +50,40 @@ does not require Azure role-assignment permissions.
 - `CONTAINER_APP_NAME`, defaulting to `bmo-deepagent-ui-$SEED`
 
 The implementation must preserve the operator's current
-`AZURE_SUBSCRIPTION_ID` value and other uncommitted `env.sh` edits.
+`AZURE_SUBSCRIPTION_ID` value and other uncommitted `../../../env.sh` edits.
 
-Optional `.env.docker` values may supply runtime settings using the same safe,
-line-oriented loading behavior as `deploy.sh`. The script must not print or copy
+Optional `../../../.env.docker` values may supply runtime settings using the same safe,
+line-oriented loading behavior as `../../../deploy.sh`. The script must not print or copy
 secret values into logs, source control, or image layers.
 
 Configuration precedence is explicit:
 
-1. source `env.sh`, including the backend environment values it owns;
-2. load optional `.env.docker`, allowing it to override
+1. source `../../../env.sh`, including the backend environment values it owns;
+2. load optional `../../../.env.docker`, allowing it to override
    `NEXT_PUBLIC_ASSISTANT_ID`;
 3. capture `NEXT_PUBLIC_ASSISTANT_ID`, defaulting to `research`; and
-4. `build.sh` uses the backend URL loaded by `env.sh` for image build arguments; and
+4. `../../../build.sh` uses the backend URL loaded by `../../../env.sh` for image build arguments; and
 5. deployment rediscovers the backend Container App ingress URL and uses that
    canonical URL for runtime variables.
 
-The build step writes an atomic ignored manifest `.deployment-build.json` containing
+The build step writes an atomic ignored manifest `../../../.deployment-build.json` containing
 the marker, image, backend URL, and assistant ID used for the successful push.
 Deployment parses and validates this manifest, then fails before mutation unless its
 image is the pinned Docker Hub image and its backend/assistant values exactly match
 the current canonical deployment configuration. This prevents configuration drift
 between the two commands.
 
-`build.sh` accepts an exported `DOCKER_HUB_PAT` first. If it is absent, it may load
+`../../../build.sh` accepts an exported `DOCKER_HUB_PAT` first. If it is absent, it may load
 only that key from the approved sibling `../deep-research/.env`; it must not source
 the file or import unrelated deployment or shell-control variables. The username is
 always exactly `jerryshao2013`; any conflicting username fails. The PAT is never
-written to repository files or logs. If xtrace is active, `build.sh` disables it at
+written to repository files or logs. If xtrace is active, `../../../build.sh` disables it at
 script entry before any configuration or credential access, remembers the prior
 state, and restores it only after the PAT has been unset.
 
 ## Shared Azure Subscription Guard
 
-Add side-effect-free-on-source `scripts/azure-subscription.sh` with a callable
+Add side-effect-free-on-source `../../../scripts/azure-subscription.sh` with a callable
 subscription-selection function. The function:
 
 1. requires a non-empty `AZURE_SUBSCRIPTION_ID`;
@@ -92,17 +92,17 @@ subscription-selection function. The function:
 4. reads the active account ID back from Azure CLI; and
 5. fails clearly unless it exactly matches the requested ID.
 
-The following Azure-facing scripts call the guard after loading `env.sh` and before
+The following Azure-facing scripts call the guard after loading `../../../env.sh` and before
 their first Azure resource read or mutation:
 
-- `deploy.sh`
-- `secrets.sh`
+- `../../../deploy.sh`
+- `../../../secrets.sh`
 - `secrets.sh.example`
-- `deploy-azure-container-app.sh`
+- `../../../deploy-azure-container-app.sh`
 
 This removes dependence on whichever subscription happened to be active in the
-operator's Azure CLI session. `all.sh` needs no direct change because it delegates to
-`deploy.sh`.
+operator's Azure CLI session. `../../../all.sh` needs no direct change because it delegates to
+`../../../deploy.sh`.
 
 ## Existing Resource Contract
 
@@ -125,7 +125,7 @@ app:
   `DOCKER-HUB-PAT` using the system identity;
 - the existing `docker.io` registry entry uses username `jerryshao2013` and
   `passwordSecretRef` value `docker-hub-pat`; and
-- the local `.deployment-build.json` manifest exists and is valid; and
+- the local `../../../.deployment-build.json` manifest exists and is valid; and
 - current Azure principal can read the resource metadata and secret ID needed by
   preflight.
 
@@ -145,7 +145,7 @@ role-assignment enumeration because inherited scopes and vault access models mak
 check unreliable. It validates observable structure and operations instead:
 
 - `az keyvault secret show` proves the operator can resolve the secret ID;
-- Docker Hub login and image push in `build.sh` prove operator registry access;
+- Docker Hub login and image push in `../../../build.sh` prove operator registry access;
 - Container App registry metadata must name `docker.io`, the approved username, and
   the Key Vault-backed password secret; and
 - new revision provisioning/readiness proves the workload identity can resolve its
@@ -154,10 +154,10 @@ check unreliable. It validates observable structure and operations instead:
 If Docker Hub credentials or Key Vault secret access are ineffective, the new
 revision fails and single-revision mode keeps traffic on the previous ready revision.
 
-## Container Build and Push (`build.sh`)
+## Container Build and Push (`../../../build.sh`)
 
-Reuse `scripts/container-runtime.sh` for runtime selection, readiness, build, login,
-and push adapters. `build.sh` remains the only build entry point and owns the Apple
+Reuse `../../../scripts/container-runtime.sh` for runtime selection, readiness, build, login,
+and push adapters. `../../../build.sh` remains the only build entry point and owns the Apple
 builder-capacity policy.
 
 Build steps:
@@ -165,10 +165,10 @@ Build steps:
 1. disable xtrace before any configuration or credential access while remembering
    whether it must be restored;
 2. select and ready the container runtime;
-3. create a clean temporary context using `.dockerignore`;
+3. create a clean temporary context using `../../../.dockerignore`;
 4. generate a unique deployment marker in staged
    `public/deployment-version.txt` without modifying the source tree;
-5. copy `Dockerfile` explicitly into the staged context;
+5. copy `../../../Dockerfile` explicitly into the staged context;
 6. build for `linux/amd64` with `NEXT_PUBLIC_LANGGRAPH_URL` and
    `NEXT_PUBLIC_ASSISTANT_ID` build arguments;
 7. tag only `docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest`;
@@ -176,17 +176,17 @@ Build steps:
    then unset the PAT variable and restore the prior xtrace state;
 9. push through `container_cli_push`; and
 10. only after a successful push, atomically write ignored local manifest
-    `.deployment-build.json` containing schema version, exact marker, image, backend
+    `../../../.deployment-build.json` containing schema version, exact marker, image, backend
     URL, and assistant ID for the deploy step.
 
 The temporary context is removed by an exit trap on success or failure. Build, login,
 and push failures retain their nonzero outcome and do not replace a prior successful
-`.deployment-build.json` manifest. `build.sh` performs no Azure subscription,
+`../../../.deployment-build.json` manifest. `../../../build.sh` performs no Azure subscription,
 resource read, resource creation, or other Azure mutation.
 
 ## Validated Docker Hub Registry and Application Update
 
-Deployment performs no build or push. It requires `.deployment-build.json`, then
+Deployment performs no build or push. It requires `../../../.deployment-build.json`, then
 configures the `upload-api-key` unversioned Key Vault reference:
 
 ```text
@@ -244,7 +244,7 @@ Record the previous active revision before updating. After update:
    revision diagnostics; and
 5. poll the public
    `https://<container-app-fqdn>/deployment-version.txt` endpoint until it returns
-   HTTP 200 with the exact marker read from `.deployment-build.json`.
+   HTTP 200 with the exact marker read from `../../../.deployment-build.json`.
 
 Azure Container Apps single-revision mode keeps the old revision active until the new
 revision is ready. The script preserves that mode and never changes traffic weights.
@@ -269,7 +269,7 @@ revision.
   retaining traffic on the old ready revision.
 - Exact-version health failure is a deployment failure even if Azure reports the
   revision running.
-- No command logs tokens, Key Vault values, `.env` contents, or registry credentials.
+- No command logs tokens, Key Vault values, `../../../.env` contents, or registry credentials.
 
 ## Tests
 
@@ -288,14 +288,14 @@ Azure or registry operations.
 ### Docker Hub build
 
 - runtime selection preserves Apple Container, Podman, Docker priority and override;
-- only `DOCKER_HUB_PAT` can be imported from the shared backend `.env`, and the
+- only `DOCKER_HUB_PAT` can be imported from the shared backend `../../../.env`, and the
   username remains pinned;
 - clean context excludes local environment and generated files;
 - image is built for `linux/amd64` with exact argument boundaries;
 - only `docker.io/$DOCKER_HUB_USERNAME/deepagent-ui:latest` is pushed;
 - PAT is passed through stdin and absent from normal and `bash -x` stdout/stderr for
   both exported-PAT and sibling-file-PAT paths; and
-- `.deployment-build.json` is replaced only after successful push and records exact
+- `../../../.deployment-build.json` is replaced only after successful push and records exact
   marker/image/backend/assistant values.
 
 ### Container Apps deployment
@@ -310,7 +310,7 @@ Azure or registry operations.
   exposing the PAT and is validated without recurring mutation;
 - manifest image/backend/assistant values must exactly match deployment values, with
   separate drift tests for changes between build and deploy commands;
-- `.env.docker` assistant ID overrides earlier values for both build and runtime;
+- `../../../.env.docker` assistant ID overrides earlier values for both build and runtime;
 - update names the sole discovered container and uses a collision-resistant revision
   suffix, exact image, and required environment variables;
 - no build, push, registry mutation, create, identity assignment, role assignment,
@@ -330,13 +330,13 @@ Azure or registry operations.
 
 ## Documentation
 
-Add `documents/deployment/azure-container-apps.md` covering:
+Add `../../deployment/azure-container-apps.md` covering:
 
 - existing-resource boundary;
 - subscription selection;
 - required Azure roles and managed identities;
 - local runtime priority and override;
-- explicit `build.sh` then `deploy-azure-container-app.sh` flow;
+- explicit `../../../build.sh` then `../../../deploy-azure-container-app.sh` flow;
 - Key Vault reference behavior;
 - single-revision requirement;
 - verification and diagnostics;

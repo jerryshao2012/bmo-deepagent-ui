@@ -120,7 +120,7 @@ The current intro page combines marketing content, synchronization, image handli
 
 Proposed boundaries:
 
-- `src/app/intro/page.tsx` — server-rendered page composition and section order.
+- `../../../src/app/intro/page.tsx` — server-rendered page composition and section order.
 - `src/app/intro/components/IntroHeader.tsx` — responsive header, anchors, workspace CTA, and markdown-launch control.
 - `src/app/intro/components/IntroHero.tsx` — hero copy and transformation visual.
 - `src/app/intro/components/KnowledgeValueFlow.tsx` — four-stage responsive value flow.

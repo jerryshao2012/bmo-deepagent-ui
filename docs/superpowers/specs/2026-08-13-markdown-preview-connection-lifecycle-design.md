@@ -82,7 +82,9 @@ noisy and can keep an unattended client alive.
 
 When deadline expires, enter `idle`. The next meaningful interaction wakes client.
 Opening dialog or returning its tab to foreground also wakes client without
-waiting for another gesture.
+waiting for another gesture, but only when both eligibility conditions are true:
+dialog open and tab visible. Returning to a visible tab does not wake a closed
+dialog, and opening dialog in a hidden tab does not start transport.
 
 Entering `idle` closes WebSocket and EventSource intentionally, stops fallback
 polling, cross-deployment polling, inactivity timers, reconnect timers, and
@@ -129,9 +131,14 @@ heartbeat work.
 
 ## Failure recovery
 
-Unexpected close or error while client should be active logs close code and reason,
-then retries WebSocket after 1, 2, and 4 seconds. Retry remains suppressed when
-dialog closes or tab becomes hidden during backoff.
+Each WebSocket connection attempt has a 10-second deadline. If socket has not
+opened by deadline, detach its handlers, close it intentionally, and treat attempt
+as failed. This prevents browser from remaining in `CONNECTING` indefinitely.
+
+Unexpected close, error, or connection-attempt timeout while client should be
+active logs close code and reason when available, then retries WebSocket after 1,
+2, and 4 seconds. Retry remains suppressed when dialog closes or tab becomes
+hidden during backoff.
 
 After three failed attempts, start existing SSE/HTTP fallback and show blue
 `FALLBACK`. While fallback remains active and client remains eligible, attempt a
@@ -171,6 +178,8 @@ Lifecycle tests use fake timers and controlled transport doubles to prove:
   client and attempt WebSocket first;
 - intentional close never starts fallback;
 - unexpected close retries at 1, 2, and 4 seconds, then enters fallback;
+- a WebSocket still connecting after 10 seconds is closed and advances bounded
+  retry sequence;
 - active fallback attempts WebSocket upgrade after 60 seconds and returns green on
   success;
 - hiding or closing during retry cancels retry and upgrade timers;

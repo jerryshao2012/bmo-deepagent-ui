@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  MARKDOWN_AUTO_CLOSE_SECONDS,
+  MARKDOWN_COUNTDOWN_TICK_MS,
   MARKDOWN_INACTIVITY_MS,
   MarkdownConnectionLifecycle,
   type ConnectionScheduler,
@@ -17,17 +19,28 @@ class FakeScheduler implements ConnectionScheduler {
   private nextId = 1;
   private readonly timers = new Map<
     number,
-    { callback: () => void; deadline: number }
+    { callback: () => void; deadline: number; delayMs: number }
   >();
+
+  constructor(
+    private readonly retainedClearDelays: ReadonlySet<number> = new Set(),
+  ) {}
 
   setTimeout(callback: () => void, delayMs: number): number {
     const id = this.nextId++;
-    this.timers.set(id, { callback, deadline: this.now + delayMs });
+    this.timers.set(id, {
+      callback,
+      deadline: this.now + delayMs,
+      delayMs,
+    });
     return id;
   }
 
   clearTimeout(handle: unknown): void {
-    this.timers.delete(handle as number);
+    const id = handle as number;
+    const timer = this.timers.get(id);
+    if (timer && this.retainedClearDelays.has(timer.delayMs)) return;
+    this.timers.delete(id);
   }
 
   get pendingTimerCount(): number {
@@ -66,6 +79,9 @@ class EffectRecorder implements MarkdownConnectionEffects {
   stopFallbackCalls = 0;
   startCrossDeploySyncCalls = 0;
   stopAllTransportsCalls = 0;
+  readonly countdowns: Array<number | null> = [];
+  requestAutoCloseCalls = 0;
+  onRequestAutoClose: (() => void) | undefined;
   readonly statuses: MarkdownConnectionStatus[] = [];
 
   connectWebSocket(attemptId: number): void {
@@ -98,6 +114,15 @@ class EffectRecorder implements MarkdownConnectionEffects {
     this.statuses.push(status);
   }
 
+  setAutoCloseCountdown(seconds: number | null): void {
+    this.countdowns.push(seconds);
+  }
+
+  requestAutoClose(): void {
+    this.requestAutoCloseCalls += 1;
+    this.onRequestAutoClose?.();
+  }
+
   get status(): MarkdownConnectionStatus | undefined {
     return this.statuses.at(-1);
   }
@@ -111,8 +136,7 @@ class EffectRecorder implements MarkdownConnectionEffects {
   }
 }
 
-function createLifecycle() {
-  const scheduler = new FakeScheduler();
+function createLifecycle(scheduler = new FakeScheduler()) {
   const effects = new EffectRecorder();
   const lifecycle = new MarkdownConnectionLifecycle(effects, scheduler);
 
@@ -151,6 +175,8 @@ function reachFallback(
 }
 
 test("exports exact markdown connection timing values", () => {
+  assert.equal(MARKDOWN_AUTO_CLOSE_SECONDS, 5);
+  assert.equal(MARKDOWN_COUNTDOWN_TICK_MS, 1_000);
   assert.equal(MARKDOWN_INACTIVITY_MS, 300_000);
   assert.equal(WEBSOCKET_ATTEMPT_TIMEOUT_MS, 10_000);
   assert.deepEqual(WEBSOCKET_RETRY_DELAYS_MS, [1_000, 2_000, 4_000]);
@@ -193,7 +219,7 @@ test("open visible dialog wakes client", () => {
   assert.equal(effects.status, "connecting");
 });
 
-test("connected visible dialog hibernates exactly after five minutes", () => {
+test("five minutes hibernates transport before exact countdown and one close", () => {
   const { effects, lifecycle, scheduler } = createLifecycle();
   wake(lifecycle);
   openCurrent(lifecycle, effects);
@@ -205,27 +231,55 @@ test("connected visible dialog hibernates exactly after five minutes", () => {
   scheduler.advanceBy(1);
   assert.equal(effects.status, "idle");
   assert.equal(effects.stopAllTransportsCalls, 2);
+  assert.deepEqual(effects.countdowns, [5]);
+  assert.equal(effects.requestAutoCloseCalls, 0);
+  assert.equal(scheduler.pendingTimerCount, 1);
+
+  for (const remaining of [4, 3, 2, 1]) {
+    scheduler.advanceBy(MARKDOWN_COUNTDOWN_TICK_MS);
+    assert.equal(effects.countdowns.at(-1), remaining);
+    assert.equal(effects.stopAllTransportsCalls, 2);
+    assert.equal(effects.requestAutoCloseCalls, 0);
+    assert.equal(scheduler.pendingTimerCount, 1);
+  }
+
+  scheduler.advanceBy(MARKDOWN_COUNTDOWN_TICK_MS);
+  assert.equal(effects.countdowns.at(-1), null);
+  assert.equal(effects.stopAllTransportsCalls, 2);
+  assert.equal(effects.requestAutoCloseCalls, 1);
   assert.equal(scheduler.pendingTimerCount, 0);
 });
 
-test("activity resets inactivity timer and wakes eligible idle client", () => {
+test("activity at countdown three clears warning, wakes once, and resets five minutes", () => {
   const { effects, lifecycle, scheduler } = createLifecycle();
   wake(lifecycle);
   openCurrent(lifecycle, effects);
 
-  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS - 1);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+  scheduler.advanceBy(2 * MARKDOWN_COUNTDOWN_TICK_MS);
+  assert.deepEqual(effects.countdowns, [5, 4, 3]);
+
   lifecycle.recordActivity();
+  assert.deepEqual(effects.countdowns, [5, 4, 3, null]);
+  assert.equal(effects.connectWebSocketCalls, 2);
+  assert.equal(effects.stopAllTransportsCalls, 2);
+  assert.equal(effects.status, "connecting");
+  assert.equal(scheduler.pendingTimerCount, 2);
+  openCurrent(lifecycle, effects);
+
   scheduler.advanceBy(MARKDOWN_INACTIVITY_MS - 1);
   assert.equal(effects.status, "connected");
+  assert.deepEqual(effects.countdowns, [5, 4, 3, null]);
+  assert.equal(effects.requestAutoCloseCalls, 0);
 
   scheduler.advanceBy(1);
   assert.equal(effects.status, "idle");
-  lifecycle.recordActivity();
-  assert.equal(effects.connectWebSocketCalls, 2);
-  assert.equal(effects.status, "connecting");
+  assert.deepEqual(effects.countdowns, [5, 4, 3, null, 5]);
+  assert.equal(effects.stopAllTransportsCalls, 3);
+  assert.equal(scheduler.pendingTimerCount, 1);
 });
 
-test("same-value eligibility setters do not wake an inactivity-idle client", () => {
+test("same-value eligible setters leave an active countdown unchanged", () => {
   const { effects, lifecycle, scheduler } = createLifecycle();
   wake(lifecycle);
   openCurrent(lifecycle, effects);
@@ -236,6 +290,161 @@ test("same-value eligibility setters do not wake an inactivity-idle client", () 
 
   assert.equal(effects.status, "idle");
   assert.equal(effects.connectWebSocketCalls, 1);
+  assert.deepEqual(effects.countdowns, [5]);
+  assert.equal(scheduler.pendingTimerCount, 1);
+
+  scheduler.advanceBy(5 * MARKDOWN_COUNTDOWN_TICK_MS);
+  assert.deepEqual(effects.countdowns, [5, 4, 3, 2, 1, null]);
+  assert.equal(effects.requestAutoCloseCalls, 1);
+  assert.equal(effects.connectWebSocketCalls, 1);
+  assert.equal(scheduler.pendingTimerCount, 0);
+});
+
+test("hidden time after four minutes fifty-nine seconds starts a fresh idle window", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS - MARKDOWN_COUNTDOWN_TICK_MS);
+  lifecycle.setVisibility(false);
+  assert.equal(effects.stopAllTransportsCalls, 2);
+  assert.equal(scheduler.pendingTimerCount, 0);
+
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS * 2);
+  assert.deepEqual(effects.countdowns, []);
+  assert.equal(effects.requestAutoCloseCalls, 0);
+
+  lifecycle.setVisibility(true);
+  assert.equal(effects.connectWebSocketCalls, 2);
+  openCurrent(lifecycle, effects);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS - 1);
+  assert.deepEqual(effects.countdowns, []);
+  assert.equal(effects.status, "connected");
+
+  scheduler.advanceBy(1);
+  assert.deepEqual(effects.countdowns, [5]);
+  assert.equal(effects.stopAllTransportsCalls, 3);
+  assert.equal(scheduler.pendingTimerCount, 1);
+});
+
+test("hiding during warning clears countdown without stale close", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS + MARKDOWN_COUNTDOWN_TICK_MS);
+  assert.deepEqual(effects.countdowns, [5, 4]);
+
+  lifecycle.setVisibility(false);
+  assert.deepEqual(effects.countdowns, [5, 4, null]);
+  assert.equal(effects.stopAllTransportsCalls, 2);
+  assert.equal(scheduler.pendingTimerCount, 0);
+
+  scheduler.advanceBy(10 * MARKDOWN_COUNTDOWN_TICK_MS);
+  assert.equal(effects.requestAutoCloseCalls, 0);
+  assert.equal(effects.connectWebSocketCalls, 1);
+});
+
+test("epoch rejects retained countdown callback after visibility loss", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle(
+    new FakeScheduler(new Set([MARKDOWN_COUNTDOWN_TICK_MS])),
+  );
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+
+  lifecycle.setVisibility(false);
+  scheduler.advanceBy(10 * MARKDOWN_COUNTDOWN_TICK_MS);
+
+  assert.deepEqual(effects.countdowns, [5, null]);
+  assert.equal(effects.requestAutoCloseCalls, 0);
+  assert.equal(effects.connectWebSocketCalls, 1);
+});
+
+test("closing during warning clears countdown and never reconnects", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+
+  lifecycle.setDialogOpen(false);
+  lifecycle.recordActivity();
+  assert.deepEqual(effects.countdowns, [5, null]);
+  assert.equal(effects.stopAllTransportsCalls, 2);
+  assert.equal(effects.connectWebSocketCalls, 1);
+  assert.equal(scheduler.pendingTimerCount, 0);
+
+  scheduler.advanceBy(10 * MARKDOWN_COUNTDOWN_TICK_MS);
+  assert.equal(effects.requestAutoCloseCalls, 0);
+  assert.equal(effects.connectWebSocketCalls, 1);
+});
+
+test("activity before zero cancels close while zero before activity stays latched", () => {
+  const beforeZero = createLifecycle();
+  wake(beforeZero.lifecycle);
+  openCurrent(beforeZero.lifecycle, beforeZero.effects);
+  beforeZero.scheduler.advanceBy(
+    MARKDOWN_INACTIVITY_MS + 4 * MARKDOWN_COUNTDOWN_TICK_MS,
+  );
+  assert.equal(beforeZero.effects.countdowns.at(-1), 1);
+
+  beforeZero.lifecycle.recordActivity();
+  beforeZero.scheduler.advanceBy(MARKDOWN_COUNTDOWN_TICK_MS);
+  assert.equal(beforeZero.effects.requestAutoCloseCalls, 0);
+  assert.equal(beforeZero.effects.connectWebSocketCalls, 2);
+  assert.equal(beforeZero.effects.countdowns.at(-1), null);
+
+  const afterZero = createLifecycle();
+  wake(afterZero.lifecycle);
+  openCurrent(afterZero.lifecycle, afterZero.effects);
+  afterZero.scheduler.advanceBy(
+    MARKDOWN_INACTIVITY_MS + 5 * MARKDOWN_COUNTDOWN_TICK_MS,
+  );
+  assert.equal(afterZero.effects.requestAutoCloseCalls, 1);
+
+  afterZero.lifecycle.recordActivity();
+  assert.equal(afterZero.effects.connectWebSocketCalls, 1);
+  assert.equal(afterZero.effects.stopAllTransportsCalls, 2);
+  assert.equal(afterZero.scheduler.pendingTimerCount, 0);
+});
+
+test("synchronous auto-close can reopen same lifecycle for a second close cycle", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  effects.onRequestAutoClose = () => lifecycle.setDialogOpen(false);
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+
+  scheduler.advanceBy(
+    MARKDOWN_INACTIVITY_MS + 5 * MARKDOWN_COUNTDOWN_TICK_MS,
+  );
+  assert.equal(effects.requestAutoCloseCalls, 1);
+  assert.equal(lifecycle.isEligible(), false);
+  assert.equal(scheduler.pendingTimerCount, 0);
+
+  lifecycle.setDialogOpen(true);
+  assert.equal(effects.connectWebSocketCalls, 2);
+  openCurrent(lifecycle, effects);
+  scheduler.advanceBy(
+    MARKDOWN_INACTIVITY_MS + 5 * MARKDOWN_COUNTDOWN_TICK_MS,
+  );
+
+  assert.equal(effects.requestAutoCloseCalls, 2);
+  assert.equal(effects.connectWebSocketCalls, 2);
+  assert.equal(effects.stopAllTransportsCalls, 3);
+  assert.equal(lifecycle.isEligible(), false);
+  assert.deepEqual(effects.countdowns, [
+    5,
+    4,
+    3,
+    2,
+    1,
+    null,
+    5,
+    4,
+    3,
+    2,
+    1,
+    null,
+  ]);
   assert.equal(scheduler.pendingTimerCount, 0);
 });
 
@@ -473,6 +682,49 @@ test("lifecycle instances hibernate and wake independently", () => {
   first.lifecycle.recordActivity();
   assert.equal(first.effects.status, "connecting");
   assert.equal(second.effects.connectWebSocketCalls, 1);
+});
+
+test("disposed controller cannot warn or close while replacement reaches countdown", () => {
+  const scheduler = new FakeScheduler(new Set([MARKDOWN_INACTIVITY_MS]));
+  const oldEffects = new EffectRecorder();
+  const oldLifecycle = new MarkdownConnectionLifecycle(oldEffects, scheduler);
+  wake(oldLifecycle);
+  openCurrent(oldLifecycle, oldEffects);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS - 1);
+
+  oldLifecycle.dispose();
+  const replacementEffects = new EffectRecorder();
+  const replacement = new MarkdownConnectionLifecycle(
+    replacementEffects,
+    scheduler,
+  );
+  wake(replacement);
+  openCurrent(replacement, replacementEffects);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+
+  assert.deepEqual(oldEffects.countdowns, []);
+  assert.equal(oldEffects.requestAutoCloseCalls, 0);
+  assert.deepEqual(replacementEffects.countdowns, [5]);
+  assert.equal(replacementEffects.requestAutoCloseCalls, 0);
+});
+
+test("dispose during warning clears countdown and prevents later close", () => {
+  const { effects, lifecycle, scheduler } = createLifecycle();
+  wake(lifecycle);
+  openCurrent(lifecycle, effects);
+  scheduler.advanceBy(MARKDOWN_INACTIVITY_MS);
+
+  lifecycle.dispose();
+  assert.deepEqual(effects.countdowns, [5, null]);
+  assert.equal(effects.stopAllTransportsCalls, 3);
+  assert.equal(scheduler.pendingTimerCount, 0);
+
+  scheduler.advanceBy(10 * MARKDOWN_COUNTDOWN_TICK_MS);
+  lifecycle.recordActivity();
+  lifecycle.setDialogOpen(false);
+  lifecycle.setVisibility(false);
+  assert.equal(effects.requestAutoCloseCalls, 0);
+  assert.equal(effects.connectWebSocketCalls, 1);
 });
 
 test("dispose stops transports, cancels timers, and publishes no later status", () => {

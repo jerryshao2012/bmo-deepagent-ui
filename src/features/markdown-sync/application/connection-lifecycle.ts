@@ -7,6 +7,8 @@ export type MarkdownConnectionStatus =
   | "disconnected";
 
 export const MARKDOWN_INACTIVITY_MS = 300_000;
+export const MARKDOWN_AUTO_CLOSE_SECONDS = 5;
+export const MARKDOWN_COUNTDOWN_TICK_MS = 1_000;
 export const WEBSOCKET_ATTEMPT_TIMEOUT_MS = 10_000;
 export const WEBSOCKET_RETRY_DELAYS_MS = [1_000, 2_000, 4_000] as const;
 export const WEBSOCKET_UPGRADE_INTERVAL_MS = 60_000;
@@ -25,6 +27,8 @@ export interface MarkdownConnectionEffects {
   startCrossDeploySync(): void;
   stopAllTransports(): void;
   setStatus(status: MarkdownConnectionStatus): void;
+  setAutoCloseCountdown(seconds: number | null): void;
+  requestAutoClose(): void;
 }
 
 const platformScheduler: ConnectionScheduler = {
@@ -49,8 +53,12 @@ export class MarkdownConnectionLifecycle {
   private retryIndex = 0;
   private nextAttemptId = 1;
   private activeAttemptId: number | undefined;
+  private idleCycleEpoch = 0;
+  private countdownSeconds: number | null = null;
+  private closeRequested = false;
 
   private inactivityTimer: unknown;
+  private countdownTimer: unknown;
   private attemptTimer: unknown;
   private retryTimer: unknown;
   private upgradeTimer: unknown;
@@ -75,7 +83,7 @@ export class MarkdownConnectionLifecycle {
   }
 
   recordActivity(): void {
-    if (this.disposed || !this.isEligible()) return;
+    if (this.disposed || !this.isEligible() || this.closeRequested) return;
 
     if (this.sleeping) {
       this.wake();
@@ -184,7 +192,7 @@ export class MarkdownConnectionLifecycle {
   }
 
   reconnectNow(): void {
-    if (this.disposed || !this.isEligible()) return;
+    if (this.disposed || !this.isEligible() || this.closeRequested) return;
     if (this.webSocketOpen) return;
 
     if (this.sleeping) {
@@ -219,8 +227,9 @@ export class MarkdownConnectionLifecycle {
   dispose(): void {
     if (this.disposed) return;
 
+    this.invalidateIdleCycle();
     this.disposed = true;
-    this.clearEveryTimer();
+    this.clearTransportTimers();
     this.activeAttemptId = undefined;
     this.webSocketOpen = false;
     this.effects.stopAllTransports();
@@ -228,7 +237,10 @@ export class MarkdownConnectionLifecycle {
 
   private applyEligibility(changed: boolean): void {
     if (!this.isEligible()) {
-      if (!this.sleeping || !this.ineligibleReconciled) this.hibernate();
+      if (changed) this.invalidateIdleCycle();
+      if (!this.sleeping || !this.ineligibleReconciled) {
+        this.hibernateTransports();
+      }
       return;
     }
 
@@ -236,7 +248,8 @@ export class MarkdownConnectionLifecycle {
   }
 
   private wake(): void {
-    this.clearEveryTimer();
+    this.invalidateIdleCycle();
+    this.clearTransportTimers();
     this.retryIndex = 0;
     this.fallbackActive = false;
     this.upgradeAttempt = false;
@@ -245,6 +258,7 @@ export class MarkdownConnectionLifecycle {
     this.crossDeploySyncStarted = false;
     this.sleeping = false;
     this.ineligibleReconciled = false;
+    this.closeRequested = false;
     this.effects.stopFallback();
     this.armInactivityTimer();
     this.effects.setStatus("connecting");
@@ -254,7 +268,14 @@ export class MarkdownConnectionLifecycle {
   private hibernate(): void {
     if (this.disposed) return;
 
-    this.clearEveryTimer();
+    this.invalidateIdleCycle();
+    this.hibernateTransports();
+  }
+
+  private hibernateTransports(): void {
+    if (this.disposed) return;
+
+    this.clearTransportTimers();
     this.retryIndex = 0;
     this.fallbackActive = false;
     this.upgradeAttempt = false;
@@ -292,12 +313,64 @@ export class MarkdownConnectionLifecycle {
   }
 
   private armInactivityTimer(): void {
-    this.clearInactivityTimer();
+    this.invalidateIdleCycle();
+    const epoch = this.idleCycleEpoch;
     this.inactivityTimer = this.scheduler.setTimeout(() => {
       this.inactivityTimer = undefined;
-      if (this.disposed || !this.isEligible()) return;
-      this.hibernate();
+      if (!this.isCurrentIdleCycle(epoch)) return;
+
+      this.hibernateTransports();
+      this.beginCountdown();
     }, MARKDOWN_INACTIVITY_MS);
+  }
+
+  private beginCountdown(): void {
+    this.idleCycleEpoch += 1;
+    const epoch = this.idleCycleEpoch;
+    this.publishCountdown(MARKDOWN_AUTO_CLOSE_SECONDS);
+    this.armCountdownTick(epoch, MARKDOWN_AUTO_CLOSE_SECONDS - 1);
+  }
+
+  private armCountdownTick(epoch: number, remainingSeconds: number): void {
+    this.clearCountdownTimer();
+    this.countdownTimer = this.scheduler.setTimeout(() => {
+      this.countdownTimer = undefined;
+      if (!this.isCurrentIdleCycle(epoch)) return;
+
+      if (remainingSeconds > 0) {
+        this.publishCountdown(remainingSeconds);
+        this.armCountdownTick(epoch, remainingSeconds - 1);
+        return;
+      }
+
+      this.closeRequested = true;
+      this.idleCycleEpoch += 1;
+      this.publishCountdown(null);
+      this.effects.requestAutoClose();
+    }, MARKDOWN_COUNTDOWN_TICK_MS);
+  }
+
+  private isCurrentIdleCycle(epoch: number): boolean {
+    return (
+      epoch === this.idleCycleEpoch &&
+      !this.disposed &&
+      this.dialogOpen &&
+      this.visible &&
+      !this.closeRequested
+    );
+  }
+
+  private invalidateIdleCycle(): void {
+    this.idleCycleEpoch += 1;
+    this.clearInactivityTimer();
+    this.clearCountdownTimer();
+    this.publishCountdown(null);
+  }
+
+  private publishCountdown(seconds: number | null): void {
+    if (this.countdownSeconds === seconds) return;
+    this.countdownSeconds = seconds;
+    this.effects.setAutoCloseCountdown(seconds);
   }
 
   private armUpgradeTimer(): void {
@@ -316,8 +389,7 @@ export class MarkdownConnectionLifecycle {
     }, WEBSOCKET_UPGRADE_INTERVAL_MS);
   }
 
-  private clearEveryTimer(): void {
-    this.clearInactivityTimer();
+  private clearTransportTimers(): void {
     this.clearAttemptTimer();
     this.clearRetryTimer();
     this.clearUpgradeTimer();
@@ -327,6 +399,12 @@ export class MarkdownConnectionLifecycle {
     if (this.inactivityTimer === undefined) return;
     this.scheduler.clearTimeout(this.inactivityTimer);
     this.inactivityTimer = undefined;
+  }
+
+  private clearCountdownTimer(): void {
+    if (this.countdownTimer === undefined) return;
+    this.scheduler.clearTimeout(this.countdownTimer);
+    this.countdownTimer = undefined;
   }
 
   private clearAttemptTimer(): void {

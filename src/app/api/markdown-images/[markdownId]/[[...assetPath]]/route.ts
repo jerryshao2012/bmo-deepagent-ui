@@ -95,6 +95,7 @@ async function proxyMarkdownImageRequest(
     "content-disposition",
     "content-length",
     "content-type",
+    "retry-after",
     "x-content-type-options",
   ]) {
     const value = backendResponse.headers.get(name);

@@ -242,6 +242,56 @@ test("asset proxy preserves backend bytes, status, and security headers for view
   }
 });
 
+test("asset proxy preserves archive overload retry guidance for upload and download", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalUploadKey = process.env.UPLOAD_API_KEY;
+  const assetId = "1b14e924-5f0e-4fdb-b85d-4dddf8bc4271";
+  process.env.UPLOAD_API_KEY = "server-only-key";
+  globalThis.fetch = async () =>
+    Response.json(
+      { detail: "Archive validation is busy" },
+      { status: 503, headers: { "Retry-After": "2" } }
+    );
+
+  try {
+    const formData = new FormData();
+    formData.append(
+      "files",
+      new File(["archive"], "bundle.tar", { type: "application/x-tar" })
+    );
+    const uploadResponse = await proxyImageUpload(
+      new NextRequest("http://localhost/api/markdown-images/123456", {
+        method: "POST",
+        body: formData,
+      }),
+      { params: Promise.resolve({ markdownId: "123456" }) }
+    );
+    const downloadResponse = await proxyImageGet(
+      new NextRequest(
+        `http://localhost/api/markdown-images/123456/${assetId}/download`
+      ),
+      {
+        params: Promise.resolve({
+          markdownId: "123456",
+          assetPath: [assetId, "download"],
+        }),
+      }
+    );
+
+    for (const response of [uploadResponse, downloadResponse]) {
+      assert.equal(response.status, 503);
+      assert.equal(response.headers.get("retry-after"), "2");
+      assert.deepEqual(await response.json(), {
+        detail: "Archive validation is busy",
+      });
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalUploadKey === undefined) delete process.env.UPLOAD_API_KEY;
+    else process.env.UPLOAD_API_KEY = originalUploadKey;
+  }
+});
+
 test("parses only canonical synced-image logical paths", () => {
   const id = "1b14e924-5f0e-4fdb-b85d-4dddf8bc4271";
 

@@ -17,10 +17,11 @@ export interface ConnectionScheduler {
 }
 
 export interface MarkdownConnectionEffects {
-  connectWebSocket(): void;
-  abortWebSocketAttempt(): void;
+  connectWebSocket(attemptId: number): void;
+  abortWebSocketAttempt(attemptId: number): void;
   startFallback(): void;
   stopFallback(): void;
+  /** Must be idempotent and restart-safe; stopAllTransports is its stop boundary. */
   startCrossDeploySync(): void;
   stopAllTransports(): void;
   setStatus(status: MarkdownConnectionStatus): void;
@@ -46,6 +47,8 @@ export class MarkdownConnectionLifecycle {
   private webSocketOpen = false;
   private crossDeploySyncStarted = false;
   private retryIndex = 0;
+  private nextAttemptId = 1;
+  private activeAttemptId: number | undefined;
 
   private inactivityTimer: unknown;
   private attemptTimer: unknown;
@@ -59,14 +62,16 @@ export class MarkdownConnectionLifecycle {
 
   setDialogOpen(open: boolean): void {
     if (this.disposed) return;
+    const changed = this.dialogOpen !== open;
     this.dialogOpen = open;
-    this.applyEligibility();
+    this.applyEligibility(changed);
   }
 
   setVisibility(visible: boolean): void {
     if (this.disposed) return;
+    const changed = this.visible !== visible;
     this.visible = visible;
-    this.applyEligibility();
+    this.applyEligibility(changed);
   }
 
   recordActivity(): void {
@@ -80,8 +85,14 @@ export class MarkdownConnectionLifecycle {
     this.armInactivityTimer();
   }
 
-  socketOpened(): void {
-    if (this.disposed) return;
+  socketOpened(attemptId: number): void {
+    if (
+      this.disposed ||
+      attemptId !== this.activeAttemptId ||
+      this.webSocketOpen
+    ) {
+      return;
+    }
     if (!this.isEligible()) {
       this.hibernate();
       return;
@@ -128,10 +139,11 @@ export class MarkdownConnectionLifecycle {
     this.effects.startCrossDeploySync();
   }
 
-  connectionFailed(): void {
-    if (this.disposed) return;
+  connectionFailed(attemptId: number): void {
+    if (this.disposed || attemptId !== this.activeAttemptId) return;
 
     this.clearAttemptTimer();
+    this.activeAttemptId = undefined;
     this.webSocketOpen = false;
 
     if (!this.isEligible()) {
@@ -173,15 +185,18 @@ export class MarkdownConnectionLifecycle {
 
   reconnectNow(): void {
     if (this.disposed || !this.isEligible()) return;
+    if (this.webSocketOpen) return;
 
     if (this.sleeping) {
       this.wake();
       return;
     }
 
-    if (this.attemptTimer !== undefined) {
+    if (this.activeAttemptId !== undefined) {
+      const attemptId = this.activeAttemptId;
       this.clearAttemptTimer();
-      this.effects.abortWebSocketAttempt();
+      this.activeAttemptId = undefined;
+      this.effects.abortWebSocketAttempt(attemptId);
     }
     this.clearRetryTimer();
     this.clearUpgradeTimer();
@@ -206,16 +221,18 @@ export class MarkdownConnectionLifecycle {
 
     this.disposed = true;
     this.clearEveryTimer();
+    this.activeAttemptId = undefined;
+    this.webSocketOpen = false;
     this.effects.stopAllTransports();
   }
 
-  private applyEligibility(): void {
+  private applyEligibility(changed: boolean): void {
     if (!this.isEligible()) {
       if (!this.sleeping || !this.ineligibleReconciled) this.hibernate();
       return;
     }
 
-    if (this.sleeping) this.wake();
+    if (this.sleeping && changed) this.wake();
   }
 
   private wake(): void {
@@ -224,6 +241,7 @@ export class MarkdownConnectionLifecycle {
     this.fallbackActive = false;
     this.upgradeAttempt = false;
     this.webSocketOpen = false;
+    this.activeAttemptId = undefined;
     this.crossDeploySyncStarted = false;
     this.sleeping = false;
     this.ineligibleReconciled = false;
@@ -241,6 +259,7 @@ export class MarkdownConnectionLifecycle {
     this.fallbackActive = false;
     this.upgradeAttempt = false;
     this.webSocketOpen = false;
+    this.activeAttemptId = undefined;
     this.crossDeploySyncStarted = false;
     this.sleeping = true;
     this.ineligibleReconciled = true;
@@ -249,15 +268,26 @@ export class MarkdownConnectionLifecycle {
   }
 
   private beginWebSocketAttempt(): void {
-    if (this.disposed || !this.isEligible()) return;
+    if (
+      this.disposed ||
+      !this.isEligible() ||
+      this.activeAttemptId !== undefined
+    ) {
+      return;
+    }
 
     this.clearAttemptTimer();
-    this.effects.connectWebSocket();
+    const attemptId = this.nextAttemptId;
+    this.nextAttemptId += 1;
+    this.activeAttemptId = attemptId;
+    this.effects.connectWebSocket(attemptId);
+    if (this.activeAttemptId !== attemptId || this.webSocketOpen) return;
+
     this.attemptTimer = this.scheduler.setTimeout(() => {
+      if (this.disposed || this.activeAttemptId !== attemptId) return;
       this.attemptTimer = undefined;
-      if (this.disposed) return;
-      this.effects.abortWebSocketAttempt();
-      this.connectionFailed();
+      this.effects.abortWebSocketAttempt(attemptId);
+      this.connectionFailed(attemptId);
     }, WEBSOCKET_ATTEMPT_TIMEOUT_MS);
   }
 

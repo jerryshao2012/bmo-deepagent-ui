@@ -1,5 +1,5 @@
 export const EXTENDED_MARKDOWN_ATTACHMENT_UPLOADS_ENABLED =
-  process.env.NEXT_PUBLIC_EXTENDED_MARKDOWN_ATTACHMENT_UPLOADS !== "false";
+  process.env.NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED !== "false";
 
 export type MarkdownArchiveFamily = "zip" | "7z" | "tar" | "tar-gzip";
 
@@ -12,8 +12,124 @@ export interface MarkdownArchiveFormat {
   readonly extended: boolean;
 }
 
+class ImmutableReadonlySet<T> implements ReadonlySet<T> {
+  readonly #values: Set<T>;
+
+  constructor(values: readonly T[]) {
+    this.#values = new Set(values);
+    Object.freeze(this);
+  }
+
+  get size(): number {
+    return this.#values.size;
+  }
+
+  has(value: T): boolean {
+    return this.#values.has(value);
+  }
+
+  entries(): SetIterator<[T, T]> {
+    return this.#values.entries();
+  }
+
+  keys(): SetIterator<T> {
+    return this.#values.keys();
+  }
+
+  values(): SetIterator<T> {
+    return this.#values.values();
+  }
+
+  forEach(
+    callback: (value: T, value2: T, set: ReadonlySet<T>) => void,
+    thisArg?: unknown
+  ): void {
+    this.#values.forEach((value) => callback.call(thisArg, value, value, this));
+  }
+
+  [Symbol.iterator](): SetIterator<T> {
+    return this.values();
+  }
+
+  get [Symbol.toStringTag](): string {
+    return "Set";
+  }
+
+  union<U>(other: ReadonlySetLike<U>): Set<T | U> {
+    const result = new Set<T | U>(this.#values);
+    const iterator = other.keys();
+    for (let next = iterator.next(); !next.done; next = iterator.next()) {
+      result.add(next.value);
+    }
+    return result;
+  }
+
+  intersection<U>(other: ReadonlySetLike<U>): Set<T & U> {
+    const result = new Set<T & U>();
+    for (const value of this.#values) {
+      if (other.has(value as unknown as U)) result.add(value as T & U);
+    }
+    return result;
+  }
+
+  difference<U>(other: ReadonlySetLike<U>): Set<T> {
+    const result = new Set<T>();
+    for (const value of this.#values) {
+      if (!other.has(value as unknown as U)) result.add(value);
+    }
+    return result;
+  }
+
+  symmetricDifference<U>(other: ReadonlySetLike<U>): Set<T | U> {
+    const result = new Set<T | U>(this.#values);
+    const iterator = other.keys();
+    for (let next = iterator.next(); !next.done; next = iterator.next()) {
+      const value = next.value;
+      if (this.#values.has(value as unknown as T)) result.delete(value);
+      else result.add(value);
+    }
+    return result;
+  }
+
+  isSubsetOf(other: ReadonlySetLike<unknown>): boolean {
+    if (this.size > other.size) return false;
+    for (const value of this.#values) {
+      if (!other.has(value)) return false;
+    }
+    return true;
+  }
+
+  isSupersetOf(other: ReadonlySetLike<unknown>): boolean {
+    if (this.size < other.size) return false;
+    const iterator = other.keys();
+    for (let next = iterator.next(); !next.done; next = iterator.next()) {
+      if (!this.has(next.value as T)) return false;
+    }
+    return true;
+  }
+
+  isDisjointFrom(other: ReadonlySetLike<unknown>): boolean {
+    for (const value of this.#values) {
+      if (other.has(value)) return false;
+    }
+    return true;
+  }
+
+  add(_value: T): never {
+    throw new TypeError("Cannot mutate immutable Set");
+  }
+
+  delete(_value: T): never {
+    throw new TypeError("Cannot mutate immutable Set");
+  }
+
+  clear(): never {
+    throw new TypeError("Cannot mutate immutable Set");
+  }
+}
+
 function contentTypes(values: readonly string[]): ReadonlySet<string> {
-  return new Set(values);
+  return new ImmutableReadonlySet(values);
 }
 
 export const MARKDOWN_ARCHIVE_FORMATS: readonly MarkdownArchiveFormat[] =
@@ -92,12 +208,13 @@ export const MARKDOWN_ARCHIVE_FORMATS: readonly MarkdownArchiveFormat[] =
     }),
   ] satisfies MarkdownArchiveFormat[]);
 
-export const MARKDOWN_ARCHIVE_CONTENT_TYPES: ReadonlySet<string> = new Set([
-  "application/zip",
-  "application/x-7z-compressed",
-  "application/x-tar",
-  "application/gzip",
-]);
+export const MARKDOWN_ARCHIVE_CONTENT_TYPES: ReadonlySet<string> =
+  new ImmutableReadonlySet([
+    "application/zip",
+    "application/x-7z-compressed",
+    "application/x-tar",
+    "application/gzip",
+  ]);
 
 export type MarkdownOfficeFamily =
   | "word"

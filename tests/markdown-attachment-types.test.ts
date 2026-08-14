@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   EXTENDED_MARKDOWN_ATTACHMENT_UPLOADS_ENABLED,
   MARKDOWN_ARCHIVE_CONTENT_TYPES,
+  MARKDOWN_ARCHIVE_FORMATS,
+  MARKDOWN_OFFICE_FAMILIES,
   isMarkdownArchiveContentType,
   isMarkdownAttachmentAsset,
   isSupportedMarkdownArchiveFile,
@@ -13,6 +15,15 @@ import {
   markdownAttachmentLabel,
   officeFamilyForFilename,
 } from "../src/lib/markdown-attachment-types";
+
+async function importFreshAttachmentTypes(cacheKey: string) {
+  return import(`../src/lib/markdown-attachment-types?${cacheKey}`);
+}
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
 
 const archiveCases = [
   {
@@ -271,6 +282,133 @@ test("feature gate keeps ZIP uploads and disables extended archive uploads", () 
       false
     );
   }
+});
+
+test("documented env gate disables extended attachments at module load", async () => {
+  const gateName = "NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED";
+  const oldGateName = "NEXT_PUBLIC_EXTENDED_MARKDOWN_ATTACHMENT_UPLOADS";
+  const originalGate = process.env[gateName];
+  const originalOldGate = process.env[oldGateName];
+  process.env[gateName] = "false";
+  process.env[oldGateName] = "true";
+
+  try {
+    const gated = await importFreshAttachmentTypes("documented-gate-false");
+    assert.equal(gated.EXTENDED_MARKDOWN_ATTACHMENT_UPLOADS_ENABLED, false);
+    assert.equal(
+      gated.isSupportedMarkdownArchiveFile({
+        name: "bundle.zip",
+        type: "application/zip",
+      }),
+      true
+    );
+    assert.equal(
+      gated.isSupportedMarkdownArchiveFile({
+        name: "bundle.7z",
+        type: "application/7z",
+      }),
+      false
+    );
+    assert.equal(
+      gated.isSupportedMarkdownArchiveFile({
+        name: "bundle.tar",
+        type: "application/x-tar",
+      }),
+      false
+    );
+    assert.equal(
+      gated.isSupportedMarkdownOfficeFile({
+        name: "report.docx",
+        type: "application/octet-stream",
+      }),
+      false
+    );
+  } finally {
+    restoreEnv(gateName, originalGate);
+    restoreEnv(oldGateName, originalOldGate);
+  }
+});
+
+test("obsolete env name has no effect on the module-load gate", async () => {
+  const gateName = "NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED";
+  const oldGateName = "NEXT_PUBLIC_EXTENDED_MARKDOWN_ATTACHMENT_UPLOADS";
+  const originalGate = process.env[gateName];
+  const originalOldGate = process.env[oldGateName];
+  delete process.env[gateName];
+  process.env[oldGateName] = "false";
+
+  try {
+    const gated = await importFreshAttachmentTypes("obsolete-gate-false");
+    assert.equal(gated.EXTENDED_MARKDOWN_ATTACHMENT_UPLOADS_ENABLED, true);
+    assert.equal(
+      gated.isSupportedMarkdownArchiveFile({
+        name: "bundle.7z",
+        type: "application/7z",
+      }),
+      true
+    );
+    assert.equal(
+      gated.isSupportedMarkdownOfficeFile({
+        name: "report.docx",
+        type: "application/octet-stream",
+      }),
+      true
+    );
+  } finally {
+    restoreEnv(gateName, originalGate);
+    restoreEnv(oldGateName, originalOldGate);
+  }
+});
+
+test("archive content types cannot be mutated through runtime casts", () => {
+  const mutableContentTypes = MARKDOWN_ARCHIVE_CONTENT_TYPES as Set<string>;
+
+  assert.throws(() => mutableContentTypes.add("image/png"), TypeError);
+  assert.throws(() => mutableContentTypes.delete("application/zip"), TypeError);
+  assert.throws(() => mutableContentTypes.clear(), TypeError);
+  assert.equal(isMarkdownArchiveContentType("image/png"), false);
+  assert.equal(isMarkdownArchiveContentType("application/zip"), true);
+});
+
+test("exported archive and Office catalogs are deeply immutable", () => {
+  const mutableFormats = MARKDOWN_ARCHIVE_FORMATS as unknown as Array<
+    (typeof MARKDOWN_ARCHIVE_FORMATS)[number]
+  >;
+  const zipFormat = MARKDOWN_ARCHIVE_FORMATS.find(
+    ({ family }) => family === "zip"
+  );
+  assert.ok(zipFormat);
+  assert.throws(() => mutableFormats.pop(), TypeError);
+  assert.throws(() => {
+    (zipFormat as { label: string }).label = "Changed";
+  }, TypeError);
+  assert.throws(
+    () => (zipFormat.acceptedContentTypes as Set<string>).clear(),
+    TypeError
+  );
+
+  assert.throws(() => {
+    (MARKDOWN_OFFICE_FAMILIES as unknown as Record<string, unknown>).word =
+      null;
+  }, TypeError);
+  assert.throws(() => {
+    (MARKDOWN_OFFICE_FAMILIES.word as { label: string }).label = "Changed";
+  }, TypeError);
+  assert.throws(
+    () =>
+      (MARKDOWN_OFFICE_FAMILIES.word.extensions as unknown as string[]).pop(),
+    TypeError
+  );
+
+  assert.equal(markdownArchiveLabel("bundle.zip"), "ZIP archive");
+  assert.equal(markdownAttachmentLabel("report.docx"), "Word document");
+  assert.equal(
+    isSupportedMarkdownArchiveFile({
+      name: "bundle.zip",
+      type: "application/zip",
+    }),
+    true
+  );
 });
 
 test("recognizes every Office extension by final suffix and ignores MIME", () => {

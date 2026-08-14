@@ -10,6 +10,12 @@ const { WEBSOCKET_HEARTBEAT_MS, installWebSocketHeartbeat } = heartbeatRuntime;
 class FakeWebSocket extends EventEmitter {
   pingCount = 0;
   terminateCount = 0;
+  removeFromServer = () => {};
+
+  close() {
+    this.removeFromServer();
+    this.emit("close");
+  }
 
   ping() {
     this.pingCount += 1;
@@ -17,6 +23,7 @@ class FakeWebSocket extends EventEmitter {
 
   terminate() {
     this.terminateCount += 1;
+    this.close();
   }
 }
 
@@ -25,6 +32,7 @@ class FakeWebSocketServer extends EventEmitter {
 
   connect(client) {
     this.clients.add(client);
+    client.removeFromServer = () => this.clients.delete(client);
     this.emit("connection", client, {});
   }
 }
@@ -86,10 +94,12 @@ test("first tick marks an alive client dead and pings it", () => {
   heartbeat.stop();
 });
 
-test("next tick terminates an unresponsive client without pinging again", () => {
+test("next tick terminates an unresponsive client and drives close cleanup", () => {
   const wss = new FakeWebSocketServer();
   const heartbeat = installForTest(wss);
   const client = new FakeWebSocket();
+  const roomClients = new Set([client]);
+  client.on("close", () => roomClients.delete(client));
   wss.connect(client);
 
   heartbeat.tick();
@@ -97,6 +107,8 @@ test("next tick terminates an unresponsive client without pinging again", () => 
 
   assert.equal(client.pingCount, 1);
   assert.equal(client.terminateCount, 1);
+  assert.equal(wss.clients.has(client), false);
+  assert.equal(roomClients.has(client), false);
   heartbeat.stop();
 });
 
@@ -117,13 +129,14 @@ test("responsive clients survive repeated heartbeat ticks", () => {
   heartbeat.stop();
 });
 
-test("cleanup clears once and detaches connection and pong listeners", () => {
+test("cleanup clears once and detaches all heartbeat listeners", () => {
   const wss = new FakeWebSocketServer();
   const heartbeat = installForTest(wss);
   const client = new FakeWebSocket();
   wss.connect(client);
 
   assert.equal(wss.listenerCount("connection"), 1);
+  assert.equal(client.listenerCount("close"), 1);
   assert.equal(client.listenerCount("pong"), 1);
 
   heartbeat.stop();
@@ -131,7 +144,25 @@ test("cleanup clears once and detaches connection and pong listeners", () => {
 
   assert.deepEqual(heartbeat.clearedHandles, [heartbeat.intervalHandle]);
   assert.equal(wss.listenerCount("connection"), 0);
+  assert.equal(client.listenerCount("close"), 0);
   assert.equal(client.listenerCount("pong"), 0);
+});
+
+test("client close detaches heartbeat client listeners before global cleanup", () => {
+  const wss = new FakeWebSocketServer();
+  const heartbeat = installForTest(wss);
+  const client = new FakeWebSocket();
+  wss.connect(client);
+
+  client.close();
+
+  assert.equal(wss.clients.has(client), false);
+  assert.equal(client.listenerCount("close"), 0);
+  assert.equal(client.listenerCount("pong"), 0);
+
+  heartbeat.stop();
+  heartbeat.stop();
+  assert.deepEqual(heartbeat.clearedHandles, [heartbeat.intervalHandle]);
 });
 
 test("server installs heartbeat beside WSS creation and stops it during shutdown", async () => {

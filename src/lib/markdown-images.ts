@@ -1,3 +1,9 @@
+import {
+  EXTENDED_MARKDOWN_ATTACHMENT_UPLOADS_ENABLED,
+  isMarkdownAttachmentAsset,
+  isSupportedMarkdownAttachmentFile,
+} from "./markdown-attachment-types";
+
 export const MAX_MARKDOWN_ASSET_BYTES = 10 * 1024 * 1024;
 export const MAX_MARKDOWN_ASSET_COUNT = 5;
 export const MAX_MARKDOWN_IMAGE_BYTES = MAX_MARKDOWN_ASSET_BYTES;
@@ -14,13 +20,6 @@ const ALLOWED_IMAGE_EXTENSIONS: Record<string, ReadonlySet<string>> = {
   "image/webp": new Set(["webp"]),
   "image/gif": new Set(["gif"]),
 };
-
-const ALLOWED_ZIP_CONTENT_TYPES = new Set([
-  "",
-  "application/octet-stream",
-  "application/x-zip-compressed",
-  "application/zip",
-]);
 
 export interface MarkdownAsset {
   id: string;
@@ -53,12 +52,17 @@ interface ImageFileLike {
 type MarkdownAssetFileLike = ImageFileLike;
 
 export function isSupportedMarkdownAssetFile(
-  file: MarkdownAssetFileLike,
+  file: MarkdownAssetFileLike
 ): boolean {
-  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-  if (extension === "zip") {
-    return ALLOWED_ZIP_CONTENT_TYPES.has(file.type);
+  if (
+    isSupportedMarkdownAttachmentFile(
+      file,
+      EXTENDED_MARKDOWN_ATTACHMENT_UPLOADS_ENABLED
+    )
+  ) {
+    return true;
   }
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
   return Boolean(ALLOWED_IMAGE_EXTENSIONS[file.type]?.has(extension));
 }
 
@@ -127,12 +131,12 @@ export function escapeMarkdownAttachmentLabel(filename: string): string {
 }
 
 export function buildSyncedImageMarkdown(
-  assets: ReadonlyArray<Pick<MarkdownImageAsset, "id" | "filename">>,
+  assets: ReadonlyArray<Pick<MarkdownImageAsset, "id" | "filename">>
 ): string {
   return assets
     .map(
       ({ id, filename }) =>
-        `![${escapeMarkdownAlt(filename)}](/__markdown-image/${id})`,
+        `![${escapeMarkdownAlt(filename)}](/__markdown-image/${id})`
     )
     .join("\n\n");
 }
@@ -142,7 +146,12 @@ export function buildSyncedAssetMarkdown(
 ): string {
   return assets
     .map((asset) => {
-      if (asset.content_type.toLowerCase() === "application/zip") {
+      if (
+        isMarkdownAttachmentAsset({
+          filename: asset.filename,
+          contentType: asset.content_type,
+        })
+      ) {
         const filename = escapeMarkdownAttachmentLabel(asset.filename);
         return `[${filename}](/__markdown-attachment/${asset.id} "size=${asset.size}")`;
       }
@@ -218,7 +227,9 @@ export async function removeSyncedMarkdownWorkspace({
   if (markdownId) await deleteNamespace(markdownId);
 }
 
-export function validateImageFiles<T extends ImageFileLike>(files: readonly T[]): {
+export function validateImageFiles<T extends ImageFileLike>(
+  files: readonly T[]
+): {
   accepted: T[];
   rejected: MarkdownImageError[];
 } {
@@ -256,7 +267,7 @@ export function validateImageFiles<T extends ImageFileLike>(files: readonly T[])
 }
 
 export function validateMarkdownAssetFiles<T extends MarkdownAssetFileLike>(
-  files: readonly T[],
+  files: readonly T[]
 ): {
   accepted: T[];
   rejected: MarkdownImageError[];
@@ -284,7 +295,9 @@ export function validateMarkdownAssetFiles<T extends MarkdownAssetFileLike>(
       rejected.push({
         filename: file.name,
         code: "unsupported_file",
-        message: "Only PNG, JPEG, WebP, GIF, and ZIP files are supported",
+        message: EXTENDED_MARKDOWN_ATTACHMENT_UPLOADS_ENABLED
+          ? "Only supported images, archives, and Microsoft Office files can be uploaded"
+          : "Only PNG, JPEG, WebP, GIF, and ZIP files are supported",
       });
       continue;
     }
@@ -293,7 +306,9 @@ export function validateMarkdownAssetFiles<T extends MarkdownAssetFileLike>(
   return { accepted, rejected };
 }
 
-export function parseContentDispositionFilename(header: string | null): string | null {
+export function parseContentDispositionFilename(
+  header: string | null
+): string | null {
   if (!header) return null;
   const encoded = /filename\*=UTF-8''([^;]+)/i.exec(header)?.[1];
   if (encoded) {
@@ -306,7 +321,10 @@ export function parseContentDispositionFilename(header: string | null): string |
   return /filename="([^"]+)"/i.exec(header)?.[1] ?? null;
 }
 
-async function checkedResponse(response: Response, action: string): Promise<Response> {
+async function checkedResponse(
+  response: Response,
+  action: string
+): Promise<Response> {
   if (!response.ok) {
     throw new Error(`${action} failed (${response.status})`);
   }
@@ -315,7 +333,7 @@ async function checkedResponse(response: Response, action: string): Promise<Resp
 
 export async function uploadMarkdownImages(
   markdownId: string,
-  files: readonly File[],
+  files: readonly File[]
 ): Promise<MarkdownImageUploadResponse> {
   return uploadMarkdownAssets(markdownId, files);
 }
@@ -331,7 +349,7 @@ export async function uploadMarkdownAssets(
       method: "POST",
       body: formData,
     }),
-    "Image upload",
+    "Image upload"
   );
   return response.json() as Promise<MarkdownAssetUploadResponse>;
 }
@@ -339,24 +357,26 @@ export async function uploadMarkdownAssets(
 export async function fetchMarkdownImage(
   markdownId: string,
   assetId: string,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<{ blob: Blob; filename: string | null }> {
   const response = await checkedResponse(
     await fetch(`${imageApiPath(markdownId)}/${assetId}`, {
       signal,
     }),
-    "Image fetch",
+    "Image fetch"
   );
   return {
     blob: await response.blob(),
-    filename: parseContentDispositionFilename(response.headers.get("Content-Disposition")),
+    filename: parseContentDispositionFilename(
+      response.headers.get("Content-Disposition")
+    ),
   };
 }
 
 export async function downloadMarkdownImage(
   markdownId: string,
   assetId: string,
-  fallbackFilename: string,
+  fallbackFilename: string
 ): Promise<void> {
   return downloadMarkdownAsset(markdownId, assetId, fallbackFilename);
 }
@@ -368,14 +388,15 @@ export async function downloadMarkdownAsset(
 ): Promise<void> {
   const response = await checkedResponse(
     await fetch(`${imageApiPath(markdownId)}/${assetId}/download`),
-    "Image download",
+    "Image download"
   );
   const blobUrl = URL.createObjectURL(await response.blob());
   const anchor = document.createElement("a");
   anchor.href = blobUrl;
   anchor.download =
-    parseContentDispositionFilename(response.headers.get("Content-Disposition")) ??
-    fallbackFilename;
+    parseContentDispositionFilename(
+      response.headers.get("Content-Disposition")
+    ) ?? fallbackFilename;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -391,6 +412,6 @@ export async function deleteMarkdownAssets(markdownId: string): Promise<void> {
     await fetch(imageApiPath(markdownId), {
       method: "DELETE",
     }),
-    "Image cleanup",
+    "Image cleanup"
   );
 }

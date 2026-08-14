@@ -1,4 +1,4 @@
 #!/bin/bash
 set -e
 
-./deploy.sh
+./build.sh && ./deploy-azure-container-app.sh

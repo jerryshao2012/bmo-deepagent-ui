@@ -1642,7 +1642,7 @@ function IntroPageContent() {
             href="/chat"
             className="card-elevated flex h-9 items-center gap-2 rounded-full bg-[#FF8A42] px-4 py-2 font-semibold text-white transition hover:scale-[1.02] active:scale-95"
           >
-            <span className="text-xs">Launch Workspace</span>
+            <span className="text-xs">Launch Demo</span>
             <MessageSquare className="h-3.5 w-3.5" />
           </a>
         </div>
@@ -1674,7 +1674,7 @@ function IntroPageContent() {
               href="/chat"
               className="card-elevated flex h-11 items-center gap-2 rounded-full bg-[#FF8A42] px-6 py-3 font-semibold text-white transition hover:scale-[1.03]"
             >
-              See the Workspace in Action
+              See the Demo in Action
               <ChevronRight className="h-4 w-4" />
             </a>
           </div>

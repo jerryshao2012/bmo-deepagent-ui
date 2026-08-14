@@ -2,21 +2,27 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-interface Particle {
-  x: number;
-  y: number;
+import {
+  buildFishSpine,
+  resolveDesiredHeading,
+  stepFishMotion,
+  type FishMotionLimits,
+  type FishMotionState,
+  type FishSpinePoint,
+} from "./sign-in-fish-motion";
+
+type FishType = "ink_veil" | "cinnabar" | "kohaku" | "tancho" | "baby_ink";
+
+interface Particle extends FishMotionState {
   z: number;
-  vx: number;
-  vy: number;
   length: number;
   thickness: number;
-  angle: number;
   color: string;
   alpha: number;
-  speed: number;
   swimPhase: number;
   swimSpeed: number;
-  fishType: "ink_veil" | "cinnabar" | "kohaku" | "tancho" | "baby_ink";
+  fishType: FishType;
+  motionLimits: FishMotionLimits;
   tailLengthMult: number;
   finLengthMult: number;
   bodyPlumpness: number;
@@ -30,6 +36,17 @@ interface InkWash {
   radius: number;
   alpha: number;
 }
+
+const TURNING_LIMITS: Record<
+  FishType,
+  Pick<FishMotionLimits, "maxTurnRate" | "angularAcceleration">
+> = {
+  ink_veil: { maxTurnRate: 0.55, angularAcceleration: 1.2 },
+  cinnabar: { maxTurnRate: 0.8, angularAcceleration: 1.8 },
+  kohaku: { maxTurnRate: 0.65, angularAcceleration: 1.5 },
+  tancho: { maxTurnRate: 0.6, angularAcceleration: 1.4 },
+  baby_ink: { maxTurnRate: 1.15, angularAcceleration: 2.8 },
+};
 
 export default function SignInAnimation() {
   const [mounted, setMounted] = useState(false);
@@ -48,7 +65,8 @@ export default function SignInAnimation() {
   const particlesRef = useRef<Particle[]>([]);
   const inkWashesRef = useRef<InkWash[]>([]);
   const inkFlowersRef = useRef<InkWash[]>([]);
-  const timeRef = useRef(0);
+  const elapsedSecondsRef = useRef(0);
+  const lastFrameTimeRef = useRef<number | null>(null);
 
   const createParticles = useCallback((width: number, height: number) => {
     const particles: Particle[] = [];
@@ -138,21 +156,27 @@ export default function SignInAnimation() {
         swimAmplitudeMult = 1.35;
       }
 
+      const cruiseSpeed = baseSpeed * z * 60;
+      const heading = Math.random() * Math.PI * 2;
+
       particles.push({
         x: Math.random() * width,
         y: Math.random() * height,
         z,
-        vx: 0,
-        vy: 0,
         length: baseLength * z,
         thickness: baseThickness * z,
-        angle: Math.random() * Math.PI * 2,
+        heading,
+        turnRate: 0,
+        currentSpeed: cruiseSpeed,
         color,
         alpha: (Math.random() * 0.3 + 0.6) * z, // Faded overlay look
-        speed: baseSpeed * z,
         swimPhase: Math.random() * Math.PI * 2,
         swimSpeed,
         fishType,
+        motionLimits: {
+          cruiseSpeed,
+          ...TURNING_LIMITS[fishType],
+        },
         tailLengthMult,
         finLengthMult,
         bodyPlumpness,
@@ -252,10 +276,19 @@ export default function SignInAnimation() {
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseleave", handleMouseLeave);
 
-    const animate = () => {
+    const animate = (timestamp: number) => {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const time = timeRef.current;
+      const deltaSeconds =
+        lastFrameTimeRef.current === null
+          ? 1 / 60
+          : Math.min(
+              Math.max((timestamp - lastFrameTimeRef.current) / 1000, 0),
+              1 / 30
+            );
+      lastFrameTimeRef.current = timestamp;
+      elapsedSecondsRef.current += deltaSeconds;
+      const elapsedSeconds = elapsedSecondsRef.current;
       const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
       ctx.save();
       ctx.scale(dpr, dpr);
@@ -313,27 +346,28 @@ export default function SignInAnimation() {
       for (const p of particles) {
         // Swimming Flow
         const flowAngle =
-          Math.sin(p.x * 0.001 + time * 0.002) * Math.PI * 0.8 +
-          Math.cos(p.y * 0.001 + time * 0.002) * Math.PI * 0.8;
+          Math.sin(p.x * 0.001 + elapsedSeconds * 0.12) * Math.PI * 0.8 +
+          Math.cos(p.y * 0.001 + elapsedSeconds * 0.12) * Math.PI * 0.8;
+        const desiredHeading = resolveDesiredHeading({
+          fishX: p.x,
+          fishY: p.y,
+          heading: p.heading,
+          ambientHeading: flowAngle,
+          pointerX: mx,
+          pointerY: my,
+        });
+        const nextMotion = stepFishMotion(
+          p,
+          desiredHeading,
+          p.motionLimits,
+          deltaSeconds
+        );
 
-        p.angle += (flowAngle - p.angle) * 0.02;
-
-        p.vx = Math.cos(p.angle) * p.speed;
-        p.vy = Math.sin(p.angle) * p.speed;
-
-        // Mouse repulsion
-        const dx = p.x - mx;
-        const dy = p.y - my;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 150) {
-          const force = (150 - dist) / 150;
-          p.vx += (dx / dist) * force * 5;
-          p.vy += (dy / dist) * force * 5;
-          p.angle = Math.atan2(p.vy, p.vx);
-        }
-
-        p.x += p.vx;
-        p.y += p.vy;
+        p.x = nextMotion.x;
+        p.y = nextMotion.y;
+        p.heading = nextMotion.heading;
+        p.turnRate = nextMotion.turnRate;
+        p.currentSpeed = nextMotion.currentSpeed;
 
         // Wrapping
         if (p.x < -50) p.x = w + 50;
@@ -348,49 +382,24 @@ export default function SignInAnimation() {
         // Drawing Xieyi Fish (Dynamic Spine & Organic Swim Curve)
         ctx.save();
         ctx.translate(px, py);
-        ctx.rotate(p.angle);
+        ctx.rotate(p.heading);
         ctx.globalAlpha = p.alpha;
 
         const N = 12; // Spine segments
-        const points: {
-          x: number;
-          y: number;
-          tx: number;
-          ty: number;
-          thickness: number;
-        }[] = [];
-        const phase = time * p.swimSpeed + p.swimPhase;
-        const k = p.wavenumber; // Custom wavenumber per fish type
+        const phase = elapsedSeconds * p.swimSpeed * 60 + p.swimPhase;
+        const points: Array<FishSpinePoint & { thickness: number }> =
+          buildFishSpine({
+            length: p.length,
+            phase,
+            wavenumber: p.wavenumber,
+            swimAmplitudeMult: p.swimAmplitudeMult,
+            turnRate: p.turnRate,
+            maxTurnRate: p.motionLimits.maxTurnRate,
+            segments: N,
+          }).map((point) => ({ ...point, thickness: 0 }));
 
-        // 1. Generate Spine Points along a Dynamic Wave
+        // 2. Compute Type-Specific Body Profile
         for (let i = 0; i <= N; i++) {
-          const s = i / N;
-          const x = p.length * (0.5 - s);
-          // Head sways slightly, tail wiggles widely (scaled by swimAmplitudeMult)
-          const amp = p.length * (0.04 + 0.16 * s * s) * p.swimAmplitudeMult;
-          const y = Math.sin(phase - k * s) * amp;
-          points.push({ x, y, tx: 0, ty: 0, thickness: 0 });
-        }
-
-        // 2. Compute Tangents along the Spine
-        for (let i = 0; i <= N; i++) {
-          let tx;
-          let ty;
-          if (i === 0) {
-            tx = points[0].x - points[1].x;
-            ty = points[0].y - points[1].y;
-          } else if (i === N) {
-            tx = points[N - 1].x - points[N].x;
-            ty = points[N - 1].y - points[N].y;
-          } else {
-            tx = points[i - 1].x - points[i + 1].x;
-            ty = points[i - 1].y - points[i + 1].y;
-          }
-          const len = Math.sqrt(tx * tx + ty * ty);
-          points[i].tx = tx / len;
-          points[i].ty = ty / len;
-
-          // 2b. Compute Type-Specific Body Profile (no more generic tadpole shapes!)
           const s = i / N;
           let tProfile;
 
@@ -789,11 +798,12 @@ export default function SignInAnimation() {
 
       ctx.restore();
 
-      timeRef.current++;
       animRef.current = requestAnimationFrame(animate);
     };
 
-    animate();
+    elapsedSecondsRef.current = 0;
+    lastFrameTimeRef.current = null;
+    animRef.current = requestAnimationFrame(animate);
 
     // Store cleanup function for unmounting
     cleanupRef.current = () => {
@@ -801,6 +811,7 @@ export default function SignInAnimation() {
       window.removeEventListener("resize", resize);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseleave", handleMouseLeave);
+      lastFrameTimeRef.current = null;
     };
   }, [createParticles, createInkWashes, createInkFlowers]);
 

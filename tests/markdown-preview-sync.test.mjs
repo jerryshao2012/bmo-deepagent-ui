@@ -148,6 +148,62 @@ test("WebSocket broadcasts start backend polling only after authoritative initia
   );
 });
 
+test("local markdown queues for WebSocket wake unless fallback is active", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /else if \(wsStatusRef\.current === "fallback"\) \{\s*void sendFallbackUpdate\(value, immediate\);\s*\} else \{\s*pendingWebSocketContentRef\.current = value;\s*\}/
+  );
+});
+
+test("WebSocket initial sync resends a newer pending edit before becoming ready", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /pendingWebSocketContentRef\.current !== null[\s\S]{0,300}data\.initial === true[\s\S]{0,300}JSON\.stringify\(\{\s*type: "update",\s*content: pendingContent[\s\S]{0,200}initialSyncReady\(\)/
+  );
+  assert.match(
+    introPage,
+    /incomingContent === pendingWebSocketContentRef\.current[\s\S]{0,160}pendingWebSocketContentRef\.current = null/
+  );
+});
+
+test("fallback initial sync preserves and accepts pending WebSocket content before readiness", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /const pendingContent:[\s\S]{0,100}pendingWebSocketContentRef\.current[\s\S]{0,700}data\.initial[\s\S]{0,100}sendFallbackUpdate\(pendingContent\)/
+  );
+  assert.match(
+    introPage,
+    /acceptedLatestUpdate[\s\S]{0,200}fallbackInitializedRef\.current = true;[\s\S]{0,100}fallbackReady\(\)/
+  );
+  assert.match(
+    introPage,
+    /pendingWebSocketContentRef\.current === pendingUpdate\.content[\s\S]{0,120}pendingWebSocketContentRef\.current = null/
+  );
+});
+
+test("fallback callbacks and async polls reject stale EventSource generations", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(
+    introPage,
+    /addEventListener\("sync", \(event\) => \{\s*if \(eventSourceRef\.current !== eventSource\) return;/
+  );
+  assert.match(
+    introPage,
+    /await fetch\([\s\S]{0,300}eventSourceRef\.current !== eventSource[\s\S]{0,300}await res\.json\(\)[\s\S]{0,300}eventSourceRef\.current !== eventSource/
+  );
+  assert.match(
+    introPage,
+    /activeThreadIdRef\.current !== threadId/
+  );
+});
+
 test("intro transport lifecycle hibernates and resumes with page eligibility", async () => {
   const introPage = await source("src/app/intro/page.tsx");
 

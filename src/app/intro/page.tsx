@@ -346,8 +346,22 @@ function IntroPageContent() {
           if (!response.ok) {
             throw new Error(`HTTP fallback returned ${response.status}`);
           }
-          fallbackInitializedRef.current = true;
-          if (pendingFallbackUpdateRef.current === pendingUpdate) {
+          const acceptedLatestUpdate =
+            pendingFallbackUpdateRef.current === pendingUpdate;
+          if (
+            pendingWebSocketContentRef.current === pendingUpdate.content
+          ) {
+            pendingWebSocketContentRef.current = null;
+          }
+          if (
+            acceptedLatestUpdate &&
+            wsStatusRef.current === "fallback" &&
+            eventSourceRef.current !== null
+          ) {
+            fallbackInitializedRef.current = true;
+            lifecycleRef.current?.fallbackReady();
+          }
+          if (acceptedLatestUpdate) {
             pendingFallbackUpdateRef.current = null;
           }
         }
@@ -435,9 +449,13 @@ function IntroPageContent() {
     eventSourceRef.current = eventSource;
 
     eventSource.addEventListener("sync", (event) => {
+      if (eventSourceRef.current !== eventSource) return;
       try {
         const data = JSON.parse(event.data);
         if (data.type === "sync") {
+          const incomingContent: string = data.content ?? "";
+          const pendingContent: string | null =
+            pendingWebSocketContentRef.current;
           if (
             data.initial &&
             !data.authoritative &&
@@ -445,24 +463,37 @@ function IntroPageContent() {
             sharedTextRef.current
           ) {
             lastPollPushedRef.current = sharedTextRef.current;
-            void sendFallbackUpdate(sharedTextRef.current, true).finally(() => {
-              fallbackInitializedRef.current = true;
-              lifecycleRef.current?.fallbackReady();
-            });
+            void sendFallbackUpdate(sharedTextRef.current, true);
             return;
           }
 
-          const incomingContent: string = data.content ?? "";
+          if (pendingContent !== null) {
+            if (incomingContent !== pendingContent) {
+              if (data.initial) {
+                void sendFallbackUpdate(pendingContent);
+              }
+              return;
+            }
+            pendingWebSocketContentRef.current = null;
+          }
+
           if (
             pendingFallbackUpdateRef.current !== null &&
             incomingContent !== pendingFallbackUpdateRef.current.content
           ) {
             return;
           }
+          if (
+            pendingFallbackUpdateRef.current?.content === incomingContent
+          ) {
+            pendingFallbackUpdateRef.current = null;
+          }
           lastPollPushedRef.current = incomingContent;
-          fallbackInitializedRef.current = true;
           applyContent(incomingContent);
-          if (data.initial) lifecycleRef.current?.fallbackReady();
+          if (data.initial || pendingContent !== null) {
+            fallbackInitializedRef.current = true;
+            lifecycleRef.current?.fallbackReady();
+          }
         }
       } catch (err) {
         console.error("SSE error parsing message:", err);
@@ -470,6 +501,7 @@ function IntroPageContent() {
     });
 
     eventSource.onerror = () => {
+      if (eventSourceRef.current !== eventSource) return;
       if (eventSource.readyState === EventSource.CLOSED) {
         // Fatal: server returned non-200, or close() was called explicitly
         console.error(
@@ -495,6 +527,12 @@ function IntroPageContent() {
     lastPollPushedRef.current = sharedTextRef.current;
     pollingIntervalRef.current = window.setInterval(async () => {
       try {
+        if (
+          eventSourceRef.current !== eventSource ||
+          activeThreadIdRef.current !== threadId
+        ) {
+          return;
+        }
         if (pendingFallbackUpdateRef.current !== null) {
           const pendingUpdate = pendingFallbackUpdateRef.current;
           void sendFallbackUpdate(
@@ -509,9 +547,17 @@ function IntroPageContent() {
         const res = await fetch(
           `/api/ws-fallback?threadId=${encodeURIComponent(threadId)}&poll=1`
         );
+        if (
+          eventSourceRef.current !== eventSource ||
+          activeThreadIdRef.current !== threadId
+        ) {
+          return;
+        }
         if (!res.ok) return;
         const data = await res.json();
         if (
+          eventSourceRef.current !== eventSource ||
+          activeThreadIdRef.current !== threadId ||
           pendingFallbackUpdateRef.current !== null ||
           requestVersion !== contentVersionRef.current
         ) {
@@ -586,9 +632,18 @@ function IntroPageContent() {
             pendingWebSocketContentRef.current !== null &&
             incomingContent !== pendingWebSocketContentRef.current
           ) {
+            const pendingContent = pendingWebSocketContentRef.current;
+            if (data.initial === true && ws.readyState === WebSocket.OPEN) {
+              ws.send(
+                JSON.stringify({ type: "update", content: pendingContent }),
+              );
+              lifecycleRef.current?.initialSyncReady();
+            }
             return;
           }
-          pendingWebSocketContentRef.current = null;
+          if (incomingContent === pendingWebSocketContentRef.current) {
+            pendingWebSocketContentRef.current = null;
+          }
           applyContent(incomingContent);
           if (data.initial === true) {
             lifecycleRef.current?.initialSyncReady();
@@ -691,8 +746,10 @@ function IntroPageContent() {
         activeSocket.send(
           JSON.stringify({ type: "update", content: value, immediate }),
         );
-      } else {
+      } else if (wsStatusRef.current === "fallback") {
         void sendFallbackUpdate(value, immediate);
+      } else {
+        pendingWebSocketContentRef.current = value;
       }
       void syncContentToBackend(value);
     },

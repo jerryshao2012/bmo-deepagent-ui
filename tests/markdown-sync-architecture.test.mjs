@@ -19,9 +19,16 @@ test("intro presentation does not own backend HTTP or cache keys", async () => {
   assert.doesNotMatch(source, /`markdown_thread_\$\{/);
 });
 
-test("custom runtime declares bootstrap, transport, state, persistence, and images modules", async () => {
+test("custom runtime declares server boundary modules", async () => {
   const server = await readFile("server.cjs", "utf8");
-  for (const module of ["bootstrap", "transport", "state", "persistence", "images"]) {
+  for (const module of [
+    "bootstrap",
+    "transport",
+    "state",
+    "persistence",
+    "images",
+    "websocket-heartbeat",
+  ]) {
     await assert.doesNotReject(
       readFile(`runtime/${module}.cjs`, "utf8"),
       `runtime/${module}.cjs must exist`

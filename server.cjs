@@ -1,6 +1,9 @@
 const { createServer } = require("http");
 const next = require("next");
 const { WebSocketServer } = require("ws");
+const {
+  installWebSocketHeartbeat,
+} = require("./runtime/websocket-heartbeat.cjs");
 const { runtimeConfig } = require("./runtime/bootstrap.cjs");
 const { broadcastJson, sendJson } = require("./runtime/transport.cjs");
 const {
@@ -253,6 +256,7 @@ app.prepare().then(() => {
 
   // Create WebSocket Server
   const wss = new WebSocketServer({ noServer: true });
+  const stopWebSocketHeartbeat = installWebSocketHeartbeat(wss);
 
   // Group clients by thread ID
   const rooms = new Map(); // Map<threadId, Set<WebSocket>>
@@ -308,6 +312,7 @@ app.prepare().then(() => {
     debounceTimers.clear();
     flushPendingSaves();
     clearInterval(batchSaveInterval);
+    stopWebSocketHeartbeat();
 
     for (const clients of rooms.values()) {
       for (const client of clients) {

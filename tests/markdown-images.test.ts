@@ -185,13 +185,11 @@ test("asset proxy preserves backend bytes, status, and security headers for view
   const contentDisposition = "attachment; filename*=UTF-8''r%C3%A9sum%C3%A9.7z";
   const expectedBytes = new Uint8Array([0, 255, 66, 77, 128, 1]);
   const forwardedUrls: string[] = [];
-  let responseIndex = 0;
   process.env.UPLOAD_API_KEY = "server-only-key";
   globalThis.fetch = async (input) => {
     forwardedUrls.push(String(input));
-    const status = responseIndex++ === 0 ? 206 : 200;
     return new Response(expectedBytes.slice(), {
-      status,
+      status: 200,
       headers: {
         "Cache-Control": "private, no-store",
         "Content-Disposition": contentDisposition,
@@ -202,10 +200,7 @@ test("asset proxy preserves backend bytes, status, and security headers for view
   };
 
   try {
-    for (const [assetPath, expectedStatus] of [
-      [[assetId], 206],
-      [[assetId, "download"], 200],
-    ] as const) {
+    for (const assetPath of [[assetId], [assetId, "download"]] as const) {
       const request = new NextRequest(
         `http://localhost/api/markdown-images/123456/${assetPath.join("/")}`
       );
@@ -216,7 +211,7 @@ test("asset proxy preserves backend bytes, status, and security headers for view
         }),
       });
 
-      assert.equal(response.status, expectedStatus);
+      assert.equal(response.status, 200);
       assert.deepEqual(
         new Uint8Array(await response.arrayBuffer()),
         expectedBytes

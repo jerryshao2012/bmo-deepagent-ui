@@ -176,6 +176,34 @@ test("intro transport stop helpers own all timers and use safe intentional close
   assert.match(introPage, /stopFallback\(\);[\s\S]*stopCrossDeployPolling\(\)/);
 });
 
+test("cross-deployment polls discard stopped generations and serialize each active generation", async () => {
+  const introPage = await source("src/app/intro/page.tsx");
+
+  assert.match(introPage, /const crossDeployPollGenerationRef = useRef\(0\)/);
+  assert.match(
+    introPage,
+    /const crossDeployPollInFlightGenerationRef = useRef<number \| null>\(null\)/
+  );
+  assert.match(
+    introPage,
+    /stopCrossDeployPolling[\s\S]*crossDeployPollGenerationRef\.current \+= 1/
+  );
+  assert.match(introPage, /pollBackendOnce = useCallback\(async \(generation: number\)/);
+  assert.match(
+    introPage,
+    /crossDeployPollInFlightGenerationRef\.current === generation\) return/
+  );
+  assert.match(
+    introPage,
+    /await backendStore\.load\(threadId\)[\s\S]{0,300}generation !== crossDeployPollGenerationRef\.current[\s\S]{0,200}activeThreadIdRef\.current !== threadId[\s\S]{0,200}resetBackendMirrorBackoff\(\)/
+  );
+  assert.match(
+    introPage,
+    /finally\s*\{\s*if \(crossDeployPollInFlightGenerationRef\.current === generation\)[\s\S]{0,120}= null/
+  );
+  assert.match(introPage, /void pollBackendOnce\(generation\)/);
+});
+
 test("cross-machine markdown updates converge every local transport", async () => {
   const [introPage, server] = await Promise.all([
     source("src/app/intro/page.tsx"),

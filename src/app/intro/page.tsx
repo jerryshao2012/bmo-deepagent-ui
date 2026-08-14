@@ -92,6 +92,8 @@ function IntroPageContent() {
   const lastPollPushedRef = useRef<string | null>(null);
   const fallbackInitializedRef = useRef<boolean>(false);
   const crossDeployPollRef = useRef<number | null>(null);
+  const crossDeployPollGenerationRef = useRef(0);
+  const crossDeployPollInFlightGenerationRef = useRef<number | null>(null);
   const lastBackendSyncRef = useRef<string | null>(null);
   const contentVersionRef = useRef(0);
   const pendingWebSocketContentRef = useRef<string | null>(null);
@@ -212,25 +214,41 @@ function IntroPageContent() {
   );
 
   const stopCrossDeployPolling = useCallback(() => {
+    crossDeployPollGenerationRef.current += 1;
     if (crossDeployPollRef.current) {
       clearInterval(crossDeployPollRef.current);
       crossDeployPollRef.current = null;
     }
   }, []);
 
-  const pollBackendOnce = useCallback(async () => {
-    if (!threadId || Date.now() < backendNextRetryAtRef.current) return;
+  const pollBackendOnce = useCallback(async (generation: number) => {
+    if (
+      !threadId ||
+      generation !== crossDeployPollGenerationRef.current ||
+      activeThreadIdRef.current !== threadId ||
+      Date.now() < backendNextRetryAtRef.current
+    ) {
+      return;
+    }
 
     if (pendingBackendContentRef.current !== null) {
       void syncContentToBackend(pendingBackendContentRef.current);
       return;
     }
+    if (crossDeployPollInFlightGenerationRef.current === generation) return;
 
     const backendStore = createConfiguredBackendMarkdownSyncStore();
     if (!backendStore) return;
     const requestVersion = contentVersionRef.current;
+    crossDeployPollInFlightGenerationRef.current = generation;
     try {
       const remoteContent = (await backendStore.load(threadId)) ?? "";
+      if (
+        generation !== crossDeployPollGenerationRef.current ||
+        activeThreadIdRef.current !== threadId
+      ) {
+        return;
+      }
       resetBackendMirrorBackoff();
       if (
         requestVersion !== contentVersionRef.current ||
@@ -269,7 +287,17 @@ function IntroPageContent() {
         applyContent(remoteContent);
       }
     } catch {
+      if (
+        generation !== crossDeployPollGenerationRef.current ||
+        activeThreadIdRef.current !== threadId
+      ) {
+        return;
+      }
       deferBackendMirrorRetry();
+    } finally {
+      if (crossDeployPollInFlightGenerationRef.current === generation) {
+        crossDeployPollInFlightGenerationRef.current = null;
+      }
     }
   }, [
     threadId,
@@ -282,10 +310,11 @@ function IntroPageContent() {
   const startCrossDeployPolling = useCallback(() => {
     if (!threadId) return;
     stopCrossDeployPolling();
+    const generation = crossDeployPollGenerationRef.current;
     lastBackendSyncRef.current = null;
-    void pollBackendOnce();
+    void pollBackendOnce(generation);
     crossDeployPollRef.current = window.setInterval(() => {
-      void pollBackendOnce();
+      void pollBackendOnce(generation);
     }, 4000);
   }, [threadId, pollBackendOnce, stopCrossDeployPolling]);
 

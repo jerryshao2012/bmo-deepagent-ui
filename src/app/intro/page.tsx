@@ -1370,13 +1370,64 @@ function IntroPageContent() {
     }
   }, [searchParams]);
 
-  // Track scroll state for animations
+  // Track scroll state and expose normalized progress to the CSS-first story.
   useEffect(() => {
-    const handleScroll = () => {
+    let animationFrame = 0;
+
+    const updateScrollStory = () => {
+      animationFrame = 0;
       setScrollY(window.scrollY);
+
+      const reducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+
+      document
+        .querySelectorAll<HTMLElement>("[data-scroll-chapter]")
+        .forEach((chapter) => {
+          const rect = chapter.getBoundingClientRect();
+          const entryLine = window.innerHeight * 0.86;
+          const exitLine = window.innerHeight * 0.14;
+          const travel = rect.height + entryLine - exitLine;
+          const progress = reducedMotion
+            ? 1
+            : Math.min(1, Math.max(0, (entryLine - rect.top) / travel));
+
+          chapter.style.setProperty("--chapter-progress", progress.toFixed(4));
+        });
+
+      document
+        .querySelectorAll<HTMLElement>("[data-scroll-reveal]")
+        .forEach((element) => {
+          const rect = element.getBoundingClientRect();
+          const progress = reducedMotion
+            ? 1
+            : Math.min(
+                1,
+                Math.max(
+                  0,
+                  (window.innerHeight * 0.88 - rect.top) /
+                    (window.innerHeight * 0.42)
+                )
+              );
+          element.style.setProperty("--reveal-progress", progress.toFixed(4));
+        });
     };
+
+    const handleScroll = () => {
+      if (animationFrame) return;
+      animationFrame = window.requestAnimationFrame(updateScrollStory);
+    };
+
+    updateScrollStory();
     window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    window.addEventListener("resize", handleScroll);
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleScroll);
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+    };
   }, []);
 
   // Handle mouse move for interactive card 3D tilt
@@ -1428,7 +1479,7 @@ function IntroPageContent() {
 
   return (
     <div
-      className="selection:bg-primary/10 relative min-h-screen overflow-x-hidden font-sans antialiased selection:text-primary"
+      className="selection:bg-primary/10 relative min-h-screen overflow-x-clip font-sans antialiased selection:text-primary"
       style={{
         backgroundColor: "var(--color-background)",
         color: "var(--color-text-primary)",
@@ -1459,6 +1510,157 @@ function IntroPageContent() {
         .apple-fade.visible {
           opacity: 1;
           transform: translateY(0);
+        }
+
+        /* CSS-first Apple-lite scroll story */
+        .hero-copy {
+          opacity: clamp(0, calc(1 - var(--hero-progress) * 1.35), 1);
+          transform: translate3d(0, calc(var(--hero-progress) * -52px), 0);
+          transition: opacity 80ms linear, transform 80ms linear;
+          will-change: opacity, transform;
+        }
+
+        .hero-preview {
+          opacity: clamp(0.72, calc(0.72 + var(--hero-progress) * 0.28), 1);
+          transform: translate3d(0, calc((1 - var(--hero-progress)) * 28px), 0)
+            scale(calc(0.95 + var(--hero-progress) * 0.05));
+          transform-origin: center top;
+          transition: opacity 80ms linear, transform 80ms linear;
+          will-change: opacity, transform;
+        }
+
+        .scroll-chapter {
+          --chapter-progress: 0;
+          min-height: 145vh;
+          position: relative;
+          scroll-margin-top: 4.5rem;
+        }
+
+        .chapter-sticky {
+          align-content: center;
+          min-height: calc(100vh - 5rem);
+          position: sticky;
+          top: 4.5rem;
+        }
+
+        .chapter-copy {
+          opacity: clamp(0, calc(var(--chapter-progress) * 5), 1);
+          transform: translate3d(
+            0,
+            calc((1 - var(--chapter-progress)) * 28px),
+            0
+          );
+          will-change: opacity, transform;
+        }
+
+        .chapter-visual {
+          opacity: clamp(0, calc(var(--chapter-progress) * 4), 1);
+          transform: translate3d(
+              0,
+              calc((1 - var(--chapter-progress)) * 36px),
+              0
+            )
+            scale(calc(0.96 + var(--chapter-progress) * 0.04));
+          transform-origin: center center;
+          will-change: opacity, transform;
+        }
+
+        .chapter-reveal {
+          --reveal-start: 0.12;
+          opacity: clamp(
+            0,
+            calc((var(--chapter-progress) - var(--reveal-start)) * 7),
+            1
+          );
+          transform: translate3d(
+            0,
+            calc(
+              (1 - clamp(0, calc((var(--chapter-progress) - var(--reveal-start)) * 7), 1)) *
+                18px
+            ),
+            0
+          );
+          will-change: opacity, transform;
+        }
+
+        .chapter-reveal[data-reveal="2"] {
+          --reveal-start: 0.22;
+        }
+
+        .chapter-reveal[data-reveal="3"] {
+          --reveal-start: 0.32;
+        }
+
+        .chapter-path {
+          stroke-dasharray: 1;
+          stroke-dashoffset: calc(1 - var(--chapter-progress));
+        }
+
+        .scroll-reveal {
+          --reveal-progress: 0;
+          opacity: var(--reveal-progress);
+          transform: translate3d(
+              0,
+              calc((1 - var(--reveal-progress)) * 28px),
+              0
+            )
+            scale(calc(0.98 + var(--reveal-progress) * 0.02));
+          will-change: opacity, transform;
+        }
+
+        @media (max-width: 1023px) {
+          .hero-copy,
+          .hero-preview,
+          .chapter-copy,
+          .chapter-visual,
+          .chapter-reveal,
+          .scroll-reveal {
+            opacity: 1;
+            transform: none;
+          }
+
+          .scroll-chapter {
+            min-height: auto;
+          }
+
+          .chapter-sticky {
+            min-height: auto;
+            position: static;
+          }
+
+          .chapter-path {
+            stroke-dashoffset: 0;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .hero-copy,
+          .hero-preview,
+          .chapter-copy,
+          .chapter-visual,
+          .chapter-reveal,
+          .scroll-reveal {
+            opacity: 1;
+            transform: none;
+            transition: none;
+          }
+
+          .scroll-chapter {
+            min-height: auto;
+          }
+
+          .chapter-sticky {
+            min-height: auto;
+            position: static;
+          }
+
+          .chapter-path {
+            stroke-dashoffset: 0;
+          }
+
+          .node-pulse {
+            animation: none;
+          }
         }
 
         /* Subtle card elevation */
@@ -1596,7 +1798,7 @@ function IntroPageContent() {
                 activePhase === 1 && "text-[#FF8A42]"
               )}
             >
-              Phase 1: Discover
+              Phase 1: Ground
             </a>
             <a
               href="#phase2"
@@ -1605,7 +1807,7 @@ function IntroPageContent() {
                 activePhase === 2 && "text-[#FF8A42]"
               )}
             >
-              Phase 2: Structure
+              Phase 2: Research
             </a>
             <a
               href="#phase3"
@@ -1614,7 +1816,7 @@ function IntroPageContent() {
                 activePhase === 3 && "text-[#FF8A42]"
               )}
             >
-              Phase 3: Verify
+              Phase 3: Review
             </a>
           </div>
         </div>
@@ -1655,7 +1857,7 @@ function IntroPageContent() {
             href="/chat"
             className="card-elevated flex h-9 items-center gap-2 rounded-full bg-[#FF8A42] px-4 py-2 font-semibold text-white transition hover:scale-[1.02] active:scale-95"
           >
-            <span className="text-xs">Launch Demo</span>
+            <span className="text-xs">Launch Workspace</span>
             <MessageSquare className="h-3.5 w-3.5" />
           </a>
         </div>
@@ -1665,35 +1867,42 @@ function IntroPageContent() {
       <section
         id="hero"
         className="relative flex min-h-[92vh] flex-col items-center justify-center px-6 pb-12 pt-28 text-center"
+        style={
+          {
+            "--hero-progress": Math.min(1, scrollY / 720),
+          } as React.CSSProperties
+        }
       >
         <div className="apple-fade visible w-full max-w-4xl">
-          <p className="mb-4 text-xs font-bold uppercase tracking-widest text-[#FF8A42]">
-            The AI Agentic Control Loop
-          </p>
-          <h1 className="font-serif-header text-5xl font-extrabold leading-[1.1] text-foreground sm:text-7xl lg:text-8xl">
-            Discover. Structure.
-            <br />
-            Verify. Continuously.
-          </h1>
+          <div className="hero-copy">
+            <p className="mb-4 text-xs font-bold uppercase tracking-widest text-[#FF8A42]">
+              Enterprise Research Workspace
+            </p>
+            <h1 className="font-serif-header text-5xl font-extrabold leading-[1.1] text-foreground sm:text-7xl lg:text-8xl">
+              Turn enterprise documents into
+              <br />
+              decision-ready knowledge.
+            </h1>
 
-          <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
-            Raw language models operate on suggestion. Applied AI Deep Agent
-            implements a deterministic harness providing boundaries, continuous
-            planning, and double-loop verification.
-          </p>
+            <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
+              Applied AI Deep Agent turns reports, policies, research, and
+              presentations into a living thread wiki, then combines document
+              evidence with bounded web research and visible verification.
+            </p>
 
-          <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <a
-              href="/chat"
-              className="card-elevated flex h-11 items-center gap-2 rounded-full bg-[#FF8A42] px-6 py-3 font-semibold text-white transition hover:scale-[1.03]"
-            >
-              See the Demo in Action
-              <ChevronRight className="h-4 w-4" />
-            </a>
+            <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
+              <a
+                href="/chat"
+                className="card-elevated flex h-11 items-center gap-2 rounded-full bg-[#FF8A42] px-6 py-3 font-semibold text-white transition hover:scale-[1.03]"
+              >
+                Launch Workspace Demo
+                <ChevronRight className="h-4 w-4" />
+              </a>
+            </div>
           </div>
 
           {/* Interactive Screen Preview */}
-          <div className="mt-16 flex justify-center">
+          <div className="hero-preview mt-16 flex justify-center">
             <div
               ref={stackRef}
               onMouseMove={handleMouseMove}
@@ -1716,48 +1925,47 @@ function IntroPageContent() {
                       <span className="h-3.5 w-3.5 rounded-full bg-[#FFBD2E]" />
                       <span className="h-3.5 w-3.5 rounded-full bg-[#27C93F]" />
                       <span className="ml-4 font-mono text-xs text-white/40">
-                        deep-agent@sandbox:~
+                        deep-agent@research-workspace
                       </span>
                     </div>
                     <div className="flex items-center gap-2 rounded-full border border-[#FF8A42]/20 bg-[#FF8A42]/10 px-3 py-1 font-mono text-[10px] uppercase text-[#FF8A42]">
                       <span className="h-1.5 w-1.5 animate-ping rounded-full bg-[#FF8A42]" />
-                      Harness Online
+                      Research Active
                     </div>
                   </div>
 
                   <div className="grid gap-6 pt-4 lg:grid-cols-[1.3fr_0.7fr]">
                     <div className="rounded-xl border border-white/5 bg-black/40 p-4 font-mono text-xs text-stone-300 sm:p-6">
                       <div className="mb-4 font-semibold text-[#FF8A42]">
-                        // INITIALIZING DOUBLE-LOOP SYSTEM CONTROL
+                        // BUILDING THREAD KNOWLEDGE
                       </div>
                       <div className="space-y-2">
                         <p>
-                          <span className="text-emerald-400">✔</span> Ingested
-                          workspace rules from{" "}
+                          <span className="text-emerald-400">✔</span> Added
+                          source material from{" "}
                           <span className="cursor-pointer text-sky-400 underline hover:text-sky-300">
-                            CLAUDE.md
+                            Market_Strategy_2026.pdf
                           </span>
                         </p>
                         <p>
-                          <span className="text-emerald-400">✔</span> Read
-                          checklist target:{" "}
+                          <span className="text-emerald-400">✔</span> Built
+                          thread wiki for:{" "}
                           <span className="text-stone-400">
-                            "Redesign marketing landing page"
+                            "Market outlook and strategic priorities"
                           </span>
                         </p>
                         <p>
-                          <span className="text-amber-400">⟲</span> Spawning
-                          subagent (ID: exec-092) for Sandboxed Command line
-                          execution
+                          <span className="text-amber-400">⟲</span> Planning a
+                          bounded research pass for remaining evidence gaps
                         </p>
                         <div className="mt-4 rounded border border-white/10 bg-white/[0.02] p-3 text-stone-400">
-                          <span className="text-white/60">$</span> agy build
-                          --strict
+                          <span className="text-white/60">$</span> research plan
+                          --source-grounded
                           <p className="mt-1 text-emerald-400">
-                            Building workspace artifacts... Success.
+                            3 document questions grounded in thread knowledge.
                           </p>
                           <p className="text-[#FF8A42]">
-                            Lint check: 0 errors, 2 warnings resolved.
+                            2 web evidence gaps queued for review.
                           </p>
                         </div>
                       </div>
@@ -1766,29 +1974,29 @@ function IntroPageContent() {
                     <div className="flex flex-col justify-between rounded-xl border border-white/5 bg-white/[0.03] p-4 text-stone-200">
                       <div>
                         <div className="font-mono text-[10px] uppercase text-stone-400">
-                          Plan Status
+                          Research Status
                         </div>
                         <h4 className="font-serif-header mt-2 text-xl font-bold text-white">
-                          Verification checkpoints:
+                          Visible checkpoints:
                         </h4>
                         <ul className="mt-4 space-y-2 text-xs text-stone-300">
                           <li className="flex items-center gap-2">
                             <span className="h-4.5 w-4.5 flex items-center justify-center rounded-full bg-emerald-500/20 text-[10px] text-emerald-400">
                               ✓
                             </span>
-                            <span>Build conformance checks</span>
+                            <span>Document grounding</span>
                           </li>
                           <li className="flex items-center gap-2">
                             <span className="h-4.5 w-4.5 flex items-center justify-center rounded-full bg-emerald-500/20 text-[10px] text-emerald-400">
                               ✓
                             </span>
-                            <span>Syntactic output compliance</span>
+                            <span>Bounded web research</span>
                           </li>
                           <li className="flex items-center gap-2">
                             <span className="h-4.5 w-4.5 flex items-center justify-center rounded-full bg-amber-500/20 text-[10px] text-amber-400">
                               ⟲
                             </span>
-                            <span>Verify changes on staging</span>
+                            <span>Citation and gap review</span>
                           </li>
                         </ul>
                       </div>
@@ -1810,90 +2018,97 @@ function IntroPageContent() {
           {/* Phase 1: Discover */}
           <div
             id="phase1"
-            className="grid gap-12 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:items-center"
+            data-scroll-chapter
+            className="scroll-chapter"
           >
-            <div>
-              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
-                  1
-                </span>
-                Phase 1: Discover
-              </div>
-              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
-                Observe operations and ingest runbooks passively.
-              </h2>
-              <p className="text-md mt-6 leading-relaxed text-muted-foreground">
-                Deep Agent doesn't require complex integration maps. It connects
-                directly to your repository workspace, reads local code rules,
-                and watches tools execute on behalf of tasks to capture complete
-                contexts in days.
-              </p>
-
-              <div className="mt-8 space-y-4">
-                <div className="flex items-start gap-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
-                    <Activity className="h-4.5 w-4.5" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-foreground">
-                      Observation Companion
-                    </h4>
-                    <p className="mt-1 text-xs text-stone-500">
-                      Watches tools execute passively, profiling execution costs
-                      and caching schemas.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
-                    <MessageSquare className="h-4.5 w-4.5" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-foreground">
-                      Collaborative Ingestion
-                    </h4>
-                    <p className="mt-1 text-xs text-stone-500">
-                      Real-time collaborative workspace synchronizes rules
-                      directly between developer and model.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Interactive Mock of Phase 1 */}
-            <div className="rounded-3xl border border-stone-200/80 bg-stone-50 p-6 shadow-sm">
-              <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
-                <div className="mb-4 flex items-center justify-between border-b border-stone-100 pb-3">
-                  <span className="text-xs font-bold uppercase tracking-wider text-stone-800">
-                    Repository Rules Ingest
+            <div className="chapter-sticky grid gap-12 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
+              <div className="chapter-copy">
+                <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
+                    1
                   </span>
-                  <span className="node-pulse h-2 w-2 rounded-full bg-emerald-500" />
+                  Phase 1: Ground
                 </div>
-                <div className="space-y-3 font-mono text-xs text-muted-foreground">
-                  <div className="rounded-lg border border-stone-200/50 bg-stone-50 p-3">
-                    <p className="font-semibold text-[#FF8A42]">
-                      # CLAUDE.md rule matched:
-                    </p>
-                    <p className="mt-1">
-                      "Always run verification build test before committing any
-                      new component."
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-between rounded-lg border border-stone-200/50 bg-stone-50 px-3 py-2">
-                    <span>Checking workspace status...</span>
-                    <span className="font-semibold text-emerald-500">
-                      Ready
-                    </span>
-                  </div>
-                  <div className="relative rounded-lg border border-stone-200 bg-stone-900 p-3 text-white">
-                    <div className="text-[10px] text-white/50">
-                      // Collaborative telemetry input
+                <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
+                  Turn source material into a living research workspace.
+                </h2>
+                <p className="text-md mt-6 leading-relaxed text-muted-foreground">
+                  Upload reports, policies, research, and presentations into an
+                  isolated thread. Deep Agent tracks ingestion progress and
+                  organizes source material into reusable wiki knowledge.
+                </p>
+
+                <div className="mt-8 space-y-4">
+                  <div
+                    className="chapter-reveal flex items-start gap-4"
+                    data-reveal="1"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
+                      <Activity className="h-4.5 w-4.5" />
                     </div>
-                    <p className="mt-2 text-stone-200">
-                      "Build dynamic process graph node component representing
-                      workspace flow."
-                    </p>
+                    <div>
+                      <h4 className="font-bold text-foreground">
+                        Observable Ingestion
+                      </h4>
+                      <p className="mt-1 text-xs text-stone-500">
+                        Follow each source through analysis, review, indexing,
+                        and a clear ready state.
+                      </p>
+                    </div>
+                  </div>
+                  <div
+                    className="chapter-reveal flex items-start gap-4"
+                    data-reveal="2"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
+                      <MessageSquare className="h-4.5 w-4.5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-foreground">
+                        Thread-Scoped Knowledge
+                      </h4>
+                      <p className="mt-1 text-xs text-stone-500">
+                        Browse synthesized pages as a wiki tree or knowledge
+                        graph without losing the original sources.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Interactive Mock of Phase 1 */}
+              <div className="chapter-visual rounded-3xl border border-stone-200/80 bg-stone-50 p-6 shadow-sm">
+                <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+                  <div className="mb-4 flex items-center justify-between border-b border-stone-100 pb-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-stone-800">
+                      Document Knowledge Ingestion
+                    </span>
+                    <span className="node-pulse h-2 w-2 rounded-full bg-emerald-500" />
+                  </div>
+                  <div className="space-y-3 font-mono text-xs text-muted-foreground">
+                    <div className="rounded-lg border border-stone-200/50 bg-stone-50 p-3">
+                      <p className="font-semibold text-[#FF8A42]">
+                        # Source set added:
+                      </p>
+                      <p className="mt-1">
+                        "Annual report, policy guide, and market research deck."
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border border-stone-200/50 bg-stone-50 px-3 py-2">
+                      <span>Building thread wiki...</span>
+                      <span className="font-semibold text-emerald-500">
+                        Ready
+                      </span>
+                    </div>
+                    <div className="relative rounded-lg border border-stone-200 bg-stone-900 p-3 text-white">
+                      <div className="text-[10px] text-white/50">
+                        // Research purpose
+                      </div>
+                      <p className="mt-2 text-stone-200">
+                        "Compare strategic priorities, risks, and supporting
+                        evidence across the uploaded sources."
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1905,198 +2120,214 @@ function IntroPageContent() {
           {/* Phase 2: Structure */}
           <div
             id="phase2"
-            className="grid gap-12 py-16 lg:grid-cols-[1.25fr_0.75fr] lg:items-center"
+            data-scroll-chapter
+            className="scroll-chapter"
           >
-            {/* Node Tree Visualizer */}
-            <div className="relative flex min-h-[400px] items-center justify-center overflow-hidden rounded-3xl border border-stone-200 bg-[#FAF7F0] p-8">
-              <svg
-                className="pointer-events-none absolute inset-0 h-full w-full"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                {/* Connecting lines with highlight on hover */}
-                <path
-                  d="M 120 180 Q 220 180 320 120"
-                  stroke={
-                    hoveredNode === "A" || hoveredNode === "C"
-                      ? "#FF8A42"
-                      : "#e2e8f0"
-                  }
-                  strokeWidth="2.5"
-                  fill="none"
-                  className="transition-all duration-300"
-                />
-                <path
-                  d="M 120 180 Q 220 180 320 240"
-                  stroke={
-                    hoveredNode === "A" || hoveredNode === "D"
-                      ? "#FF8A42"
-                      : "#e2e8f0"
-                  }
-                  strokeWidth="2.5"
-                  fill="none"
-                  className="transition-all duration-300"
-                />
-                <path
-                  d="M 320 120 Q 420 120 520 180"
-                  stroke={
-                    hoveredNode === "C" || hoveredNode === "B"
-                      ? "#FF8A42"
-                      : "#e2e8f0"
-                  }
-                  strokeWidth="2.5"
-                  fill="none"
-                  className="transition-all duration-300"
-                />
-                <path
-                  d="M 320 240 Q 420 240 520 180"
-                  stroke={
-                    hoveredNode === "D" || hoveredNode === "B"
-                      ? "#FF8A42"
-                      : "#e2e8f0"
-                  }
-                  strokeWidth="2.5"
-                  fill="none"
-                  className="transition-all duration-300"
-                />
-              </svg>
+            <div className="chapter-sticky grid gap-12 py-16 lg:grid-cols-[1.25fr_0.75fr] lg:items-center">
+              {/* Node Tree Visualizer */}
+              <div className="chapter-visual relative flex min-h-[400px] items-center justify-center overflow-hidden rounded-3xl border border-stone-200 bg-[#FAF7F0] p-8">
+                <svg
+                  className="pointer-events-none absolute inset-0 h-full w-full"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  {/* Connecting lines with highlight on hover */}
+                  <path
+                    d="M 120 180 Q 220 180 320 120"
+                    stroke={
+                      hoveredNode === "A" || hoveredNode === "C"
+                        ? "#FF8A42"
+                        : "#e2e8f0"
+                    }
+                    strokeWidth="2.5"
+                    fill="none"
+                    pathLength="1"
+                    className="chapter-path transition-all duration-300"
+                  />
+                  <path
+                    d="M 120 180 Q 220 180 320 240"
+                    stroke={
+                      hoveredNode === "A" || hoveredNode === "D"
+                        ? "#FF8A42"
+                        : "#e2e8f0"
+                    }
+                    strokeWidth="2.5"
+                    fill="none"
+                    pathLength="1"
+                    className="chapter-path transition-all duration-300"
+                  />
+                  <path
+                    d="M 320 120 Q 420 120 520 180"
+                    stroke={
+                      hoveredNode === "C" || hoveredNode === "B"
+                        ? "#FF8A42"
+                        : "#e2e8f0"
+                    }
+                    strokeWidth="2.5"
+                    fill="none"
+                    pathLength="1"
+                    className="chapter-path transition-all duration-300"
+                  />
+                  <path
+                    d="M 320 240 Q 420 240 520 180"
+                    stroke={
+                      hoveredNode === "D" || hoveredNode === "B"
+                        ? "#FF8A42"
+                        : "#e2e8f0"
+                    }
+                    strokeWidth="2.5"
+                    fill="none"
+                    pathLength="1"
+                    className="chapter-path transition-all duration-300"
+                  />
+                </svg>
 
-              <div className="relative z-10 grid w-full max-w-xl grid-cols-3 gap-x-20 gap-y-12">
-                {/* Col 1 */}
-                <div className="flex items-center justify-center">
-                  <div
-                    onMouseEnter={() => setHoveredNode("A")}
-                    onMouseLeave={() => setHoveredNode(null)}
-                    className={cn(
-                      "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
-                      hoveredNode === "A"
-                        ? "scale-105 border-[#FF8A42] shadow-md"
-                        : "border-stone-200"
-                    )}
-                  >
-                    <FolderTree className="mx-auto h-5 w-5 text-[#FF8A42]" />
-                    <h5 className="mt-2 text-xs font-bold text-stone-800">
-                      Process Source
-                    </h5>
-                    <p className="mt-1 text-[10px] text-stone-400">
-                      Repository Ingest
-                    </p>
+                <div className="relative z-10 grid w-full max-w-xl grid-cols-3 gap-x-20 gap-y-12">
+                  {/* Col 1 */}
+                  <div className="flex items-center justify-center">
+                    <div
+                      onMouseEnter={() => setHoveredNode("A")}
+                      onMouseLeave={() => setHoveredNode(null)}
+                      className={cn(
+                        "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                        hoveredNode === "A"
+                          ? "scale-105 border-[#FF8A42] shadow-md"
+                          : "border-stone-200"
+                      )}
+                    >
+                      <FolderTree className="mx-auto h-5 w-5 text-[#FF8A42]" />
+                      <h5 className="mt-2 text-xs font-bold text-stone-800">
+                        Source Material
+                      </h5>
+                      <p className="mt-1 text-[10px] text-stone-400">
+                        Reports &amp; Policies
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Col 2 */}
+                  <div className="flex flex-col justify-center gap-8">
+                    <div
+                      onMouseEnter={() => setHoveredNode("C")}
+                      onMouseLeave={() => setHoveredNode(null)}
+                      className={cn(
+                        "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                        hoveredNode === "C"
+                          ? "scale-105 border-[#FF8A42] shadow-md"
+                          : "border-stone-200"
+                      )}
+                    >
+                      <Terminal className="mx-auto h-5 w-5 text-sky-500" />
+                      <h5 className="mt-2 text-xs font-bold text-stone-800">
+                        Living Wiki
+                      </h5>
+                      <p className="mt-1 text-[10px] text-stone-400">
+                        Structured Pages
+                      </p>
+                    </div>
+                    <div
+                      onMouseEnter={() => setHoveredNode("D")}
+                      onMouseLeave={() => setHoveredNode(null)}
+                      className={cn(
+                        "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                        hoveredNode === "D"
+                          ? "scale-105 border-[#FF8A42] shadow-md"
+                          : "border-stone-200"
+                      )}
+                    >
+                      <Shield className="mx-auto h-5 w-5 text-emerald-500" />
+                      <h5 className="mt-2 text-xs font-bold text-stone-800">
+                        Research Plan
+                      </h5>
+                      <p className="mt-1 text-[10px] text-stone-400">
+                        Bounded Tasks
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Col 3 */}
+                  <div className="flex items-center justify-center">
+                    <div
+                      onMouseEnter={() => setHoveredNode("B")}
+                      onMouseLeave={() => setHoveredNode(null)}
+                      className={cn(
+                        "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                        hoveredNode === "B"
+                          ? "scale-105 border-[#FF8A42] shadow-md"
+                          : "border-stone-200"
+                      )}
+                    >
+                      <CheckCircle className="mx-auto h-5 w-5 text-amber-500" />
+                      <h5 className="mt-2 text-xs font-bold text-stone-800">
+                        Source-Linked Report
+                      </h5>
+                      <p className="mt-1 text-[10px] text-stone-400">
+                        Reviewable Output
+                      </p>
+                    </div>
                   </div>
                 </div>
 
-                {/* Col 2 */}
-                <div className="flex flex-col justify-center gap-8">
-                  <div
-                    onMouseEnter={() => setHoveredNode("C")}
-                    onMouseLeave={() => setHoveredNode(null)}
-                    className={cn(
-                      "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
-                      hoveredNode === "C"
-                        ? "scale-105 border-[#FF8A42] shadow-md"
-                        : "border-stone-200"
-                    )}
-                  >
-                    <Terminal className="mx-auto h-5 w-5 text-sky-500" />
-                    <h5 className="mt-2 text-xs font-bold text-stone-800">
-                      Planning loop
-                    </h5>
-                    <p className="mt-1 text-[10px] text-stone-400">
-                      task.md checkpoints
-                    </p>
-                  </div>
-                  <div
-                    onMouseEnter={() => setHoveredNode("D")}
-                    onMouseLeave={() => setHoveredNode(null)}
-                    className={cn(
-                      "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
-                      hoveredNode === "D"
-                        ? "scale-105 border-[#FF8A42] shadow-md"
-                        : "border-stone-200"
-                    )}
-                  >
-                    <Shield className="mx-auto h-5 w-5 text-emerald-500" />
-                    <h5 className="mt-2 text-xs font-bold text-stone-800">
-                      Docker Sandbox
-                    </h5>
-                    <p className="mt-1 text-[10px] text-stone-400">
-                      Isolate commands
-                    </p>
-                  </div>
-                </div>
-
-                {/* Col 3 */}
-                <div className="flex items-center justify-center">
-                  <div
-                    onMouseEnter={() => setHoveredNode("B")}
-                    onMouseLeave={() => setHoveredNode(null)}
-                    className={cn(
-                      "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
-                      hoveredNode === "B"
-                        ? "scale-105 border-[#FF8A42] shadow-md"
-                        : "border-stone-200"
-                    )}
-                  >
-                    <CheckCircle className="mx-auto h-5 w-5 text-amber-500" />
-                    <h5 className="mt-2 text-xs font-bold text-stone-800">
-                      Process Index
-                    </h5>
-                    <p className="mt-1 text-[10px] text-stone-400">
-                      Verified outcome
-                    </p>
-                  </div>
+                {/* Dynamic status helper */}
+                <div className="absolute bottom-4 left-4 right-4 text-center">
+                  <span className="rounded-full border border-stone-200/50 bg-white/80 px-3 py-1 font-mono text-[10px] text-stone-400 shadow-sm">
+                    {hoveredNode === "A" &&
+                      "Source: Uploaded reports, policies, research, and presentations."}
+                    {hoveredNode === "C" &&
+                      "Knowledge: Synthesizes sources into reusable wiki pages."}
+                    {hoveredNode === "D" &&
+                      "Research: Plans document queries and bounded web evidence gathering."}
+                    {hoveredNode === "B" &&
+                      "Output: Produces a source-linked report for human review."}
+                    {!hoveredNode &&
+                      "Hover nodes to preview the active process tree connections."}
+                  </span>
                 </div>
               </div>
 
-              {/* Dynamic status helper */}
-              <div className="absolute bottom-4 left-4 right-4 text-center">
-                <span className="rounded-full border border-stone-200/50 bg-white/80 px-3 py-1 font-mono text-[10px] text-stone-400 shadow-sm">
-                  {hoveredNode === "A" &&
-                    "Source: Local code files + developer guidelines."}
-                  {hoveredNode === "C" &&
-                    "Planning: Decomposes goals into a checklist of actions."}
-                  {hoveredNode === "D" &&
-                    "Execution Confinement: Bounded isolated process loops."}
-                  {hoveredNode === "B" &&
-                    "Output: Indexed state verified against original objectives."}
-                  {!hoveredNode &&
-                    "Hover nodes to preview the active process tree connections."}
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
-                  2
-                </span>
-                Phase 2: Structure
-              </div>
-              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
-                Structure inputs into an auditable process index.
-              </h2>
-              <p className="text-md mt-6 leading-relaxed text-muted-foreground">
-                Every task checkpoint, tool output, and code file edits are
-                compiled into structured markdown indexes. Keep track of what
-                changed without digging through logs.
-              </p>
-
-              <div className="mt-8 space-y-4">
-                <div className="flex items-center gap-3">
-                  <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
-                  <span className="text-sm font-semibold text-stone-800">
-                    Dynamic file-tree change tracking
+              <div className="chapter-copy">
+                <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
+                    2
                   </span>
+                  Phase 2: Research
                 </div>
-                <div className="flex items-center gap-3">
-                  <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
-                  <span className="text-sm font-semibold text-stone-800">
-                    Always synchronized local state documentation
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
-                  <span className="text-sm font-semibold text-stone-800">
-                    Clean, queryable node dependency mappings
-                  </span>
+                <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
+                  Plan bounded research across documents and the web.
+                </h2>
+                <p className="text-md mt-6 leading-relaxed text-muted-foreground">
+                  Deep Agent queries thread knowledge first, delegates targeted
+                  web research for remaining gaps, and synthesizes the evidence
+                  into a report with visible tasks and state files.
+                </p>
+
+                <div className="mt-8 space-y-4">
+                  <div
+                    className="chapter-reveal flex items-center gap-3"
+                    data-reveal="1"
+                  >
+                    <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
+                    <span className="text-sm font-semibold text-stone-800">
+                      Thread knowledge used before web search
+                    </span>
+                  </div>
+                  <div
+                    className="chapter-reveal flex items-center gap-3"
+                    data-reveal="2"
+                  >
+                    <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
+                    <span className="text-sm font-semibold text-stone-800">
+                      Configurable concurrency and iteration limits
+                    </span>
+                  </div>
+                  <div
+                    className="chapter-reveal flex items-center gap-3"
+                    data-reveal="3"
+                  >
+                    <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
+                    <span className="text-sm font-semibold text-stone-800">
+                      Visible tasks, research passes, and state files
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2107,124 +2338,144 @@ function IntroPageContent() {
           {/* Phase 3: Verify */}
           <div
             id="phase3"
-            className="grid gap-12 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:items-center"
+            data-scroll-chapter
+            className="scroll-chapter"
           >
-            <div>
-              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
-                  3
-                </span>
-                Phase 3: Verify
-              </div>
-              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
-                Ensure safety before handoff.
-              </h2>
-              <p className="text-md mt-6 leading-relaxed text-muted-foreground">
-                Continuous double-loop verification handles testing, linting,
-                and safety checks inside isolated environments. If anything
-                breaks, the execution error triggers correction.
-              </p>
+            <div className="chapter-sticky grid gap-12 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
+              <div className="chapter-copy">
+                <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
+                    3
+                  </span>
+                  Phase 3: Review
+                </div>
+                <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
+                  Inspect evidence before you use the result.
+                </h2>
+                <p className="text-md mt-6 leading-relaxed text-muted-foreground">
+                  Post-generation review checks citation reachability, report
+                  coverage, and missing perspectives. Weak reports can be
+                  revised through visible verification rounds before final
+                  delivery.
+                </p>
 
-              <div className="mt-8 space-y-4">
-                <div className="flex items-start gap-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
-                    <Shield className="h-4.5 w-4.5" />
+                <div className="mt-8 space-y-4">
+                  <div
+                    className="chapter-reveal flex items-start gap-4"
+                    data-reveal="1"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
+                      <Shield className="h-4.5 w-4.5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-foreground">
+                        Source-Linked Evidence
+                      </h4>
+                      <p className="mt-1 text-xs text-stone-500">
+                        Open document citations at the referenced page and
+                        inspect the surrounding evidence in the workspace.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-bold text-foreground">
-                      Isolated Confinement
-                    </h4>
-                    <p className="mt-1 text-xs text-stone-500">
-                      Tool command lines are confined inside isolated sandboxes
-                      to guard host files.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
-                    <Lock className="h-4.5 w-4.5" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-foreground">
-                      Human-in-the-Loop Gates
-                    </h4>
-                    <p className="mt-1 text-xs text-stone-500">
-                      Tool approvals and critical checks request validation
-                      before final execution.
-                    </p>
+                  <div
+                    className="chapter-reveal flex items-start gap-4"
+                    data-reveal="2"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
+                      <Lock className="h-4.5 w-4.5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-foreground">
+                        Human-Reviewed Skills
+                      </h4>
+                      <p className="mt-1 text-xs text-stone-500">
+                        Selecting a research skill creates an editable
+                        instruction grounded in the current thread before it is
+                        sent.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Comparison specs grid */}
-            <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
-              <h4 className="font-serif-header mb-4 text-center text-lg font-bold text-stone-800">
-                Engine Harness vs. Bare API Model
-              </h4>
-              <div className="divide-y divide-stone-200 overflow-hidden rounded-2xl border border-stone-200 bg-stone-50">
-                <div className="grid grid-cols-2 bg-stone-100/70 p-4 text-xs font-semibold text-stone-700">
-                  <span>HE-1 HARNESS LAYER</span>
-                  <span>EPHEMERAL MODEL API</span>
-                </div>
-                <div className="grid grid-cols-2 p-4 text-xs">
-                  <div>
-                    <h5 className="font-bold text-foreground">
-                      Durable Checkpointing
-                    </h5>
-                    <p className="mt-1 text-stone-500">
-                      State machine manages structured checklists (`task.md` /
-                      `AGENTS.md`) preserved locally.
-                    </p>
+              {/* Comparison specs grid */}
+              <div className="chapter-visual rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
+                <h4 className="font-serif-header mb-4 text-center text-lg font-bold text-stone-800">
+                  Applied AI Deep Agent vs. a Bare Model
+                </h4>
+                <div className="divide-y divide-stone-200 overflow-hidden rounded-2xl border border-stone-200 bg-stone-50">
+                  <div className="grid grid-cols-2 bg-stone-100/70 p-4 text-xs font-semibold text-stone-700">
+                    <span>RESEARCH WORKSPACE</span>
+                    <span>ONE-OFF MODEL RESPONSE</span>
                   </div>
-                  <div className="border-l border-stone-200 pl-4 text-stone-500">
-                    <h5 className="font-bold text-stone-400">
-                      RAM Context Only
-                    </h5>
-                    <p className="mt-1">
-                      Zero local storage. Instructions degrade as chat context
-                      grows longer.
-                    </p>
+                  <div
+                    className="chapter-reveal grid grid-cols-2 p-4 text-xs"
+                    data-reveal="1"
+                  >
+                    <div>
+                      <h5 className="font-bold text-foreground">
+                        Persistent Research Context
+                      </h5>
+                      <p className="mt-1 text-stone-500">
+                        Thread wiki, uploaded sources, tasks, and state files
+                        remain available for follow-up research.
+                      </p>
+                    </div>
+                    <div className="border-l border-stone-200 pl-4 text-stone-500">
+                      <h5 className="font-bold text-stone-400">
+                        Single Context Window
+                      </h5>
+                      <p className="mt-1">
+                        Source material and prior findings must be supplied
+                        again when context is lost.
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 p-4 text-xs">
-                  <div>
-                    <h5 className="font-bold text-foreground">
-                      Container Confinement
-                    </h5>
-                    <p className="mt-1 text-stone-500">
-                      All commands execute inside isolated WASM or Docker
-                      containers.
-                    </p>
+                  <div
+                    className="chapter-reveal grid grid-cols-2 p-4 text-xs"
+                    data-reveal="2"
+                  >
+                    <div>
+                      <h5 className="font-bold text-foreground">
+                        Source Traceability
+                      </h5>
+                      <p className="mt-1 text-stone-500">
+                        Document citations open the original file at the
+                        referenced page for direct inspection.
+                      </p>
+                    </div>
+                    <div className="border-l border-stone-200 pl-4 text-stone-500">
+                      <h5 className="font-bold text-stone-400">
+                        Unlinked Answers
+                      </h5>
+                      <p className="mt-1">
+                        Claims can be difficult to connect back to their
+                        supporting evidence.
+                      </p>
+                    </div>
                   </div>
-                  <div className="border-l border-stone-200 pl-4 text-stone-500">
-                    <h5 className="font-bold text-stone-400">
-                      Direct Host Access
-                    </h5>
-                    <p className="mt-1">
-                      Dangerously runs shell commands directly on host machines
-                      without boundaries.
-                    </p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 p-4 text-xs">
-                  <div>
-                    <h5 className="font-bold text-foreground">
-                      Syntax Loop Validators
-                    </h5>
-                    <p className="mt-1 text-stone-500">
-                      Automatic syntax checkers catch compile errors and
-                      re-route corrections.
-                    </p>
-                  </div>
-                  <div className="border-l border-stone-200 pl-4 text-stone-500">
-                    <h5 className="font-bold text-stone-400">
-                      Blind Completion
-                    </h5>
-                    <p className="mt-1">
-                      No compile checks. Outputs code chunks blindly with no
-                      verification loop.
-                    </p>
+                  <div
+                    className="chapter-reveal grid grid-cols-2 p-4 text-xs"
+                    data-reveal="3"
+                  >
+                    <div>
+                      <h5 className="font-bold text-foreground">
+                        Reusable Research Skills
+                      </h5>
+                      <p className="mt-1 text-stone-500">
+                        Apply repeatable workflows for datasets, study slides,
+                        interview material, and organization-specific outputs.
+                      </p>
+                    </div>
+                    <div className="border-l border-stone-200 pl-4 text-stone-500">
+                      <h5 className="font-bold text-stone-400">
+                        One-Off Prompting
+                      </h5>
+                      <p className="mt-1">
+                        Output format and quality instructions must be recreated
+                        for each new request.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2234,20 +2485,24 @@ function IntroPageContent() {
       </section>
 
       {/* 3. CTA & FOOTER */}
-      <section className="relative flex min-h-[60vh] flex-col items-center justify-center bg-stone-950 px-6 py-24 text-center text-white">
+      <section
+        data-scroll-reveal
+        className="scroll-reveal relative flex min-h-[60vh] flex-col items-center justify-center bg-stone-950 px-6 py-24 text-center text-white"
+      >
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,138,66,0.06)_0%,transparent_70%)]" />
         <div className="relative z-10 max-w-3xl">
           <p className="mb-3 font-mono text-xs uppercase tracking-widest text-[#FF8A42]">
-            Enterprise-Grade Trust
+            Designed for Human Oversight
           </p>
           <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-white sm:text-6xl">
-            Power your AI workflows
+            See how your documents
             <br />
-            with deterministic safety.
+            become reusable knowledge.
           </h2>
           <p className="mx-auto mt-6 max-w-xl text-sm leading-relaxed text-stone-400">
-            Launch the demo, initialize your collaborative thread, and build
-            production-grade agent loops today.
+            Upload sources, follow research and verification progress, inspect
+            citations, and apply reusable skills in one workspace. Generated
+            outputs remain subject to human review.
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -2255,7 +2510,7 @@ function IntroPageContent() {
               href="/chat"
               className="card-elevated flex h-11 items-center justify-center gap-2 rounded-full bg-[#FF8A42] px-8 py-3 font-semibold text-white transition hover:scale-[1.03]"
             >
-              Launch Demo
+              Launch Workspace Demo
               <ChevronRight className="h-4 w-4" />
             </a>
           </div>

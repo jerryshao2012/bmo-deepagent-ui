@@ -1664,6 +1664,15 @@ function IntroPageContent() {
             position: static;
           }
 
+          .workflow-route {
+            transition: none;
+          }
+
+          .workflow-node {
+            transition: none;
+            transform: none;
+          }
+
           .workflow-particle {
             display: none;
           }
@@ -2139,6 +2148,8 @@ function IntroPageContent() {
                 <svg
                   className="pointer-events-none absolute inset-0 h-full w-full"
                   xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+                  focusable="false"
                 >
                   <g
                     data-connector-track
@@ -2224,6 +2235,7 @@ function IntroPageContent() {
                   {/* Col 1 */}
                   <div className="flex items-center justify-center">
                     <div
+                      role="group"
                       tabIndex={0}
                       onMouseEnter={() => setHoveredNode("A")}
                       onMouseLeave={() => setHoveredNode(null)}
@@ -2231,7 +2243,7 @@ function IntroPageContent() {
                       onBlur={() => setFocusedNode(null)}
                       aria-label="Source Material"
                       className={cn(
-                        "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                        "workflow-node w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
                         activeNode === "A"
                           ? "scale-105 border-[#FF8A42] shadow-md"
                           : "border-stone-200"
@@ -2250,6 +2262,7 @@ function IntroPageContent() {
                   {/* Col 2 */}
                   <div className="flex flex-col justify-center gap-8">
                     <div
+                      role="group"
                       tabIndex={0}
                       onMouseEnter={() => setHoveredNode("C")}
                       onMouseLeave={() => setHoveredNode(null)}
@@ -2257,7 +2270,7 @@ function IntroPageContent() {
                       onBlur={() => setFocusedNode(null)}
                       aria-label="Living Wiki"
                       className={cn(
-                        "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                        "workflow-node w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
                         activeNode === "C"
                           ? "scale-105 border-[#FF8A42] shadow-md"
                           : "border-stone-200"
@@ -2272,6 +2285,7 @@ function IntroPageContent() {
                       </p>
                     </div>
                     <div
+                      role="group"
                       tabIndex={0}
                       onMouseEnter={() => setHoveredNode("D")}
                       onMouseLeave={() => setHoveredNode(null)}
@@ -2279,7 +2293,7 @@ function IntroPageContent() {
                       onBlur={() => setFocusedNode(null)}
                       aria-label="Research Plan"
                       className={cn(
-                        "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                        "workflow-node w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
                         activeNode === "D"
                           ? "scale-105 border-[#FF8A42] shadow-md"
                           : "border-stone-200"
@@ -2298,6 +2312,7 @@ function IntroPageContent() {
                   {/* Col 3 */}
                   <div className="flex items-center justify-center">
                     <div
+                      role="group"
                       tabIndex={0}
                       onMouseEnter={() => setHoveredNode("B")}
                       onMouseLeave={() => setHoveredNode(null)}
@@ -2305,7 +2320,7 @@ function IntroPageContent() {
                       onBlur={() => setFocusedNode(null)}
                       aria-label="Source-Linked Report"
                       className={cn(
-                        "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                        "workflow-node w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
                         activeNode === "B"
                           ? "scale-105 border-[#FF8A42] shadow-md"
                           : "border-stone-200"

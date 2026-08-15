@@ -158,6 +158,34 @@ test("phase 2 workflow cards preserve pointer state and support focus", async ()
   assert.match(source, /\{!activeNode &&\s*"Hover or focus nodes/);
 });
 
+test("phase 2 workflow semantics respect accessibility motion settings", async () => {
+  const source = await readFile(introPagePath, "utf8");
+
+  assert.equal(source.match(/role="group"/g)?.length, 4);
+  assert.equal(source.match(/workflow-node w-36 cursor-pointer/g)?.length, 4);
+  for (const label of [
+    "Source Material",
+    "Living Wiki",
+    "Research Plan",
+    "Source-Linked Report",
+  ]) {
+    assert.match(
+      source,
+      new RegExp(
+        `role="group"[\\s\\S]{0,600}aria-label="${label}"[\\s\\S]{0,160}"workflow-node`
+      )
+    );
+  }
+  assert.match(
+    source,
+    /Node Tree Visualizer[\s\S]{0,350}<svg[\s\S]{0,250}aria-hidden="true"[\s\S]{0,100}focusable="false"/
+  );
+  assert.match(
+    source,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.workflow-route\s*\{\s*transition:\s*none;\s*\}[\s\S]*?\.workflow-node\s*\{\s*transition:\s*none;\s*transform:\s*none;\s*\}[\s\S]*?\.workflow-particle\s*\{\s*display:\s*none;\s*\}/
+  );
+});
+
 test("closing section replaces the empty tail and centers its content", async () => {
   const source = await readFile(introPagePath, "utf8");
 

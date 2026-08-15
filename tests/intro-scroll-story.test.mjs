@@ -31,3 +31,22 @@ test("intro page keeps document as the only vertical scroll container", async ()
   assert.match(source, /min-h-screen overflow-x-clip/);
   assert.doesNotMatch(source, /min-h-screen overflow-x-hidden/);
 });
+
+test("hero preview begins after the first viewport", async () => {
+  const source = await readFile(introPagePath, "utf8");
+
+  assert.match(
+    source,
+    /hero-copy[^\n]*min-h-\[calc\(100svh-11rem\)\][^\n]*justify-center/
+  );
+});
+
+test("closing section replaces the empty tail and centers its content", async () => {
+  const source = await readFile(introPagePath, "utf8");
+
+  assert.match(
+    source,
+    /data-scroll-reveal[\s\S]{0,220}lg:-mt-\[calc\(40vh-3rem\)\][\s\S]{0,100}lg:min-h-\[calc\(100vh-3rem\)\]/
+  );
+  assert.doesNotMatch(source, /-top-\[30vh\][\s\S]{0,80}h-\[30vh\]/);
+});

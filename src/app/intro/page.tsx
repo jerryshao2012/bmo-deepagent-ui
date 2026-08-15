@@ -1874,7 +1874,7 @@ function IntroPageContent() {
         }
       >
         <div className="apple-fade visible w-full max-w-4xl">
-          <div className="hero-copy">
+          <div className="hero-copy flex min-h-[calc(100svh-11rem)] flex-col items-center justify-center">
             <p className="mb-4 text-xs font-bold uppercase tracking-widest text-[#FF8A42]">
               Enterprise Research Workspace
             </p>
@@ -2487,7 +2487,7 @@ function IntroPageContent() {
       {/* 3. CTA & FOOTER */}
       <section
         data-scroll-reveal
-        className="scroll-reveal relative flex min-h-[60vh] flex-col items-center justify-center bg-stone-950 px-6 py-24 text-center text-white"
+        className="scroll-reveal relative flex min-h-[60vh] flex-col items-center justify-center bg-stone-950 px-6 py-24 text-center text-white lg:-mt-[calc(40vh-3rem)] lg:min-h-[calc(100vh-3rem)]"
       >
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,138,66,0.06)_0%,transparent_70%)]" />
         <div className="relative z-10 max-w-3xl">

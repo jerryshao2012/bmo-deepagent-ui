@@ -26,6 +26,7 @@ graphify-out/
 .deployment-build.json
 .resolved-azure-endpoints.json
 .deepeval/
+.superpowers/
 
 # Temporary files
 *.tmp

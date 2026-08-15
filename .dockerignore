@@ -8,6 +8,7 @@
 .idea/
 .next/
 .playwright-cli/
+.superpowers/
 .vscode/
 .worktrees/
 data/

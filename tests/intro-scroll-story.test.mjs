@@ -195,3 +195,27 @@ test("closing section replaces the empty tail and centers its content", async ()
   );
   assert.doesNotMatch(source, /-top-\[30vh\][\s\S]{0,80}h-\[30vh\]/);
 });
+
+test("phase navigation keeps semantic anchors and uses scoped scrolling", async () => {
+  const source = await readFile(introPagePath, "utf8");
+
+  assert.match(
+    source,
+    /import\s*\{\s*navigateToIntroPhase,\s*type IntroPhaseId,?\s*\}\s*from "\.\/phase-navigation";/
+  );
+  assert.match(
+    source,
+    /const handlePhaseNavigation = \(\s*event: React\.MouseEvent<HTMLAnchorElement>,\s*phaseId: IntroPhaseId\s*\) => \{\s*navigateToIntroPhase\(event, phaseId\);\s*\};/
+  );
+  for (const phaseId of ["phase1", "phase2", "phase3"]) {
+    assert.match(source, new RegExp(`href="#${phaseId}"`));
+    assert.match(
+      source,
+      new RegExp(
+        `onClick=\\{\\(event\\) => handlePhaseNavigation\\(event, "${phaseId}"\\)\\}`
+      )
+    );
+  }
+  assert.doesNotMatch(source, /scroll-behavior\s*:\s*smooth/);
+  assert.doesNotMatch(source, /addEventListener\("popstate"/);
+});

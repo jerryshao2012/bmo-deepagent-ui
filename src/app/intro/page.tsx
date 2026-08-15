@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
+import { navigateToIntroPhase, type IntroPhaseId } from "./phase-navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MarkdownContent } from "@/app/components/MarkdownContent";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -1458,6 +1459,12 @@ function IntroPageContent() {
   const lowerRouteActive =
     activeNode !== null && ["A", "B", "D"].includes(activeNode);
   const [activePhase, setActivePhase] = useState<number>(1);
+  const handlePhaseNavigation = (
+    event: React.MouseEvent<HTMLAnchorElement>,
+    phaseId: IntroPhaseId
+  ) => {
+    navigateToIntroPhase(event, phaseId);
+  };
 
   // Intersection observer to track the active phase as user scrolls
   useEffect(() => {
@@ -1812,6 +1819,7 @@ function IntroPageContent() {
           <div className="hidden items-center gap-6 text-xs font-semibold text-muted-foreground sm:flex">
             <a
               href="#phase1"
+              onClick={(event) => handlePhaseNavigation(event, "phase1")}
               className={cn(
                 "transition hover:text-foreground",
                 activePhase === 1 && "text-[#FF8A42]"
@@ -1821,6 +1829,7 @@ function IntroPageContent() {
             </a>
             <a
               href="#phase2"
+              onClick={(event) => handlePhaseNavigation(event, "phase2")}
               className={cn(
                 "transition hover:text-foreground",
                 activePhase === 2 && "text-[#FF8A42]"
@@ -1830,6 +1839,7 @@ function IntroPageContent() {
             </a>
             <a
               href="#phase3"
+              onClick={(event) => handlePhaseNavigation(event, "phase3")}
               className={cn(
                 "transition hover:text-foreground",
                 activePhase === 3 && "text-[#FF8A42]"

@@ -23,9 +23,9 @@ Add one scoped phase-navigation handler in `src/app/intro/page.tsx`. Each of the
 
 For an ordinary primary-button activation:
 
-1. Prevent the browser's instant anchor jump.
-2. Find the requested phase element.
-3. Add the destination hash to browser history.
+1. Find the requested phase element. If it is unavailable, return without cancelling native navigation.
+2. Prevent the browser's instant anchor jump.
+3. When the destination differs from the current hash, add it to browser history with `pushState`. Re-selecting the current hash does not create a duplicate history entry.
 4. Call `scrollIntoView` with `block: "start"` and either `behavior: "smooth"` or `behavior: "auto"` when `prefers-reduced-motion: reduce` matches.
 
 Modified clicks used to open a new tab or window retain native anchor behavior. Existing `scroll-margin-top` on `.scroll-chapter` supplies the fixed-header offset, so no duplicate offset calculation is introduced.
@@ -37,6 +37,7 @@ No new dependency, global smooth-scroll rule, scroll lock, phase-transition stat
 - Re-selecting the current phase glides to its aligned section start if it is not already aligned.
 - Long moves, such as Phase 1 to Phase 3, pass naturally through the existing scroll story. Active-phase highlighting may progress through intermediate visible phases because it remains observer-driven.
 - The animation does not add entrance effects beyond the page's existing progress-based reveal behavior.
+- Back and Forward navigation relies on the browser's default same-document scroll restoration. No `popstate` listener or competing programmatic transition is added.
 
 ## Accessibility and fallback
 
@@ -49,7 +50,9 @@ No new dependency, global smooth-scroll rule, scroll lock, phase-transition stat
 ## Verification
 
 - Regression tests confirm all three phase anchors retain their hashes and use the scoped handler.
-- Tests confirm smooth behavior and reduced-motion `auto` behavior are both represented.
+- Focused handler tests confirm target lookup happens before `preventDefault`, missing targets leave native navigation untouched, and modifier-assisted clicks remain native.
+- Tests confirm the destination hash uses `pushState`, re-selecting the current hash does not create a duplicate entry, and normal versus reduced-motion activations use the exact `scrollIntoView` options.
+- Tests confirm direct-hash page loads remain independent of the click handler and browser Back/Forward behavior is not intercepted.
 - Browser checks confirm Phase 1 → Phase 2, Phase 2 → Phase 3, and Phase 3 → Phase 1 moves update the hash and align the requested section below the fixed header.
-- Browser checks confirm keyboard activation and reduced-motion fallback.
+- Browser checks confirm keyboard activation, same-phase re-selection, Back/Forward restoration, modifier-assisted navigation, and reduced-motion fallback.
 - Run intro regression tests, project lint, and production build.

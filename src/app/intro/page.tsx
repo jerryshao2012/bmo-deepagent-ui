@@ -1448,7 +1448,15 @@ function IntroPageContent() {
   };
 
   // State for interactive features in the redesigned Klarity-style layout
-  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  type WorkflowNodeId = "A" | "B" | "C" | "D";
+
+  const [hoveredNode, setHoveredNode] = useState<WorkflowNodeId | null>(null);
+  const [focusedNode, setFocusedNode] = useState<WorkflowNodeId | null>(null);
+  const activeNode = hoveredNode ?? focusedNode;
+  const upperRouteActive =
+    activeNode !== null && ["A", "B", "C"].includes(activeNode);
+  const lowerRouteActive =
+    activeNode !== null && ["A", "B", "D"].includes(activeNode);
   const [activePhase, setActivePhase] = useState<number>(1);
 
   // Intersection observer to track the active phase as user scrolls
@@ -1591,9 +1599,14 @@ function IntroPageContent() {
           --reveal-start: 0.32;
         }
 
-        .chapter-path {
-          stroke-dasharray: 1;
-          stroke-dashoffset: calc(1 - var(--chapter-progress));
+        .workflow-route {
+          transition: stroke 240ms ease;
+        }
+
+        .workflow-particle {
+          fill: #ff8a42;
+          filter: drop-shadow(0 0 4px rgba(255, 138, 66, 0.72));
+          pointer-events: none;
         }
 
         .scroll-reveal {
@@ -1628,9 +1641,6 @@ function IntroPageContent() {
             position: static;
           }
 
-          .chapter-path {
-            stroke-dashoffset: 0;
-          }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -1654,8 +1664,8 @@ function IntroPageContent() {
             position: static;
           }
 
-          .chapter-path {
-            stroke-dashoffset: 0;
+          .workflow-particle {
+            display: none;
           }
 
           .node-pulse {
@@ -2130,66 +2140,99 @@ function IntroPageContent() {
                   className="pointer-events-none absolute inset-0 h-full w-full"
                   xmlns="http://www.w3.org/2000/svg"
                 >
-                  {/* Connecting lines with highlight on hover */}
+                  <g
+                    data-connector-track
+                    aria-hidden="true"
+                    fill="none"
+                    stroke="#e2e8f0"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  >
+                    <path d="M 120 180 Q 220 180 320 120" />
+                    <path d="M 120 180 Q 220 180 320 240" />
+                    <path d="M 320 120 Q 420 120 520 180" />
+                    <path d="M 320 240 Q 420 240 520 180" />
+                  </g>
+
+                  {/* Contextual route highlights */}
                   <path
+                    data-workflow-route="upper"
                     d="M 120 180 Q 220 180 320 120"
-                    stroke={
-                      hoveredNode === "A" || hoveredNode === "C"
-                        ? "#FF8A42"
-                        : "#e2e8f0"
-                    }
+                    stroke={upperRouteActive ? "#ff8a42" : "transparent"}
                     strokeWidth="2.5"
+                    strokeLinecap="round"
                     fill="none"
-                    pathLength="1"
-                    className="chapter-path transition-all duration-300"
+                    className="workflow-route"
                   />
                   <path
+                    data-workflow-route="lower"
                     d="M 120 180 Q 220 180 320 240"
-                    stroke={
-                      hoveredNode === "A" || hoveredNode === "D"
-                        ? "#FF8A42"
-                        : "#e2e8f0"
-                    }
+                    stroke={lowerRouteActive ? "#ff8a42" : "transparent"}
                     strokeWidth="2.5"
+                    strokeLinecap="round"
                     fill="none"
-                    pathLength="1"
-                    className="chapter-path transition-all duration-300"
+                    className="workflow-route"
                   />
                   <path
+                    data-workflow-route="upper"
                     d="M 320 120 Q 420 120 520 180"
-                    stroke={
-                      hoveredNode === "C" || hoveredNode === "B"
-                        ? "#FF8A42"
-                        : "#e2e8f0"
-                    }
+                    stroke={upperRouteActive ? "#ff8a42" : "transparent"}
                     strokeWidth="2.5"
+                    strokeLinecap="round"
                     fill="none"
-                    pathLength="1"
-                    className="chapter-path transition-all duration-300"
+                    className="workflow-route"
                   />
                   <path
+                    data-workflow-route="lower"
                     d="M 320 240 Q 420 240 520 180"
-                    stroke={
-                      hoveredNode === "D" || hoveredNode === "B"
-                        ? "#FF8A42"
-                        : "#e2e8f0"
-                    }
+                    stroke={lowerRouteActive ? "#ff8a42" : "transparent"}
                     strokeWidth="2.5"
+                    strokeLinecap="round"
                     fill="none"
-                    pathLength="1"
-                    className="chapter-path transition-all duration-300"
+                    className="workflow-route"
                   />
+                  {upperRouteActive && (
+                    <circle
+                      className="workflow-particle"
+                      r="4.5"
+                      aria-hidden="true"
+                    >
+                      <animateMotion
+                        dur="1.6s"
+                        repeatCount="indefinite"
+                        path="M 120 180 Q 220 180 320 120 Q 420 120 520 180"
+                      />
+                    </circle>
+                  )}
+                  {lowerRouteActive && (
+                    <circle
+                      className="workflow-particle"
+                      r="4.5"
+                      aria-hidden="true"
+                    >
+                      <animateMotion
+                        begin={upperRouteActive ? "0.18s" : "0s"}
+                        dur="1.6s"
+                        repeatCount="indefinite"
+                        path="M 120 180 Q 220 180 320 240 Q 420 240 520 180"
+                      />
+                    </circle>
+                  )}
                 </svg>
 
                 <div className="relative z-10 grid w-full max-w-xl grid-cols-3 gap-x-20 gap-y-12">
                   {/* Col 1 */}
                   <div className="flex items-center justify-center">
                     <div
+                      tabIndex={0}
                       onMouseEnter={() => setHoveredNode("A")}
                       onMouseLeave={() => setHoveredNode(null)}
+                      onFocus={() => setFocusedNode("A")}
+                      onBlur={() => setFocusedNode(null)}
+                      aria-label="Source Material"
                       className={cn(
                         "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
-                        hoveredNode === "A"
+                        activeNode === "A"
                           ? "scale-105 border-[#FF8A42] shadow-md"
                           : "border-stone-200"
                       )}
@@ -2207,11 +2250,15 @@ function IntroPageContent() {
                   {/* Col 2 */}
                   <div className="flex flex-col justify-center gap-8">
                     <div
+                      tabIndex={0}
                       onMouseEnter={() => setHoveredNode("C")}
                       onMouseLeave={() => setHoveredNode(null)}
+                      onFocus={() => setFocusedNode("C")}
+                      onBlur={() => setFocusedNode(null)}
+                      aria-label="Living Wiki"
                       className={cn(
                         "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
-                        hoveredNode === "C"
+                        activeNode === "C"
                           ? "scale-105 border-[#FF8A42] shadow-md"
                           : "border-stone-200"
                       )}
@@ -2225,11 +2272,15 @@ function IntroPageContent() {
                       </p>
                     </div>
                     <div
+                      tabIndex={0}
                       onMouseEnter={() => setHoveredNode("D")}
                       onMouseLeave={() => setHoveredNode(null)}
+                      onFocus={() => setFocusedNode("D")}
+                      onBlur={() => setFocusedNode(null)}
+                      aria-label="Research Plan"
                       className={cn(
                         "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
-                        hoveredNode === "D"
+                        activeNode === "D"
                           ? "scale-105 border-[#FF8A42] shadow-md"
                           : "border-stone-200"
                       )}
@@ -2247,11 +2298,15 @@ function IntroPageContent() {
                   {/* Col 3 */}
                   <div className="flex items-center justify-center">
                     <div
+                      tabIndex={0}
                       onMouseEnter={() => setHoveredNode("B")}
                       onMouseLeave={() => setHoveredNode(null)}
+                      onFocus={() => setFocusedNode("B")}
+                      onBlur={() => setFocusedNode(null)}
+                      aria-label="Source-Linked Report"
                       className={cn(
                         "w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
-                        hoveredNode === "B"
+                        activeNode === "B"
                           ? "scale-105 border-[#FF8A42] shadow-md"
                           : "border-stone-200"
                       )}
@@ -2270,16 +2325,16 @@ function IntroPageContent() {
                 {/* Dynamic status helper */}
                 <div className="absolute bottom-4 left-4 right-4 text-center">
                   <span className="rounded-full border border-stone-200/50 bg-white/80 px-3 py-1 font-mono text-[10px] text-stone-400 shadow-sm">
-                    {hoveredNode === "A" &&
+                    {activeNode === "A" &&
                       "Source: Uploaded reports, policies, research, and presentations."}
-                    {hoveredNode === "C" &&
+                    {activeNode === "C" &&
                       "Knowledge: Synthesizes sources into reusable wiki pages."}
-                    {hoveredNode === "D" &&
+                    {activeNode === "D" &&
                       "Research: Plans document queries and bounded web evidence gathering."}
-                    {hoveredNode === "B" &&
+                    {activeNode === "B" &&
                       "Output: Produces a source-linked report for human review."}
-                    {!hoveredNode &&
-                      "Hover nodes to preview the active process tree connections."}
+                    {!activeNode &&
+                      "Hover or focus nodes to preview the active process tree connections."}
                   </span>
                 </div>
               </div>

@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import {
   Folder,
   FolderOpen,
@@ -61,20 +67,26 @@ export const WikiTreeViewer: React.FC<WikiTreeViewerProps> = ({
     "wiki": true, // wiki directory expanded by default
   });
   const [loadingFilePath, setLoadingFilePath] = useState<string | null>(null);
+  const requestGenerationRef = useRef(0);
 
   const fetchTree = useCallback(async () => {
+    const requestGeneration = ++requestGenerationRef.current;
+    const isCurrentRequest = () =>
+      requestGenerationRef.current === requestGeneration;
     setLoading(true);
     setError(null);
     try {
       const data = await wikiGateway.getTree(threadId);
+      if (!isCurrentRequest()) return;
       setTreeData(data.tree);
       if (typeof data.fileCount === "number" && onFileCountChange) {
         onFileCountChange(data.fileCount);
       }
     } catch (err: any) {
+      if (!isCurrentRequest()) return;
       setError(err.message || "Failed to load wiki directory tree.");
     } finally {
-      setLoading(false);
+      if (isCurrentRequest()) setLoading(false);
     }
   }, [threadId, onFileCountChange, wikiGateway]);
 
@@ -82,6 +94,9 @@ export const WikiTreeViewer: React.FC<WikiTreeViewerProps> = ({
     if (threadId) {
       fetchTree();
     }
+    return () => {
+      requestGenerationRef.current += 1;
+    };
   }, [threadId, fetchTree]);
 
   const handleFileClick = async (node: TreeNode) => {

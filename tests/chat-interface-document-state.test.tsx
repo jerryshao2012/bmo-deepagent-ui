@@ -365,6 +365,96 @@ test("open wiki does not probe next thread before document availability is confi
   }
 });
 
+test("stale viewer response cannot update revisited thread count", async () => {
+  configure();
+  const uploadFolders: string[] = [];
+  const wikiTreeThreads: string[] = [];
+  const writes: StateWrite[] = [];
+  const staleViewerResponse = deferred<Response>();
+  const freshViewerResponse = deferred<Response>();
+  let listCalls = 0;
+  let aWikiCalls = 0;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    wikiTreeThreads,
+    onList: async (threadId) => {
+      listCalls += 1;
+      if (threadId === "A") {
+        return documentsResponse([
+          { name: "listed.pdf", size: 4, type: "file" },
+        ]);
+      }
+      return new Response(null, { status: 404 });
+    },
+    onWikiTree: async (threadId) => {
+      if (threadId !== "A") {
+        return new Response(JSON.stringify({ file_count: 0 }), {
+          status: 200,
+        });
+      }
+      aWikiCalls += 1;
+      if (aWikiCalls === 2) return staleViewerResponse.promise;
+      if (aWikiCalls === 4) return freshViewerResponse.promise;
+      return new Response(JSON.stringify({ file_count: 0 }), { status: 200 });
+    },
+  });
+
+  try {
+    renderChat({
+      client: makeClient(writes),
+      chat: baseChat(() => {}),
+      canSwitch: true,
+    });
+    await waitFor(() => assert.equal(listCalls, 1));
+    await waitFor(() =>
+      assert.ok(screen.getByRole("button", { name: /Wiki/ }))
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Wiki/ }));
+    await waitFor(() => assert.equal(aWikiCalls, 2));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitFor(() => assert.equal(listCalls, 2));
+    await waitFor(() =>
+      assert.ok(
+        writes.some(
+          (write) =>
+            write.threadId === "B" && write.values.has_documents === false
+        )
+      )
+    );
+    assert.equal(wikiTreeThreads.includes("B"), false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitFor(() => assert.equal(listCalls, 3));
+    await waitFor(() =>
+      assert.ok(screen.getByRole("button", { name: /^Wiki/ }))
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Wiki/ }));
+    await waitFor(() => assert.equal(aWikiCalls, 4));
+
+    await act(async () => {
+      staleViewerResponse.resolve(
+        new Response(JSON.stringify({ file_count: 99 }), { status: 200 })
+      );
+      await staleViewerResponse.promise;
+    });
+    assert.equal(document.body.textContent?.includes("99"), false);
+
+    await act(async () => {
+      freshViewerResponse.resolve(
+        new Response(JSON.stringify({ file_count: 7 }), { status: 200 })
+      );
+      await freshViewerResponse.promise;
+    });
+    await waitFor(() =>
+      assert.ok(screen.getByRole("button", { name: /^Wiki7$/ }))
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("stale wiki count response cannot repopulate after switching threads", async () => {
   configure();
   const uploadFolders: string[] = [];

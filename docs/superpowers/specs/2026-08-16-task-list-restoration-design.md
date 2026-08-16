@@ -24,8 +24,9 @@ on one thread can remain open on the next thread.
   idle and a snapshot is available.
 - During an active run, use live stream todos, including an intentionally empty
   list, so stale persisted tasks never replace current run state.
-- If root snapshot retrieval fails or has not completed, fall back to stream
-  todos.
+- Before any root snapshot has been obtained, including an initial retrieval
+  failure, fall back to stream todos. After a valid snapshot exists, retain it
+  across transient polling failures, matching current snapshot behavior.
 - Keep `fetchStateHistory: false`; do not restore persisted nested subagent
   history.
 - Keep live nested subagent events and tool calls unchanged.
@@ -70,20 +71,23 @@ alter the user's panel choice.
 
 ## Error Handling
 
-Snapshot polling errors remain non-fatal. When no snapshot is available, task
-selection falls back to stream state. No retries, nested-history requests, or
-backend changes are added.
+Snapshot polling errors remain non-fatal. When no confirmed snapshot is
+available, task selection falls back to stream state. A transient error after a
+confirmed snapshot does not clear that snapshot. No new retries,
+nested-history requests, or backend changes are added.
 
 ## Testing
 
 - Pure selector test: idle equal-message scenario chooses populated snapshot
   todos over empty stream todos.
-- Pure selector test: loading state chooses live todos even when snapshot todos
-  exist.
+- Pure selector test: loading state chooses intentionally empty live todos even
+  when snapshot todos exist.
 - Pure selector test: missing snapshot falls back to stream todos.
 - Component test: opening Tasks on thread A and switching to thread B collapses
   the metadata panel.
 - Component test or retained behavior assertion: loading changes within the same
   thread do not force the panel closed.
+- Retain stream-policy assertions that persisted history is disabled while live
+  nested subgraph streaming remains enabled.
 - Run focused Node tests, ESLint, Prettier check, and TypeScript/Next.js build as
   appropriate for changed files.

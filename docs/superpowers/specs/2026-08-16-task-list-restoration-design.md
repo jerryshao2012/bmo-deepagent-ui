@@ -1,0 +1,89 @@
+# Task List Restoration and Thread-Scoped Collapse
+
+## Problem
+
+Persisted root tasks can disappear after a thread reload even though LangGraph's
+latest thread state still contains `todos`. Persisted nested checkpoint history
+is intentionally disabled because dynamic nested tool namespaces cause backend
+`Subgraph tools not found` errors. The frontend therefore polls the latest root
+thread snapshot separately.
+
+`useChat` currently selects all snapshot-backed fields through a message-count
+condition. When SDK-restored messages and server-snapshot messages have equal
+lengths, empty `stream.values.todos` wins over populated
+`serverSnapshot.todos`. Task visibility is incorrectly coupled to message
+completeness.
+
+The metadata panel also initializes collapsed only on the first component mount.
+Because `ChatInterface` remains mounted during thread navigation, a panel opened
+on one thread can remain open on the next thread.
+
+## Requirements
+
+- Restore root `todos` from the latest server snapshot whenever the thread is
+  idle and a snapshot is available.
+- During an active run, use live stream todos, including an intentionally empty
+  list, so stale persisted tasks never replace current run state.
+- If root snapshot retrieval fails or has not completed, fall back to stream
+  todos.
+- Keep `fetchStateHistory: false`; do not restore persisted nested subagent
+  history.
+- Keep live nested subagent events and tool calls unchanged.
+- Collapse the metadata panel when opening or switching threads.
+- Do not collapse the panel merely because a new run starts or finishes within
+  the same thread.
+- Preserve existing task rendering, ordering, status labels, files, documents,
+  wiki state, and message-selection behavior.
+
+## Design
+
+### Todo Source Selection
+
+Add a small pure selector near chat hook state-selection code. Inputs are live
+stream todos, optional server-snapshot todos, and stream loading state.
+
+- `isLoading === true`: return live stream todos.
+- idle with a server snapshot: return server-snapshot todos.
+- idle without a server snapshot: return live stream todos.
+
+`useChat` will use this selector for `effectiveTodos` independently of
+`shouldPreferServerSnapshot`, which remains unchanged for messages and other
+fields.
+
+### Metadata Panel Lifecycle
+
+`ChatInterface` will reset `metaOpen` to `null` when `currentThreadId` changes.
+No loading-state dependency will be added, so a run in the same thread does not
+alter the user's panel choice.
+
+## Data Flow
+
+1. SDK stream continues restoring latest supported state without checkpoint
+   history and continues receiving live nested events.
+2. Existing polling retrieves the latest root thread snapshot and stores its
+   `todos`.
+3. Todo selector chooses live todos during a run and snapshot todos while idle.
+4. `ChatInterface` renders selected tasks in its existing collapsed trigger and
+   expanded list.
+5. Thread ID change closes any open metadata panel; tasks remain available behind
+   the collapsed trigger.
+
+## Error Handling
+
+Snapshot polling errors remain non-fatal. When no snapshot is available, task
+selection falls back to stream state. No retries, nested-history requests, or
+backend changes are added.
+
+## Testing
+
+- Pure selector test: idle equal-message scenario chooses populated snapshot
+  todos over empty stream todos.
+- Pure selector test: loading state chooses live todos even when snapshot todos
+  exist.
+- Pure selector test: missing snapshot falls back to stream todos.
+- Component test: opening Tasks on thread A and switching to thread B collapses
+  the metadata panel.
+- Component test or retained behavior assertion: loading changes within the same
+  thread do not force the panel closed.
+- Run focused Node tests, ESLint, Prettier check, and TypeScript/Next.js build as
+  appropriate for changed files.

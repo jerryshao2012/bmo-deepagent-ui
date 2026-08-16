@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, ReactNode } from "react";
 import { Client } from "@langchain/langgraph-sdk";
-import { createLangGraphClientConfig, startProactiveSessionRefresh } from "@/lib/langgraph-client";
+import {
+  configureLangGraphClientStreamPolicy,
+  createLangGraphClientConfig,
+  startProactiveSessionRefresh,
+} from "@/lib/langgraph-client";
 import { ClientContext } from "@/providers/ClientContext";
 
 interface ClientProviderProps {
@@ -24,7 +28,10 @@ export function ClientProvider({
   }, [deploymentUrl]);
 
   const client = useMemo(() => {
-    return new Client(createLangGraphClientConfig({ deploymentUrl, apiKey }));
+    return configureLangGraphClientStreamPolicy(
+      new Client(createLangGraphClientConfig({ deploymentUrl, apiKey })),
+      deploymentUrl
+    );
   }, [deploymentUrl, apiKey]);
 
   const value = useMemo(() => ({ client }), [client]);

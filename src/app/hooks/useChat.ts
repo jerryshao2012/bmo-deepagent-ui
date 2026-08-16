@@ -19,7 +19,10 @@ import { useQueryState } from "nuqs";
 import { LangGraphChatGateway } from "@/features/chat/infrastructure/langgraph-chat-gateway";
 import { LangGraphRunExecutor } from "@/features/chat/infrastructure/langgraph-run-executor";
 import { CHAT_STREAM_OPTIONS } from "./chat-stream-options";
-import { selectEffectiveTodos } from "./chat-state-selection";
+import {
+  selectEffectiveTodos,
+  selectServerTodosForThread,
+} from "./chat-state-selection";
 
 export type StateType = {
   messages: Message[];
@@ -530,9 +533,11 @@ export function useChat({
   const effectiveTodos = selectEffectiveTodos({
     isLoading: stream.isLoading,
     streamTodos: stream.values.todos,
-    serverTodos: serverSnapshot?.todos,
-    currentThreadId: threadId,
-    serverSnapshotThreadId: serverSnapshot?.threadId,
+    serverTodos: selectServerTodosForThread({
+      currentThreadId: threadId,
+      serverThreadId: serverSnapshot?.threadId,
+      serverTodos: serverSnapshot?.todos,
+    }),
   });
 
   const effectiveEmail = shouldPreferServerSnapshot

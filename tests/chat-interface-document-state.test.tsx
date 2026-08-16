@@ -162,10 +162,12 @@ function renderChat({
   client,
   chat,
   canSwitch = false,
+  strictMode = false,
 }: {
   client: never;
   chat: never;
   canSwitch?: boolean;
+  strictMode?: boolean;
 }) {
   const cache = new Map([
     [unstable_serialize({ kind: "thread-status", threadId: "A" }), "idle"],
@@ -177,11 +179,21 @@ function renderChat({
         searchParams="?threadId=A"
         hasMemory
       >
-        <Harness
-          client={client}
-          chat={chat}
-          canSwitch={canSwitch}
-        />
+        {strictMode ? (
+          <React.StrictMode>
+            <Harness
+              client={client}
+              chat={chat}
+              canSwitch={canSwitch}
+            />
+          </React.StrictMode>
+        ) : (
+          <Harness
+            client={client}
+            chat={chat}
+            canSwitch={canSwitch}
+          />
+        )}
       </NuqsTestingAdapter>
     </SWRConfig>
   );
@@ -190,11 +202,16 @@ function renderChat({
 function installFetch({
   onList = async () => documentsResponse([]),
   onDelete = async () => new Response(null, { status: 200 }),
+  onWikiTree = async () =>
+    new Response(JSON.stringify({ file_count: 0 }), { status: 200 }),
   uploadFolders,
+  wikiTreeThreads = [],
 }: {
   onList?: (threadId: string) => Promise<Response>;
   onDelete?: (filename: string, threadId: string) => Promise<Response>;
+  onWikiTree?: (threadId: string) => Promise<Response>;
   uploadFolders: string[];
+  wikiTreeThreads?: string[];
 }) {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
@@ -216,7 +233,9 @@ function installFetch({
       return onDelete(filename, folder.replace(/^threads\//, ""));
     }
     if (url.pathname.endsWith("/wiki/tree")) {
-      return new Response(JSON.stringify({ file_count: 0 }), { status: 200 });
+      const threadId = url.pathname.split("/")[2] ?? "";
+      wikiTreeThreads.push(threadId);
+      return onWikiTree(threadId);
     }
     if (url.pathname.endsWith("/wiki/status")) {
       return new Response(
@@ -238,6 +257,141 @@ function installFetch({
     globalThis.fetch = originalFetch;
   };
 }
+
+test("wiki count waits for confirmed documents and does not leak availability across threads", async () => {
+  configure();
+  const uploadFolders: string[] = [];
+  const wikiTreeThreads: string[] = [];
+  const writes: StateWrite[] = [];
+  let listCalls = 0;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    wikiTreeThreads,
+    onList: async (threadId) => {
+      listCalls += 1;
+      if (threadId === "A") {
+        return documentsResponse([
+          { name: "listed.pdf", size: 4, type: "file" },
+        ]);
+      }
+      return new Response(null, { status: 404 });
+    },
+  });
+
+  try {
+    renderChat({
+      client: makeClient(writes),
+      chat: baseChat(() => {}),
+      canSwitch: true,
+    });
+
+    await waitFor(() => assert.equal(listCalls, 1));
+    await waitFor(() => assert.deepEqual(wikiTreeThreads, ["A"]));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitFor(() => assert.equal(listCalls, 2));
+    await waitFor(() =>
+      assert.ok(
+        writes.some(
+          (write) =>
+            write.threadId === "B" && write.values.has_documents === false
+        )
+      )
+    );
+    assert.deepEqual(wikiTreeThreads, ["A"]);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("stale wiki count response cannot repopulate after switching threads", async () => {
+  configure();
+  const uploadFolders: string[] = [];
+  const wikiTreeThreads: string[] = [];
+  const writes: StateWrite[] = [];
+  const aWikiResponses = [deferred<Response>(), deferred<Response>()];
+  const bWikiResponse = deferred<Response>();
+  let listCalls = 0;
+  let aWikiCalls = 0;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    wikiTreeThreads,
+    onList: async (threadId) => {
+      listCalls += 1;
+      if (threadId === "A") {
+        return documentsResponse([
+          { name: "listed.pdf", size: 4, type: "file" },
+        ]);
+      }
+      return new Response(null, { status: 404 });
+    },
+    onWikiTree: async (threadId) => {
+      if (threadId === "B") {
+        return bWikiResponse.promise;
+      }
+      if (threadId !== "A") {
+        return new Response(JSON.stringify({ file_count: 0 }), {
+          status: 200,
+        });
+      }
+      aWikiCalls += 1;
+      return aWikiResponses[Math.min(aWikiCalls - 1, aWikiResponses.length - 1)]
+        .promise;
+    },
+  });
+
+  try {
+    const view = renderChat({
+      client: makeClient(writes),
+      chat: baseChat(() => {}),
+      canSwitch: true,
+      strictMode: true,
+    });
+    await waitFor(() =>
+      assert.ok(
+        wikiTreeThreads.length > 0 &&
+          wikiTreeThreads.every((threadId) => threadId === "A")
+      )
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitFor(() => assert.equal(listCalls, 2));
+    await waitFor(() =>
+      assert.ok(
+        writes.some(
+          (write) =>
+            write.threadId === "B" && write.values.has_documents === false
+        )
+      )
+    );
+    assert.ok(wikiTreeThreads.every((threadId) => threadId === "A"));
+
+    await act(async () => {
+      for (const response of aWikiResponses) {
+        response.resolve(
+          new Response(JSON.stringify({ file_count: 99 }), { status: 200 })
+        );
+      }
+      await Promise.all(aWikiResponses.map((response) => response.promise));
+    });
+
+    await dropFile(view.container, "b.pdf");
+    await waitFor(() => assert.ok(wikiTreeThreads.includes("B")));
+    assert.ok(screen.getByRole("button", { name: "Wiki", exact: true }));
+
+    await act(async () => {
+      bWikiResponse.resolve(
+        new Response(JSON.stringify({ file_count: 7 }), { status: 200 })
+      );
+      await bWikiResponse.promise;
+    });
+    await waitFor(() =>
+      assert.ok(screen.getByRole("button", { name: "Wiki7", exact: true }))
+    );
+  } finally {
+    restoreFetch();
+  }
+});
 
 async function dropFile(container: HTMLElement, filename = "upload.pdf") {
   const root = container.lastElementChild as HTMLElement;

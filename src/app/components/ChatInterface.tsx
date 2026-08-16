@@ -235,7 +235,17 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     setDocumentViewerState(null);
   }, [currentThreadId]);
 
-  const [wikiFileCount, setWikiFileCount] = useState<number | null>(null);
+  const [wikiFileCount, setWikiFileCount] = useState<{
+    threadId: string;
+    count: number;
+  } | null>(null);
+  const wikiAvailabilityThreadRef = useRef<string | null>(null);
+  const selectedWikiFileCount =
+    documentAvailability === true &&
+    currentThreadId &&
+    wikiFileCount?.threadId === currentThreadId
+      ? wikiFileCount.count
+      : null;
   const [ingestProgress, setIngestProgress] = useState<number | null>(null);
   const [ingestPhase, setIngestPhase] = useState<string | null>(null);
   const [ingestDetail, setIngestDetail] = useState<string | null>(null);
@@ -253,10 +263,19 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [uploadElapsedMs, setUploadElapsedMs] = useState<number>(0);
 
   useEffect(() => {
-    if (!currentThreadId) {
+    if (!currentThreadId || documentAvailability !== true) {
+      wikiAvailabilityThreadRef.current = currentThreadId;
       setWikiFileCount(null);
       return;
     }
+    if (wikiAvailabilityThreadRef.current !== currentThreadId) {
+      wikiAvailabilityThreadRef.current = currentThreadId;
+      setWikiFileCount(null);
+      return;
+    }
+    const requestedThreadId = currentThreadId;
+    const requestedAvailability = documentAvailability;
+    let active = true;
     const appConfig = getConfig();
     const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
     const token = getBrowserSessionToken();
@@ -268,12 +287,23 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     )
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data && typeof data.file_count === "number") {
-          setWikiFileCount(data.file_count);
+        if (
+          active &&
+          requestedAvailability === true &&
+          data &&
+          typeof data.file_count === "number"
+        ) {
+          setWikiFileCount({
+            threadId: requestedThreadId,
+            count: data.file_count,
+          });
         }
       })
       .catch(() => {});
-  }, [currentThreadId]);
+    return () => {
+      active = false;
+    };
+  }, [currentThreadId, documentAvailability]);
   // Tracks a pending doc_folder that couldn't be set via updateState
   // because the thread had no graph_id yet (no runs). It will be included
   // in the first sendMessage call instead.
@@ -1397,9 +1427,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                                 className="text-primary"
                               />
                               Wiki
-                              {wikiFileCount !== null && (
+                              {selectedWikiFileCount !== null && (
                                 <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
-                                  {wikiFileCount}
+                                  {selectedWikiFileCount}
                                 </span>
                               )}
                             </button>
@@ -1483,9 +1513,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                             {...getAriaExpandedProps(metaOpen === "wiki")}
                           >
                             Wiki
-                            {wikiFileCount !== null && (
+                            {selectedWikiFileCount !== null && (
                               <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
-                                {wikiFileCount}
+                                {selectedWikiFileCount}
                               </span>
                             )}
                           </button>

@@ -18,6 +18,7 @@ import { useClient } from "@/providers/ClientContext";
 import { useQueryState } from "nuqs";
 import { LangGraphChatGateway } from "@/features/chat/infrastructure/langgraph-chat-gateway";
 import { LangGraphRunExecutor } from "@/features/chat/infrastructure/langgraph-run-executor";
+import { CHAT_STREAM_OPTIONS } from "./chat-stream-options";
 
 export type StateType = {
   messages: Message[];
@@ -159,13 +160,12 @@ export function useChat({
   const stream = useStream<StateType>({
     assistantId: activeAssistant?.assistant_id || "",
     client: client ?? undefined,
-    reconnectOnMount: true,
+    // Keep latest state hydration via getState, but skip invalid persisted
+    // checkpoint history that attempts to restore backend-only subgraphs.
+    ...CHAT_STREAM_OPTIONS,
     threadId: threadId ?? null,
     onThreadId: setThreadId,
     defaultHeaders: { "x-auth-scheme": "langsmith" },
-    // Enable fetching state history when switching to existing threads
-    fetchStateHistory: true,
-    filterSubagentMessages: true,
     // Revalidate thread list when stream finishes, errors, or creates new thread
     onFinish: onHistoryRevalidateAction,
     onError: (error) => {

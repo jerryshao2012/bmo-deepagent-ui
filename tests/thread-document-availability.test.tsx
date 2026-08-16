@@ -31,9 +31,11 @@ function deferred<T>() {
 
 function renderAvailability({
   threadId = "thread-1",
+  selectedThreadStatus = null,
   listDocuments,
 }: {
   threadId?: string | null;
+  selectedThreadStatus?: "busy" | "idle" | "interrupted" | "error" | null;
   listDocuments: (threadId: string) => Promise<Response>;
 }) {
   const updates: StateUpdate[] = [];
@@ -44,13 +46,14 @@ function renderAvailability({
     updates.push({ threadId: updatedThreadId, values });
   };
   const hook = renderHook(
-    ({ activeThreadId }) =>
+    ({ activeThreadId, status }) =>
       useThreadDocumentAvailability({
         threadId: activeThreadId,
+        selectedThreadStatus: status,
         listDocuments,
         updateThreadState,
       }),
-    { initialProps: { activeThreadId: threadId } }
+    { initialProps: { activeThreadId: threadId, status: selectedThreadStatus } }
   );
   return { ...hook, updates };
 }
@@ -174,7 +177,7 @@ test("upload success uses exact active LangGraph thread ID and persists its fold
   });
   await waitFor(() => assert.equal(result.current.isRefreshing, false));
 
-  let persisted: boolean | undefined;
+  let persisted: boolean | "deferred" | undefined;
   await act(async () => {
     persisted = await result.current.recordUploadSuccess({
       activeThreadId: threadId,
@@ -248,6 +251,289 @@ test("upload callback accepts the existing created thread before query-state rer
       },
     },
   ]);
+});
+
+test("HTTP 409 defers latest persistence until selected thread is confirmed non-busy", async () => {
+  let allowWrite = false;
+  const updates: StateUpdate[] = [];
+  const errors: unknown[][] = [];
+  const originalConsoleError = console.error;
+  console.error = (...args: unknown[]) => errors.push(args);
+
+  try {
+    const { result, rerender } = renderHook(
+      ({ status }: { status: "busy" | "idle" }) =>
+        useThreadDocumentAvailability({
+          threadId: "thread-1",
+          selectedThreadStatus: status,
+          listDocuments: async () => listResponse([]),
+          updateThreadState: async (_threadId, values) => {
+            if (!allowWrite) {
+              throw new Error(
+                "HTTP 409: Cannot update thread state because it has in-flight runs"
+              );
+            }
+            updates.push({ threadId: "thread-1", values });
+          },
+        }),
+      { initialProps: { status: "busy" as "busy" | "idle" } }
+    );
+
+    await waitFor(() => assert.equal(result.current.isRefreshing, false));
+    await act(async () => {
+      await result.current.recordUploadSuccess({
+        activeThreadId: "thread-1",
+        documents: [{ name: "new.pdf", size: 9, type: "file" }],
+        docFolder: "docs/threads/thread-1",
+      });
+    });
+    assert.deepEqual(updates, []);
+    assert.deepEqual(errors, []);
+
+    allowWrite = true;
+    rerender({ status: "idle" });
+    await waitFor(() => assert.equal(updates.length, 1));
+    assert.deepEqual(updates, [
+      {
+        threadId: "thread-1",
+        values: {
+          has_documents: true,
+          doc_folder: "docs/threads/thread-1",
+        },
+      },
+    ]);
+  } finally {
+    console.error = originalConsoleError;
+  }
+});
+
+test("cached idle status retries deferred 409 once after completed status revalidation", async () => {
+  let allowWrite = false;
+  let attempts = 0;
+  const { result, rerender } = renderHook(
+    ({ isValidating }: { isValidating: boolean }) =>
+      useThreadDocumentAvailability({
+        threadId: "thread-1",
+        selectedThreadStatus: "idle",
+        selectedThreadStatusIsValidating: isValidating,
+        listDocuments: async () => listResponse([]),
+        updateThreadState: async () => {
+          attempts += 1;
+          if (!allowWrite) {
+            throw new Error(
+              "HTTP 409: Cannot update thread state because it has in-flight runs"
+            );
+          }
+        },
+      }),
+    { initialProps: { isValidating: false } }
+  );
+
+  await waitFor(() => assert.equal(result.current.isRefreshing, false));
+  assert.equal(attempts, 1);
+
+  allowWrite = true;
+  rerender({ isValidating: true });
+  await act(async () => {
+    rerender({ isValidating: false });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  });
+  await waitFor(() => assert.equal(attempts, 2));
+  await act(async () => {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  });
+  assert.equal(attempts, 2);
+});
+
+test("upload HTTP 409 returns accepted deferred result", async () => {
+  const { result } = renderHook(() =>
+    useThreadDocumentAvailability({
+      threadId: "thread-1",
+      selectedThreadStatus: "busy",
+      listDocuments: async () => new Response(null, { status: 500 }),
+      updateThreadState: async () => {
+        throw new Error(
+          "HTTP 409: Cannot update thread state because it has in-flight runs"
+        );
+      },
+    })
+  );
+
+  let persisted: unknown;
+  await act(async () => {
+    persisted = await result.current.recordUploadSuccess({
+      activeThreadId: "thread-1",
+      documents: [{ name: "upload.pdf", size: 4, type: "file" }],
+      docFolder: "docs/threads/thread-1",
+    });
+  });
+  assert.equal(persisted, "deferred");
+});
+
+test("stale upload HTTP 409 returns failure after thread changes", async () => {
+  const started = deferred<void>();
+  const rejected = deferred<never>();
+  const { result, rerender } = renderHook(
+    ({ threadId }: { threadId: "A" | "B" }) =>
+      useThreadDocumentAvailability({
+        threadId,
+        selectedThreadStatus: "busy",
+        listDocuments: async () => new Response(null, { status: 500 }),
+        updateThreadState: async () => {
+          started.resolve();
+          await rejected.promise;
+          throw new Error(
+            "HTTP 409: Cannot update thread state because it has in-flight runs"
+          );
+        },
+      }),
+    { initialProps: { threadId: "A" as "A" | "B" } }
+  );
+
+  let upload!: Promise<boolean | "deferred">;
+  act(() => {
+    upload = result.current.recordUploadSuccess({
+      activeThreadId: "A",
+      documents: [{ name: "upload.pdf", size: 4, type: "file" }],
+      docFolder: "docs/threads/A",
+    });
+  });
+  await act(async () => {
+    await started.promise;
+  });
+  rerender({ threadId: "B" });
+  rejected.resolve(undefined as never);
+
+  let persisted!: boolean | "deferred";
+  await act(async () => {
+    persisted = await upload;
+  });
+  assert.equal(persisted, false);
+});
+
+test("deferred HTTP 409 persistence is discarded when selected thread changes", async () => {
+  let allowWrite = false;
+  const updates: StateUpdate[] = [];
+  const { result, rerender } = renderHook(
+    ({ threadId, status }: { threadId: string; status: "busy" | "idle" }) =>
+      useThreadDocumentAvailability({
+        threadId,
+        selectedThreadStatus: status,
+        listDocuments: async (listedThreadId) =>
+          listedThreadId === "A"
+            ? listResponse([])
+            : new Response(null, { status: 500 }),
+        updateThreadState: async (updatedThreadId, values) => {
+          if (!allowWrite) {
+            throw new Error(
+              "HTTP 409: Cannot update thread state because it has in-flight runs"
+            );
+          }
+          updates.push({ threadId: updatedThreadId, values });
+        },
+      }),
+    {
+      initialProps: {
+        threadId: "A",
+        status: "busy" as "busy" | "idle",
+      },
+    }
+  );
+
+  await waitFor(() => assert.equal(result.current.isRefreshing, false));
+  assert.deepEqual(updates, []);
+
+  allowWrite = true;
+  rerender({ threadId: "B", status: "idle" });
+  await waitFor(() => assert.equal(result.current.isRefreshing, false));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(updates, []);
+});
+
+test("repeated HTTP 409 waits for a future status confirmation after one flush", async () => {
+  let attempts = 0;
+  const { result, rerender } = renderHook(
+    ({ status }: { status: "busy" | "idle" }) =>
+      useThreadDocumentAvailability({
+        threadId: "thread-1",
+        selectedThreadStatus: status,
+        listDocuments: async () => listResponse([]),
+        updateThreadState: async () => {
+          attempts += 1;
+          throw new Error(
+            "HTTP 409: Cannot update thread state because it has in-flight runs"
+          );
+        },
+      }),
+    { initialProps: { status: "busy" as "busy" | "idle" } }
+  );
+
+  await waitFor(() => assert.equal(result.current.isRefreshing, false));
+  assert.equal(attempts, 1);
+
+  await act(async () => {
+    rerender({ status: "idle" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  });
+  assert.equal(attempts, 2);
+  await act(async () => {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  });
+  assert.equal(attempts, 2);
+});
+
+test("unknown selected thread status retains deferred HTTP 409 without flushing", async () => {
+  let allowWrite = false;
+  const updates: StateUpdate[] = [];
+  const { result, rerender } = renderHook(
+    ({ status }: { status: "busy" | null }) =>
+      useThreadDocumentAvailability({
+        threadId: "thread-1",
+        selectedThreadStatus: status,
+        listDocuments: async () => listResponse([]),
+        updateThreadState: async (threadId, values) => {
+          if (!allowWrite) {
+            throw new Error(
+              "HTTP 409: Cannot update thread state because it has in-flight runs"
+            );
+          }
+          updates.push({ threadId, values });
+        },
+      }),
+    { initialProps: { status: null as "busy" | null } }
+  );
+
+  await waitFor(() => assert.equal(result.current.isRefreshing, false));
+  allowWrite = true;
+  rerender({ status: null });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(updates, []);
+});
+
+test("unmount discards deferred HTTP 409 persistence", async () => {
+  let allowWrite = false;
+  const updates: StateUpdate[] = [];
+  const { result, unmount } = renderHook(() =>
+    useThreadDocumentAvailability({
+      threadId: "thread-1",
+      selectedThreadStatus: "busy",
+      listDocuments: async () => listResponse([]),
+      updateThreadState: async (threadId, values) => {
+        if (!allowWrite) {
+          throw new Error(
+            "HTTP 409: Cannot update thread state because it has in-flight runs"
+          );
+        }
+        updates.push({ threadId, values });
+      },
+    })
+  );
+
+  await waitFor(() => assert.equal(result.current.isRefreshing, false));
+  unmount();
+  allowWrite = true;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(updates, []);
 });
 
 test("successful non-last and last deletion update availability and persisted state", async () => {
@@ -424,7 +710,7 @@ test("upload persistence runs after an already in-flight older refresh write", a
   });
 
   let uploadSettled = false;
-  let upload!: Promise<boolean>;
+  let upload!: Promise<boolean | "deferred">;
   act(() => {
     upload = result.current.recordUploadSuccess({
       activeThreadId: "same-thread",
@@ -528,7 +814,7 @@ test("upload persistence rejection logs but preserves confirmed true for submit 
     );
     await waitFor(() => assert.equal(result.current.isRefreshing, false));
 
-    let persisted: boolean | undefined;
+    let persisted: boolean | "deferred" | undefined;
     await act(async () => {
       persisted = await result.current.recordUploadSuccess({
         activeThreadId: "thread-1",

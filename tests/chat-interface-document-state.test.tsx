@@ -13,7 +13,7 @@ import {
 } from "@testing-library/react";
 import { NuqsTestingAdapter } from "nuqs/adapters/testing";
 import { useQueryState } from "nuqs";
-import { SWRConfig, unstable_serialize } from "swr";
+import { SWRConfig, unstable_serialize, type Cache } from "swr";
 
 import { ChatInterface } from "../src/app/components/ChatInterface";
 import { ChatContext } from "../src/providers/ChatContext";
@@ -89,7 +89,8 @@ function baseChat(
 
 function makeClient(
   writes: StateWrite[],
-  rejectWrite?: (values: Record<string, unknown>) => boolean
+  rejectWrite?: (values: Record<string, unknown>) => boolean,
+  rejectMessage = "state unavailable"
 ) {
   return {
     threads: {
@@ -107,7 +108,7 @@ function makeClient(
         { values }: { values: Record<string, unknown> }
       ) => {
         writes.push({ threadId, values });
-        if (rejectWrite?.(values)) throw new Error("state unavailable");
+        if (rejectWrite?.(values)) throw new Error(rejectMessage);
       },
     },
   } as never;
@@ -162,26 +163,38 @@ function renderChat({
   client,
   chat,
   canSwitch = false,
+  strictMode = false,
 }: {
   client: never;
   chat: never;
   canSwitch?: boolean;
+  strictMode?: boolean;
 }) {
   const cache = new Map([
     [unstable_serialize({ kind: "thread-status", threadId: "A" }), "idle"],
     [unstable_serialize({ kind: "thread-status", threadId: "B" }), "idle"],
-  ]);
+  ]) as unknown as Cache<any>;
   return render(
     <SWRConfig value={{ provider: () => cache, dedupingInterval: 0 }}>
       <NuqsTestingAdapter
         searchParams="?threadId=A"
         hasMemory
       >
-        <Harness
-          client={client}
-          chat={chat}
-          canSwitch={canSwitch}
-        />
+        {strictMode ? (
+          <React.StrictMode>
+            <Harness
+              client={client}
+              chat={chat}
+              canSwitch={canSwitch}
+            />
+          </React.StrictMode>
+        ) : (
+          <Harness
+            client={client}
+            chat={chat}
+            canSwitch={canSwitch}
+          />
+        )}
       </NuqsTestingAdapter>
     </SWRConfig>
   );
@@ -190,11 +203,16 @@ function renderChat({
 function installFetch({
   onList = async () => documentsResponse([]),
   onDelete = async () => new Response(null, { status: 200 }),
+  onWikiTree = async () =>
+    new Response(JSON.stringify({ file_count: 0 }), { status: 200 }),
   uploadFolders,
+  wikiTreeThreads = [],
 }: {
   onList?: (threadId: string) => Promise<Response>;
   onDelete?: (filename: string, threadId: string) => Promise<Response>;
+  onWikiTree?: (threadId: string) => Promise<Response>;
   uploadFolders: string[];
+  wikiTreeThreads?: string[];
 }) {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
@@ -216,7 +234,9 @@ function installFetch({
       return onDelete(filename, folder.replace(/^threads\//, ""));
     }
     if (url.pathname.endsWith("/wiki/tree")) {
-      return new Response(JSON.stringify({ file_count: 0 }), { status: 200 });
+      const threadId = url.pathname.split("/")[2] ?? "";
+      wikiTreeThreads.push(threadId);
+      return onWikiTree(threadId);
     }
     if (url.pathname.endsWith("/wiki/status")) {
       return new Response(
@@ -238,6 +258,300 @@ function installFetch({
     globalThis.fetch = originalFetch;
   };
 }
+
+test("wiki count waits for confirmed documents and does not leak availability across threads", async () => {
+  configure();
+  const uploadFolders: string[] = [];
+  const wikiTreeThreads: string[] = [];
+  const writes: StateWrite[] = [];
+  let listCalls = 0;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    wikiTreeThreads,
+    onList: async (threadId) => {
+      listCalls += 1;
+      if (threadId === "A") {
+        return documentsResponse([
+          { name: "listed.pdf", size: 4, type: "file" },
+        ]);
+      }
+      return new Response(null, { status: 404 });
+    },
+  });
+
+  try {
+    renderChat({
+      client: makeClient(writes),
+      chat: baseChat(() => {}),
+      canSwitch: true,
+    });
+
+    await waitFor(() => assert.equal(listCalls, 1));
+    await waitFor(() => assert.deepEqual(wikiTreeThreads, ["A"]));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitFor(() => assert.equal(listCalls, 2));
+    await waitFor(() =>
+      assert.ok(
+        writes.some(
+          (write) =>
+            write.threadId === "B" && write.values.has_documents === false
+        )
+      )
+    );
+    assert.deepEqual(wikiTreeThreads, ["A"]);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("open wiki does not probe next thread before document availability is confirmed", async () => {
+  configure();
+  const uploadFolders: string[] = [];
+  const wikiTreeThreads: string[] = [];
+  const writes: StateWrite[] = [];
+  const bListResponse = deferred<Response>();
+  let listCalls = 0;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    wikiTreeThreads,
+    onList: async (threadId) => {
+      listCalls += 1;
+      if (threadId === "A") {
+        return documentsResponse([
+          { name: "listed.pdf", size: 4, type: "file" },
+        ]);
+      }
+      return bListResponse.promise;
+    },
+  });
+
+  try {
+    renderChat({
+      client: makeClient(writes),
+      chat: baseChat(() => {}),
+      canSwitch: true,
+    });
+    await waitFor(() => assert.equal(listCalls, 1));
+    await waitFor(() =>
+      assert.ok(screen.getByRole("button", { name: /Wiki/ }))
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Wiki/ }));
+    await waitFor(() => assert.ok(wikiTreeThreads.includes("A")));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitFor(() => assert.equal(listCalls, 2));
+    assert.equal(
+      wikiTreeThreads.every((threadId) => threadId === "A"),
+      true
+    );
+
+    await act(async () => {
+      bListResponse.resolve(new Response(null, { status: 404 }));
+      await bListResponse.promise;
+    });
+    await waitFor(() =>
+      assert.ok(
+        writes.some(
+          (write) =>
+            write.threadId === "B" && write.values.has_documents === false
+        )
+      )
+    );
+    assert.equal(screen.queryByRole("button", { name: /^Wiki/ }), null);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("stale viewer response cannot update revisited thread count", async () => {
+  configure();
+  const uploadFolders: string[] = [];
+  const wikiTreeThreads: string[] = [];
+  const writes: StateWrite[] = [];
+  const staleViewerResponse = deferred<Response>();
+  const freshViewerResponse = deferred<Response>();
+  let listCalls = 0;
+  let aWikiCalls = 0;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    wikiTreeThreads,
+    onList: async (threadId) => {
+      listCalls += 1;
+      if (threadId === "A") {
+        return documentsResponse([
+          { name: "listed.pdf", size: 4, type: "file" },
+        ]);
+      }
+      return new Response(null, { status: 404 });
+    },
+    onWikiTree: async (threadId) => {
+      if (threadId !== "A") {
+        return new Response(JSON.stringify({ file_count: 0 }), {
+          status: 200,
+        });
+      }
+      aWikiCalls += 1;
+      if (aWikiCalls === 2) return staleViewerResponse.promise;
+      if (aWikiCalls === 4) return freshViewerResponse.promise;
+      return new Response(JSON.stringify({ file_count: 0 }), { status: 200 });
+    },
+  });
+
+  try {
+    renderChat({
+      client: makeClient(writes),
+      chat: baseChat(() => {}),
+      canSwitch: true,
+    });
+    await waitFor(() => assert.equal(listCalls, 1));
+    await waitFor(() =>
+      assert.ok(screen.getByRole("button", { name: /Wiki/ }))
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Wiki/ }));
+    await waitFor(() => assert.equal(aWikiCalls, 2));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitFor(() => assert.equal(listCalls, 2));
+    await waitFor(() =>
+      assert.ok(
+        writes.some(
+          (write) =>
+            write.threadId === "B" && write.values.has_documents === false
+        )
+      )
+    );
+    assert.equal(wikiTreeThreads.includes("B"), false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitFor(() => assert.equal(listCalls, 3));
+    await waitFor(() =>
+      assert.ok(screen.getByRole("button", { name: /^Wiki/ }))
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Wiki/ }));
+    await waitFor(() => assert.equal(aWikiCalls, 4));
+
+    await act(async () => {
+      staleViewerResponse.resolve(
+        new Response(JSON.stringify({ file_count: 99 }), { status: 200 })
+      );
+      await staleViewerResponse.promise;
+    });
+    assert.equal(document.body.textContent?.includes("99"), false);
+
+    await act(async () => {
+      freshViewerResponse.resolve(
+        new Response(JSON.stringify({ file_count: 7 }), { status: 200 })
+      );
+      await freshViewerResponse.promise;
+    });
+    await waitFor(() =>
+      assert.ok(screen.getByRole("button", { name: /^Wiki7$/ }))
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("stale wiki count response cannot repopulate after switching threads", async () => {
+  configure();
+  const uploadFolders: string[] = [];
+  const wikiTreeThreads: string[] = [];
+  const writes: StateWrite[] = [];
+  const aWikiResponses = [deferred<Response>(), deferred<Response>()];
+  const bWikiResponse = deferred<Response>();
+  let listCalls = 0;
+  let aWikiCalls = 0;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    wikiTreeThreads,
+    onList: async (threadId) => {
+      listCalls += 1;
+      if (threadId === "A") {
+        return documentsResponse([
+          { name: "listed.pdf", size: 4, type: "file" },
+        ]);
+      }
+      return new Response(null, { status: 404 });
+    },
+    onWikiTree: async (threadId) => {
+      if (threadId === "B") {
+        return bWikiResponse.promise;
+      }
+      if (threadId !== "A") {
+        return new Response(JSON.stringify({ file_count: 0 }), {
+          status: 200,
+        });
+      }
+      aWikiCalls += 1;
+      return aWikiResponses[Math.min(aWikiCalls - 1, aWikiResponses.length - 1)]
+        .promise;
+    },
+  });
+
+  try {
+    const view = renderChat({
+      client: makeClient(writes),
+      chat: baseChat(() => {}),
+      canSwitch: true,
+      strictMode: true,
+    });
+    await waitFor(() =>
+      assert.equal(
+        wikiTreeThreads.length > 0 &&
+          wikiTreeThreads.every((threadId) => threadId === "A"),
+        true
+      )
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitFor(() => assert.equal(listCalls, 2));
+    await waitFor(() =>
+      assert.ok(
+        writes.some(
+          (write) =>
+            write.threadId === "B" && write.values.has_documents === false
+        )
+      )
+    );
+    assert.equal(
+      wikiTreeThreads.every((threadId) => threadId === "A"),
+      true
+    );
+
+    await act(async () => {
+      for (const response of aWikiResponses) {
+        response.resolve(
+          new Response(JSON.stringify({ file_count: 99 }), { status: 200 })
+        );
+      }
+      await Promise.all(aWikiResponses.map((response) => response.promise));
+    });
+
+    await dropFile(view.container, "b.pdf");
+    await waitFor(() =>
+      assert.equal(
+        wikiTreeThreads.some((threadId) => threadId === "B"),
+        true
+      )
+    );
+    assert.ok(screen.getByRole("button", { name: /^Wiki$/ }));
+
+    await act(async () => {
+      bWikiResponse.resolve(
+        new Response(JSON.stringify({ file_count: 7 }), { status: 200 })
+      );
+      await bWikiResponse.promise;
+    });
+    await waitFor(() =>
+      assert.ok(screen.getByRole("button", { name: /^Wiki7$/ }))
+    );
+  } finally {
+    restoreFetch();
+  }
+});
 
 async function dropFile(container: HTMLElement, filename = "upload.pdf") {
   const root = container.lastElementChild as HTMLElement;
@@ -307,6 +621,44 @@ test("actual submit sends pending folder and forced availability on current Lang
   } finally {
     restoreFetch();
     console.error = originalError;
+    console.warn = originalWarn;
+  }
+});
+
+test("upload HTTP 409 deferral does not warn or mark upload persistence failed", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const uploadFolders: string[] = [];
+  const restoreFetch = installFetch({ uploadFolders });
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => warnings.push(args);
+
+  try {
+    const view = renderChat({
+      client: makeClient(
+        writes,
+        (values) => typeof values.doc_folder === "string",
+        "HTTP 409: Cannot update thread state because it has in-flight runs"
+      ),
+      chat: baseChat(() => {}),
+    });
+    await waitFor(() =>
+      assert.equal(
+        (
+          screen.getByPlaceholderText(
+            "Write your message..."
+          ) as HTMLTextAreaElement
+        ).disabled,
+        false
+      )
+    );
+
+    await dropFile(view.container);
+    await waitFor(() => assert.deepEqual(uploadFolders, ["threads/A"]));
+    assert.deepEqual(warnings, []);
+  } finally {
+    restoreFetch();
     console.warn = originalWarn;
   }
 });

@@ -134,6 +134,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const {
     data: selectedThreadStatus,
     isLoading: isSelectedThreadStatusLoading,
+    isValidating: isSelectedThreadStatusValidating,
   } = useThreadStatus(currentThreadId);
 
   const client = useClient();
@@ -161,6 +162,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     recordDeleteSuccess,
   } = useThreadDocumentAvailability({
     threadId: currentThreadId,
+    selectedThreadStatus: isSelectedThreadStatusLoading
+      ? null
+      : selectedThreadStatus ?? null,
+    selectedThreadStatusIsValidating: isSelectedThreadStatusValidating,
     listDocuments,
     updateThreadState: updateThreadDocumentState,
   });
@@ -232,7 +237,22 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     setDocumentViewerState(null);
   }, [currentThreadId]);
 
-  const [wikiFileCount, setWikiFileCount] = useState<number | null>(null);
+  const [wikiFileCount, setWikiFileCount] = useState<{
+    threadId: string;
+    count: number;
+  } | null>(null);
+  const [wikiAvailabilityThreadId, setWikiAvailabilityThreadId] = useState<
+    string | null
+  >(null);
+  const hasCurrentWikiDocuments =
+    documentAvailability === true &&
+    documents.length > 0 &&
+    !!currentThreadId &&
+    wikiAvailabilityThreadId === currentThreadId;
+  const selectedWikiFileCount =
+    hasCurrentWikiDocuments && wikiFileCount?.threadId === currentThreadId
+      ? wikiFileCount.count
+      : null;
   const [ingestProgress, setIngestProgress] = useState<number | null>(null);
   const [ingestPhase, setIngestPhase] = useState<string | null>(null);
   const [ingestDetail, setIngestDetail] = useState<string | null>(null);
@@ -250,10 +270,19 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [uploadElapsedMs, setUploadElapsedMs] = useState<number>(0);
 
   useEffect(() => {
-    if (!currentThreadId) {
+    if (!currentThreadId || documentAvailability !== true) {
+      setWikiAvailabilityThreadId(currentThreadId);
       setWikiFileCount(null);
       return;
     }
+    if (wikiAvailabilityThreadId !== currentThreadId) {
+      setWikiAvailabilityThreadId(currentThreadId);
+      setWikiFileCount(null);
+      return;
+    }
+    const requestedThreadId = currentThreadId;
+    const requestedAvailability = documentAvailability;
+    let active = true;
     const appConfig = getConfig();
     const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
     const token = getBrowserSessionToken();
@@ -265,12 +294,43 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     )
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data && typeof data.file_count === "number") {
-          setWikiFileCount(data.file_count);
+        if (
+          active &&
+          requestedAvailability === true &&
+          data &&
+          typeof data.file_count === "number"
+        ) {
+          setWikiFileCount({
+            threadId: requestedThreadId,
+            count: data.file_count,
+          });
         }
       })
       .catch(() => {});
-  }, [currentThreadId]);
+    return () => {
+      active = false;
+    };
+  }, [currentThreadId, documentAvailability, wikiAvailabilityThreadId]);
+
+  const handleWikiFileCountChange = useCallback(
+    (count: number) => {
+      if (
+        !currentThreadId ||
+        documentAvailability !== true ||
+        wikiAvailabilityThreadId !== currentThreadId
+      ) {
+        return;
+      }
+      setWikiFileCount({ threadId: currentThreadId, count });
+    },
+    [currentThreadId, documentAvailability, wikiAvailabilityThreadId]
+  );
+
+  useEffect(() => {
+    if (metaOpen === "wiki" && !hasCurrentWikiDocuments) {
+      setMetaOpen(null);
+    }
+  }, [hasCurrentWikiDocuments, metaOpen]);
   // Tracks a pending doc_folder that couldn't be set via updateState
   // because the thread had no graph_id yet (no runs). It will be included
   // in the first sendMessage call instead.
@@ -1376,8 +1436,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                         })();
 
                         const wikiTrigger = (() => {
-                          if (documents.length === 0 || !currentThreadId)
-                            return null;
+                          if (!hasCurrentWikiDocuments) return null;
                           return (
                             <button
                               type="button"
@@ -1394,9 +1453,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                                 className="text-primary"
                               />
                               Wiki
-                              {wikiFileCount !== null && (
+                              {selectedWikiFileCount !== null && (
                                 <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
-                                  {wikiFileCount}
+                                  {selectedWikiFileCount}
                                 </span>
                               )}
                             </button>
@@ -1468,7 +1527,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                             </span>
                           </button>
                         )}
-                        {documents.length > 0 && currentThreadId && (
+                        {hasCurrentWikiDocuments && (
                           <button
                             type="button"
                             className="inline-flex items-center gap-2 py-3 pr-4 first:pl-[18px] aria-expanded:font-semibold"
@@ -1480,9 +1539,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                             {...getAriaExpandedProps(metaOpen === "wiki")}
                           >
                             Wiki
-                            {wikiFileCount !== null && (
+                            {selectedWikiFileCount !== null && (
                               <span className="h-4 min-w-4 rounded-full bg-[#2F6868] px-0.5 text-center text-[10px] leading-[16px] text-white">
-                                {wikiFileCount}
+                                {selectedWikiFileCount}
                               </span>
                             )}
                           </button>
@@ -1591,17 +1650,15 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                           </div>
                         )}
 
-                        {metaOpen === "wiki" &&
-                          documents.length > 0 &&
-                          currentThreadId && (
-                            <div className="my-3 h-80 overflow-hidden rounded-md border border-border bg-card/40">
-                              <WikiTreeViewer
-                                threadId={currentThreadId}
-                                onSelectFile={handleFileClick}
-                                onFileCountChange={setWikiFileCount}
-                              />
-                            </div>
-                          )}
+                        {metaOpen === "wiki" && hasCurrentWikiDocuments && (
+                          <div className="my-3 h-80 overflow-hidden rounded-md border border-border bg-card/40">
+                            <WikiTreeViewer
+                              threadId={currentThreadId}
+                              onSelectFile={handleFileClick}
+                              onFileCountChange={handleWikiFileCountChange}
+                            />
+                          </div>
+                        )}
                       </div>
                     </>
                   )}

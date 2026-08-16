@@ -122,6 +122,7 @@ export function useChat({
     number | null
   >(null);
   const [serverSnapshot, setServerSnapshot] = useState<{
+    threadId: string;
     messages: Message[];
     todos: TodoItem[];
     files: Record<string, unknown>;
@@ -278,7 +279,9 @@ export function useChat({
           const previousUpdatedAt = previousSnapshot?.updatedAt ?? 0;
           const isMoreRecent = serverUpdatedAt > previousUpdatedAt;
           const isMoreComplete = serverMessages.length > stream.messages.length;
+          const isDifferentThread = previousSnapshot?.threadId !== threadId;
           const shouldReplace =
+            isDifferentThread ||
             isMoreComplete ||
             (!stream.isLoading && (isMoreRecent || serverMessages.length > 0));
 
@@ -287,6 +290,7 @@ export function useChat({
           }
 
           return {
+            threadId,
             messages: serverMessages,
             todos: values.todos ?? [],
             files: values.files ?? {},
@@ -527,6 +531,8 @@ export function useChat({
     isLoading: stream.isLoading,
     streamTodos: stream.values.todos,
     serverTodos: serverSnapshot?.todos,
+    currentThreadId: threadId,
+    serverSnapshotThreadId: serverSnapshot?.threadId,
   });
 
   const effectiveEmail = shouldPreferServerSnapshot

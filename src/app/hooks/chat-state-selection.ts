@@ -4,12 +4,21 @@ export function selectEffectiveTodos({
   isLoading,
   streamTodos,
   serverTodos,
+  currentThreadId,
+  serverSnapshotThreadId,
 }: {
   isLoading: boolean;
   streamTodos?: TodoItem[];
   serverTodos?: TodoItem[];
+  currentThreadId?: string | null;
+  serverSnapshotThreadId?: string | null;
 }): TodoItem[] {
-  if (isLoading || serverTodos === undefined) {
+  const isSnapshotForCurrentThread =
+    currentThreadId !== undefined &&
+    currentThreadId !== null &&
+    serverSnapshotThreadId === currentThreadId;
+
+  if (isLoading || serverTodos === undefined || !isSnapshotForCurrentThread) {
     return streamTodos ?? [];
   }
   return serverTodos;

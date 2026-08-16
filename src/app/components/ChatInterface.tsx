@@ -1554,7 +1554,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                       </div>
                       <div
                         ref={tasksContainerRef}
-                        className="px-[18px]"
+                        className={cn(
+                          "px-[18px]",
+                          metaOpen === "tasks" && "py-2"
+                        )}
                       >
                         {metaOpen === "tasks" &&
                           Object.entries(groupedTodos)
@@ -1562,7 +1565,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                             .map(([status, todos]) => (
                               <div
                                 key={status}
-                                className="mb-4"
+                                className="mb-4 last:mb-0"
                               >
                                 <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-tertiary">
                                   {

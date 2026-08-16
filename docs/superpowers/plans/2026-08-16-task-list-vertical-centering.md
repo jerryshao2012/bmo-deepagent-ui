@@ -16,7 +16,7 @@
 - Create: `tests/task-list-layout.test.mjs`
 - Modify: `src/app/components/ChatInterface.tsx:1555-1585`
 
-- [ ] **Step 1: Write failing source-level regression test**
+- [x] **Step 1: Write failing source-level regression test**
 
 ```js
 import assert from "node:assert/strict";
@@ -37,13 +37,13 @@ test("centers expanded task list without changing other metadata panels", () => 
 });
 ```
 
-- [ ] **Step 2: Run test and verify expected failure**
+- [x] **Step 2: Run test and verify expected failure**
 
 Run: `node --test tests/task-list-layout.test.mjs`
 
 Expected: FAIL because `ChatInterface` has unconditional `className="px-[18px]"` and final task group still has `mb-4`.
 
-- [ ] **Step 3: Implement minimal task-only spacing change**
+- [x] **Step 3: Implement minimal task-only spacing change**
 
 Change shared content wrapper:
 
@@ -66,19 +66,19 @@ Change visible status group:
 >
 ```
 
-- [ ] **Step 4: Run focused regression test**
+- [x] **Step 4: Run focused regression test**
 
 Run: `node --test tests/task-list-layout.test.mjs`
 
 Expected: PASS, 1 test and 0 failures.
 
-- [ ] **Step 5: Run repository verification**
+- [x] **Step 5: Run repository verification**
 
 Run: `yarn lint`
 
 Expected: exit code 0 with no ESLint errors.
 
-- [ ] **Step 6: Inspect final diff and commit scoped files**
+- [x] **Step 6: Inspect final diff and commit scoped files**
 
 Run: `git diff --check && git diff -- src/app/components/ChatInterface.tsx tests/task-list-layout.test.mjs docs/superpowers/plans/2026-08-16-task-list-vertical-centering.md`
 

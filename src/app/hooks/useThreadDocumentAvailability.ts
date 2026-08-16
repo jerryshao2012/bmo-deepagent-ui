@@ -137,9 +137,10 @@ export function useThreadDocumentAvailability({
           return true;
         } catch (error) {
           if (isInFlightRunConflict(error)) {
-            if (isCurrent(targetThreadId, epoch, allowUnrendered)) {
-              deferPersistence(targetThreadId, values, epoch, allowUnrendered);
+            if (!isCurrent(targetThreadId, epoch, allowUnrendered)) {
+              return false;
             }
+            deferPersistence(targetThreadId, values, epoch, allowUnrendered);
             return acceptDeferred ? "deferred" : false;
           }
           console.error("Failed to persist document availability:", error);

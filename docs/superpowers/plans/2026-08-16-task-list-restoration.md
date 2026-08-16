@@ -307,6 +307,17 @@ test("same-thread loading changes keep an open tasks panel", async () => {
         "true"
       )
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle loading" }));
+
+    await waitFor(() =>
+      assert.equal(
+        screen.getByRole("button", { name: "Tasks" }).getAttribute(
+          "aria-expanded"
+        ),
+        "true"
+      )
+    );
   } finally {
     restoreFetch();
   }
@@ -314,8 +325,8 @@ test("same-thread loading changes keep an open tasks panel", async () => {
 ```
 
 The same task remains in context after switching, proving collapse does not erase
-task data. The loading-toggle test proves same-thread run state does not close an
-open panel.
+task data. The loading-toggle test covers both run start (`false` to `true`) and
+run finish (`true` to `false`) and proves neither closes an open panel.
 
 - [ ] **Step 3: Run component test and verify RED**
 

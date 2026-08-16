@@ -14,6 +14,7 @@ export interface ThreadDocument {
 interface UseThreadDocumentAvailabilityOptions {
   threadId: string | null;
   selectedThreadStatus?: ThreadStatus | null;
+  selectedThreadStatusIsValidating?: boolean;
   listDocuments: (threadId: string) => Promise<Response>;
   updateThreadState: (
     threadId: string,
@@ -48,6 +49,7 @@ interface PendingPersistence {
 export function useThreadDocumentAvailability({
   threadId,
   selectedThreadStatus,
+  selectedThreadStatusIsValidating = false,
   listDocuments,
   updateThreadState,
 }: UseThreadDocumentAvailabilityOptions) {
@@ -66,6 +68,11 @@ export function useThreadDocumentAvailability({
   const mountedRef = useRef(true);
   const persistenceTailsRef = useRef(new Map<string, Promise<void>>());
   const pendingPersistenceRef = useRef(new Map<string, PendingPersistence>());
+  const statusConfirmationRef = useRef({
+    threadId,
+    status: selectedThreadStatus,
+    isValidating: selectedThreadStatusIsValidating,
+  });
 
   threadIdRef.current = threadId;
   selectedThreadStatusRef.current = selectedThreadStatus;
@@ -119,8 +126,9 @@ export function useThreadDocumentAvailability({
       targetThreadId: string,
       values: Record<string, unknown>,
       epoch: number,
-      allowUnrendered = false
-    ): Promise<boolean> => {
+      allowUnrendered = false,
+      acceptDeferred = false
+    ): Promise<boolean | "deferred"> => {
       const persist = async () => {
         if (!isCurrent(targetThreadId, epoch, allowUnrendered)) return false;
 
@@ -132,7 +140,7 @@ export function useThreadDocumentAvailability({
             if (isCurrent(targetThreadId, epoch, allowUnrendered)) {
               deferPersistence(targetThreadId, values, epoch, allowUnrendered);
             }
-            return false;
+            return acceptDeferred ? "deferred" : false;
           }
           console.error("Failed to persist document availability:", error);
           return false;
@@ -253,9 +261,26 @@ export function useThreadDocumentAvailability({
   }, []);
 
   useEffect(() => {
-    if (!threadId) return;
-    flushPendingPersistence(threadId);
-  }, [flushPendingPersistence, selectedThreadStatus, threadId]);
+    const previous = statusConfirmationRef.current;
+    const sameThread = previous.threadId === threadId;
+    const statusChanged =
+      sameThread && previous.status !== selectedThreadStatus;
+    const revalidationCompleted =
+      sameThread && previous.isValidating && !selectedThreadStatusIsValidating;
+    statusConfirmationRef.current = {
+      threadId,
+      status: selectedThreadStatus,
+      isValidating: selectedThreadStatusIsValidating,
+    };
+    if (threadId && (statusChanged || revalidationCompleted)) {
+      flushPendingPersistence(threadId);
+    }
+  }, [
+    flushPendingPersistence,
+    selectedThreadStatus,
+    selectedThreadStatusIsValidating,
+    threadId,
+  ]);
 
   useEffect(() => {
     replaceDocuments([]);
@@ -325,7 +350,8 @@ export function useThreadDocumentAvailability({
           doc_folder: docFolder,
         },
         epoch,
-        allowUnrendered
+        allowUnrendered,
+        true
       );
     },
     [beginOperation, enqueuePersistence, isCurrent, replaceDocuments]
@@ -352,11 +378,12 @@ export function useThreadDocumentAvailability({
         setIsRefreshing(false);
       }
 
-      const persisted = await enqueuePersistence(
-        targetThreadId,
-        hasDocuments ? { has_documents: true } : unavailableState,
-        epoch
-      );
+      const persisted =
+        (await enqueuePersistence(
+          targetThreadId,
+          hasDocuments ? { has_documents: true } : unavailableState,
+          epoch
+        )) === true;
       return { persisted, hasDocuments };
     },
     [beginOperation, enqueuePersistence, isCurrent, replaceDocuments]

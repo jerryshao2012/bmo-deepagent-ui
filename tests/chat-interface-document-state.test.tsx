@@ -89,7 +89,8 @@ function baseChat(
 
 function makeClient(
   writes: StateWrite[],
-  rejectWrite?: (values: Record<string, unknown>) => boolean
+  rejectWrite?: (values: Record<string, unknown>) => boolean,
+  rejectMessage = "state unavailable"
 ) {
   return {
     threads: {
@@ -107,7 +108,7 @@ function makeClient(
         { values }: { values: Record<string, unknown> }
       ) => {
         writes.push({ threadId, values });
-        if (rejectWrite?.(values)) throw new Error("state unavailable");
+        if (rejectWrite?.(values)) throw new Error(rejectMessage);
       },
     },
   } as never;
@@ -461,6 +462,44 @@ test("actual submit sends pending folder and forced availability on current Lang
   } finally {
     restoreFetch();
     console.error = originalError;
+    console.warn = originalWarn;
+  }
+});
+
+test("upload HTTP 409 deferral does not warn or mark upload persistence failed", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const uploadFolders: string[] = [];
+  const restoreFetch = installFetch({ uploadFolders });
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => warnings.push(args);
+
+  try {
+    const view = renderChat({
+      client: makeClient(
+        writes,
+        (values) => typeof values.doc_folder === "string",
+        "HTTP 409: Cannot update thread state because it has in-flight runs"
+      ),
+      chat: baseChat(() => {}),
+    });
+    await waitFor(() =>
+      assert.equal(
+        (
+          screen.getByPlaceholderText(
+            "Write your message..."
+          ) as HTMLTextAreaElement
+        ).disabled,
+        false
+      )
+    );
+
+    await dropFile(view.container);
+    await waitFor(() => assert.deepEqual(uploadFolders, ["threads/A"]));
+    assert.deepEqual(warnings, []);
+  } finally {
+    restoreFetch();
     console.warn = originalWarn;
   }
 });

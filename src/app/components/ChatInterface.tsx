@@ -134,6 +134,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const {
     data: selectedThreadStatus,
     isLoading: isSelectedThreadStatusLoading,
+    isValidating: isSelectedThreadStatusValidating,
   } = useThreadStatus(currentThreadId);
 
   const client = useClient();
@@ -164,6 +165,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     selectedThreadStatus: isSelectedThreadStatusLoading
       ? null
       : selectedThreadStatus ?? null,
+    selectedThreadStatusIsValidating: isSelectedThreadStatusValidating,
     listDocuments,
     updateThreadState: updateThreadDocumentState,
   });

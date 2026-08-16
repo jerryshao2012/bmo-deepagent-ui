@@ -161,6 +161,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     recordDeleteSuccess,
   } = useThreadDocumentAvailability({
     threadId: currentThreadId,
+    selectedThreadStatus: isSelectedThreadStatusLoading
+      ? null
+      : selectedThreadStatus ?? null,
     listDocuments,
     updateThreadState: updateThreadDocumentState,
   });

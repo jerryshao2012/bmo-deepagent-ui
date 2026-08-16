@@ -10,14 +10,14 @@ Expanded panel wrapper supplies horizontal padding only. Each rendered status gr
 
 ## Design
 
-- Add equal vertical padding to the expanded panel content wrapper.
+- Apply `py-2` only when `metaOpen === "tasks"`; keep the shared wrapper's existing spacing for Files, Documents, and Wiki.
 - Keep spacing between multiple status groups.
-- Remove bottom margin from the final visible status group so outer top and bottom spacing match.
+- Render each visible status group with `mb-4 last:mb-0` so groups retain separation but the final group adds no trailing margin.
 - Do not add a fixed/minimum panel height or change task-row icon/text alignment.
 
 ## Components and Data Flow
 
-Change only task-list layout classes in `src/app/components/ChatInterface.tsx`. Todo grouping, filtering, status ordering, scroll behavior, and click behavior remain unchanged.
+Change only task-list layout classes in `src/app/components/ChatInterface.tsx`: make the shared content wrapper's `py-2` conditional on the Tasks view and add `last:mb-0` to visible task groups. Todo grouping, filtering, status ordering, scroll behavior, Files/Documents/Wiki spacing, and click behavior remain unchanged.
 
 ## Error Handling
 

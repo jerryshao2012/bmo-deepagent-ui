@@ -30,6 +30,7 @@ export type StateType = {
   };
   ui?: any;
   no_web?: boolean | null;
+  has_documents?: boolean | null;
   verification_round?: number;
 };
 

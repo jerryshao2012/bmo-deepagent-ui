@@ -34,11 +34,7 @@ import { getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
 import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
 import { ChatMessage } from "@/app/components/ChatMessage";
-import type {
-  TodoItem,
-  ActionRequest,
-  ReviewConfig,
-} from "@/app/types/types";
+import type { TodoItem, ActionRequest, ReviewConfig } from "@/app/types/types";
 import { Assistant } from "@langchain/langgraph-sdk";
 import { useChatContext } from "@/providers/ChatContext";
 import { cn } from "@/lib/utils";
@@ -59,6 +55,11 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { useProcessedMessages } from "@/app/hooks/useProcessedMessages";
+import { useThreadDocumentAvailability } from "@/app/hooks/useThreadDocumentAvailability";
+import {
+  type PendingDocumentFolder,
+  submitResearchMessage,
+} from "@/app/utils/submit-research-message";
 
 interface ChatInterfaceProps {
   assistant: Assistant | null;
@@ -136,9 +137,33 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   } = useThreadStatus(currentThreadId);
 
   const client = useClient();
-  const [documents, setDocuments] = useState<
-    Array<{ name: string; size: number }>
-  >([]);
+  const listDocuments = useCallback(async (threadId: string) => {
+    const appConfig = getConfig();
+    const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
+    const token = getBrowserSessionToken();
+    return authenticatedFetch(
+      `${deploymentUrl}/documents/list?folder=threads/${threadId}`,
+      {
+        headers: { "X-API-Key": token },
+      }
+    );
+  }, []);
+  const updateThreadDocumentState = useCallback(
+    async (threadId: string, values: Record<string, unknown>) => {
+      await client.threads.updateState(threadId, { values });
+    },
+    [client]
+  );
+  const {
+    documents,
+    availability: documentAvailability,
+    recordUploadSuccess,
+    recordDeleteSuccess,
+  } = useThreadDocumentAvailability({
+    threadId: currentThreadId,
+    listDocuments,
+    updateThreadState: updateThreadDocumentState,
+  });
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -223,8 +248,6 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [ingestElapsed, setIngestElapsed] = useState<number | null>(null);
   const uploadStartRef = useRef<number | null>(null);
   const [uploadElapsedMs, setUploadElapsedMs] = useState<number>(0);
-  const currentThreadIdRef = useRef(currentThreadId);
-  currentThreadIdRef.current = currentThreadId;
 
   useEffect(() => {
     if (!currentThreadId) {
@@ -234,9 +257,12 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     const appConfig = getConfig();
     const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
     const token = getBrowserSessionToken();
-    authenticatedFetch(`${deploymentUrl}/threads/${currentThreadId}/wiki/tree`, {
-      headers: token ? { "X-API-Key": token } : {},
-    })
+    authenticatedFetch(
+      `${deploymentUrl}/threads/${currentThreadId}/wiki/tree`,
+      {
+        headers: token ? { "X-API-Key": token } : {},
+      }
+    )
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data && typeof data.file_count === "number") {
@@ -248,10 +274,16 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   // Tracks a pending doc_folder that couldn't be set via updateState
   // because the thread had no graph_id yet (no runs). It will be included
   // in the first sendMessage call instead.
-  const pendingDocFolderRef = useRef<{
-    threadId: string;
-    docFolder: string;
-  } | null>(null);
+  const pendingDocFolderRef = useRef<PendingDocumentFolder | null>(null);
+
+  useEffect(() => {
+    if (
+      documentAvailability === false &&
+      pendingDocFolderRef.current?.threadId === currentThreadId
+    ) {
+      pendingDocFolderRef.current = null;
+    }
+  }, [currentThreadId, documentAvailability]);
 
   // Open an SSE stream for real-time ingest progress.
   const startIngestProgressStream = useCallback((threadId: string) => {
@@ -368,9 +400,12 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     const deploymentUrl = (appConfig?.deploymentUrl || "").replace(/\/+$/, "");
     const token = getBrowserSessionToken();
 
-    authenticatedFetch(`${deploymentUrl}/threads/${currentThreadId}/wiki/status`, {
-      headers: { "X-API-Key": token },
-    })
+    authenticatedFetch(
+      `${deploymentUrl}/threads/${currentThreadId}/wiki/status`,
+      {
+        headers: { "X-API-Key": token },
+      }
+    )
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!active || !data) return;
@@ -441,220 +476,170 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     return () => clearInterval(timer);
   }, [isUploading]);
 
-  const fetchDocuments = useCallback(
-    async (overrideThreadId?: string | null) => {
-      const threadIdAtStart =
-        overrideThreadId !== undefined ? overrideThreadId : currentThreadId;
-      if (!threadIdAtStart) {
-        setDocuments([]);
-        return;
-      }
-
-      try {
-        const appConfig = getConfig();
-        const deploymentUrl = appConfig?.deploymentUrl || "";
-        const token = getBrowserSessionToken();
-
-        const response = await authenticatedFetch(
-          `${deploymentUrl.replace(
-            /\/+$/,
-            ""
-          )}/documents/list?folder=threads/${threadIdAtStart}`,
-          {
-            headers: {
-              "X-API-Key": token,
-            },
-          }
-        );
-
-        if (threadIdAtStart !== currentThreadIdRef.current) {
-          return;
-        }
-
-        if (response.status === 404) {
-          setDocuments([]);
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(`Failed to list documents: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const docs = (data.items || []).filter(
-          (item: any) => item.type === "file"
-        );
-
-        if (threadIdAtStart !== currentThreadIdRef.current) {
-          return;
-        }
-
-        setDocuments(docs);
-      } catch (error) {
-        console.error("Failed to fetch documents:", error);
-      }
-    },
-    [currentThreadId]
-  );
-
-  useEffect(() => {
-    fetchDocuments();
-  }, [currentThreadId, fetchDocuments]);
-
   const handleAttachClick = () => {
     fileInputRef.current?.click();
   };
 
   // Shared upload logic used by both file input and drag-and-drop.
-  const processUploadedFiles = async (selectedFiles: FileList) => {
-    if (selectedFiles.length === 0) return;
+  const processUploadedFiles = useCallback(
+    async (selectedFiles: FileList) => {
+      if (selectedFiles.length === 0) return;
 
-    setIsUploading(true);
-    try {
-      let activeThreadId = currentThreadId;
-      let isNewThread = false;
-
-      const getGraphId = (graphId?: string) => {
-        if (!graphId || graphId === "researcher") return "research";
-        return graphId;
-      };
-
-      if (!activeThreadId) {
-        const graphId = getGraphId(assistant?.graph_id);
-        const newThread = await client.threads.create({
-          graphId,
-          metadata: {
-            graph_id: graphId,
-          },
-        });
-        activeThreadId = newThread.thread_id;
-        isNewThread = true;
-      } else {
-        // Ensure the thread has a graph_id in its metadata before uploading.
-        // Fetch existing metadata first and merge, following the same pattern
-        // used by updateThreadTitle / updateThreadFavorite.
-        const graphId = getGraphId(assistant?.graph_id);
-        try {
-          // Ensure the thread is registered on the server first (in case it hasn't had any runs yet)
-          await client.threads.create({
-            threadId: activeThreadId,
-            graphId,
-            ifExists: "do_nothing",
-            metadata: {
-              graph_id: graphId,
-            },
-          });
-
-          const existing = await client.threads.get(activeThreadId);
-          const existingMetadata =
-            existing?.metadata && typeof existing.metadata === "object"
-              ? existing.metadata
-              : {};
-          await client.threads.update(activeThreadId, {
-            metadata: {
-              ...existingMetadata,
-              graph_id: graphId,
-            },
-          });
-        } catch (e) {
-          console.error(
-            "Failed to assign graph_id to thread before upload.",
-            e
-          );
-          throw new Error(
-            "Cannot upload files yet — this thread has no assigned graph ID. " +
-              "Please send a message to start a conversation first, then try uploading again.",
-            { cause: e }
-          );
-        }
-      }
-
-      const formData = new FormData();
-      formData.append("folder", `threads/${activeThreadId}`);
-      for (let i = 0; i < selectedFiles.length; i++) {
-        formData.append("files", selectedFiles[i]);
-      }
-
-      const appConfig = getConfig();
-      const deploymentUrl = appConfig?.deploymentUrl || "";
-      const token = getBrowserSessionToken();
-
-      const response = await authenticatedFetch(
-        `${deploymentUrl.replace(/\/+$/, "")}/documents/upload`,
-        {
-          method: "POST",
-          headers: {
-            "X-API-Key": token,
-          },
-          body: formData,
-        }
-      );
-
-      if (!response.ok) {
-        let detail = `HTTP ${response.status}`;
-        try {
-          const body = await response.json();
-          if (body?.detail) detail += `: ${body.detail}`;
-        } catch {
-          // Response body is not JSON; keep status-only message.
-        }
-        throw new Error(detail);
-      }
-
+      const uploadedDocuments = Array.from(selectedFiles, (file) => ({
+        name: file.name,
+        size: file.size,
+        type: "file",
+      }));
+      setIsUploading(true);
       try {
-        await response.json();
-      } catch {
-        // Non-JSON response; proceed after successful upload.
-      }
+        let activeThreadId = currentThreadId;
+        let isNewThread = false;
 
-      // Set the doc_folder state in the thread values so the agent uses this folder for research
-      try {
-        await client.threads.updateState(activeThreadId, {
-          values: {
-            doc_folder: `docs/threads/${activeThreadId}`,
-          },
-        });
-      } catch (e) {
-        // updateState fails when the thread has no graph_id yet (no runs).
-        // Store it as pending so it gets included in the first sendMessage call.
-        console.warn(
-          "Failed to set doc_folder in thread state (will retry on first message):",
-          e
-        );
-        pendingDocFolderRef.current = {
-          threadId: activeThreadId,
-          docFolder: `docs/threads/${activeThreadId}`,
+        const getGraphId = (graphId?: string) => {
+          if (!graphId || graphId === "researcher") return "research";
+          return graphId;
         };
+
+        if (!activeThreadId) {
+          const graphId = getGraphId(assistant?.graph_id);
+          const newThread = await client.threads.create({
+            graphId,
+            metadata: {
+              graph_id: graphId,
+            },
+          });
+          activeThreadId = newThread.thread_id;
+          isNewThread = true;
+        } else {
+          // Ensure the thread has a graph_id in its metadata before uploading.
+          // Fetch existing metadata first and merge, following the same pattern
+          // used by updateThreadTitle / updateThreadFavorite.
+          const graphId = getGraphId(assistant?.graph_id);
+          try {
+            // Ensure the thread is registered on the server first (in case it hasn't had any runs yet)
+            await client.threads.create({
+              threadId: activeThreadId,
+              graphId,
+              ifExists: "do_nothing",
+              metadata: {
+                graph_id: graphId,
+              },
+            });
+
+            const existing = await client.threads.get(activeThreadId);
+            const existingMetadata =
+              existing?.metadata && typeof existing.metadata === "object"
+                ? existing.metadata
+                : {};
+            await client.threads.update(activeThreadId, {
+              metadata: {
+                ...existingMetadata,
+                graph_id: graphId,
+              },
+            });
+          } catch (e) {
+            console.error(
+              "Failed to assign graph_id to thread before upload.",
+              e
+            );
+            throw new Error(
+              "Cannot upload files yet — this thread has no assigned graph ID. " +
+                "Please send a message to start a conversation first, then try uploading again.",
+              { cause: e }
+            );
+          }
+        }
+
+        const formData = new FormData();
+        formData.append("folder", `threads/${activeThreadId}`);
+        for (let i = 0; i < selectedFiles.length; i++) {
+          formData.append("files", selectedFiles[i]);
+        }
+
+        const appConfig = getConfig();
+        const deploymentUrl = appConfig?.deploymentUrl || "";
+        const token = getBrowserSessionToken();
+
+        const response = await authenticatedFetch(
+          `${deploymentUrl.replace(/\/+$/, "")}/documents/upload`,
+          {
+            method: "POST",
+            headers: {
+              "X-API-Key": token,
+            },
+            body: formData,
+          }
+        );
+
+        if (!response.ok) {
+          let detail = `HTTP ${response.status}`;
+          try {
+            const body = await response.json();
+            if (body?.detail) detail += `: ${body.detail}`;
+          } catch {
+            // Response body is not JSON; keep status-only message.
+          }
+          throw new Error(detail);
+        }
+
+        try {
+          await response.json();
+        } catch {
+          // Non-JSON response; proceed after successful upload.
+        }
+
+        const docFolder = `docs/threads/${activeThreadId}`;
+        const statePersisted = await recordUploadSuccess({
+          activeThreadId,
+          documents: uploadedDocuments,
+          docFolder,
+        });
+        if (!statePersisted) {
+          console.warn(
+            "Failed to set document availability in thread state; retrying on first message."
+          );
+          pendingDocFolderRef.current = {
+            threadId: activeThreadId,
+            docFolder,
+          };
+        } else if (pendingDocFolderRef.current?.threadId === activeThreadId) {
+          pendingDocFolderRef.current = null;
+        }
+
+        // Note: wiki ingestion is auto-triggered by the server (webapp.py) on upload.
+        // No need to explicitly call /wiki/ingest here — the server registers
+        // progress in _active_ingests and /wiki/status will track it.
+
+        // Clear the input value so the same file can be uploaded again if needed
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+
+        if (isNewThread) {
+          await setCurrentThreadId(activeThreadId);
+        }
+
+        startIngestProgressStream(activeThreadId);
+      } catch (error) {
+        console.error("Failed to upload files:", error);
+        alert(
+          `Upload failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      } finally {
+        setIsUploading(false);
       }
-
-      // Note: wiki ingestion is auto-triggered by the server (webapp.py) on upload.
-      // No need to explicitly call /wiki/ingest here — the server registers
-      // progress in _active_ingests and /wiki/status will track it.
-
-      // Clear the input value so the same file can be uploaded again if needed
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-
-      if (isNewThread) {
-        currentThreadIdRef.current = activeThreadId;
-        await setCurrentThreadId(activeThreadId);
-      }
-
-      // Refresh doc list and start SSE stream for real-time ingest progress.
-      fetchDocuments(activeThreadId);
-      startIngestProgressStream(activeThreadId);
-    } catch (error) {
-      console.error("Failed to upload files:", error);
-      alert(
-        `Upload failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    } finally {
-      setIsUploading(false);
-    }
-  };
+    },
+    [
+      assistant?.graph_id,
+      client,
+      currentThreadId,
+      recordUploadSuccess,
+      setCurrentThreadId,
+      startIngestProgressStream,
+    ]
+  );
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
@@ -688,7 +673,13 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         throw new Error(`Failed to delete document: ${response.status}`);
       }
 
-      fetchDocuments(currentThreadId);
+      const deleteResult = await recordDeleteSuccess(filename, currentThreadId);
+      if (
+        deleteResult.hasDocuments === false &&
+        pendingDocFolderRef.current?.threadId === currentThreadId
+      ) {
+        pendingDocFolderRef.current = null;
+      }
     } catch (error) {
       console.error("Failed to delete document:", error);
       alert(
@@ -826,8 +817,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
 
       await processUploadedFiles(droppedFiles);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [composerLocked, isUploading]
+    [composerLocked, isUploading, processUploadedFiles]
   );
 
   const handleSubmit = useCallback(
@@ -837,16 +827,24 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       }
       const messageText = input;
       if (!messageText.trim() || composerLocked) return;
-      const stateUpdates: Record<string, any> = { no_web: !webSearchEnabled };
       // Include pending doc_folder from a prior file upload that couldn't
       // set thread state because no graph_id had been assigned yet.
       // Only apply if it belongs to the current thread.
       const pending = pendingDocFolderRef.current;
-      if (pending && pending.threadId === currentThreadId) {
-        stateUpdates.doc_folder = pending.docFolder;
+      submitResearchMessage({
+        message: messageText,
+        noWeb: !webSearchEnabled,
+        availability: documentAvailability,
+        threadId: currentThreadId,
+        pendingDocument: pending ?? undefined,
+        sendMessage,
+      });
+      if (
+        documentAvailability !== false &&
+        pending?.threadId === currentThreadId
+      ) {
         pendingDocFolderRef.current = null;
       }
-      sendMessage(messageText, stateUpdates);
       setInput("");
     },
     [
@@ -856,6 +854,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       setInput,
       webSearchEnabled,
       currentThreadId,
+      documentAvailability,
     ]
   );
 

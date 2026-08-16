@@ -170,14 +170,16 @@ Expected: `3 passed`.
 
 - [ ] **Step 6: Confirm nested-history policy remains intact**
 
-Run:
+Run both policy tests:
 
 ```bash
 yarn node --import tsx --test tests/use-chat-stream-options.test.ts
+yarn node --import tsx --test tests/langgraph-run-executor.test.ts
 ```
 
 Expected: pass with `fetchStateHistory: false`,
-`filterSubagentMessages: true`, and live stream behavior unchanged.
+`filterSubagentMessages: true`, and executor submission retaining
+`streamSubgraphs: true` for live nested events.
 
 - [ ] **Step 7: Commit Task 1**
 
@@ -192,9 +194,35 @@ git commit -m "fix: restore persisted root tasks"
 - Modify: `tests/chat-interface-document-state.test.tsx`
 - Modify: `src/app/components/ChatInterface.tsx:98-106`
 
-- [ ] **Step 1: Add a thread-switch regression test**
+- [ ] **Step 1: Extend the test harness with a same-thread loading toggle**
 
-Append a test using existing `configure`, `installFetch`, `renderChat`,
+Add `canToggleLoading = false` to `Harness` and `renderChat` options. Inside
+`Harness`, derive the provider value without changing the query-state thread:
+
+```typescript
+  const [isLoading, setIsLoading] = React.useState(false);
+  const providedChat = canToggleLoading
+    ? ({ ...(chat as object), isLoading } as never)
+    : chat;
+```
+
+Use `providedChat` as `ChatContext.Provider` value and render this control next
+to existing thread-switch controls when enabled:
+
+```tsx
+{canToggleLoading && (
+  <button
+    type="button"
+    onClick={() => setIsLoading((value) => !value)}
+  >
+    Toggle loading
+  </button>
+)}
+```
+
+- [ ] **Step 2: Add thread-switch and same-thread regression tests**
+
+Append tests using existing `configure`, `installFetch`, `renderChat`,
 `makeClient`, and `baseChat` helpers:
 
 ```typescript
@@ -244,12 +272,52 @@ test("tasks panel collapses when switching threads", async () => {
     restoreFetch();
   }
 });
+
+test("same-thread loading changes keep an open tasks panel", async () => {
+  configure();
+  const restoreFetch = installFetch({ uploadFolders: [] });
+  const chat = {
+    ...baseChat(() => {}),
+    todos: [
+      {
+        id: "task-1",
+        content: "Live task",
+        status: "in_progress",
+      },
+    ],
+  } as never;
+
+  try {
+    renderChat({
+      client: makeClient([]),
+      chat,
+      canToggleLoading: true,
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Task 1 of 1/ })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Toggle loading" }));
+
+    await waitFor(() =>
+      assert.equal(
+        screen.getByRole("button", { name: "Tasks" }).getAttribute(
+          "aria-expanded"
+        ),
+        "true"
+      )
+    );
+  } finally {
+    restoreFetch();
+  }
+});
 ```
 
 The same task remains in context after switching, proving collapse does not erase
-task data.
+task data. The loading-toggle test proves same-thread run state does not close an
+open panel.
 
-- [ ] **Step 2: Run component test and verify RED**
+- [ ] **Step 3: Run component test and verify RED**
 
 Run:
 
@@ -258,10 +326,10 @@ yarn node --import tsx --test --test-isolation=none \
   tests/chat-interface-document-state.test.tsx
 ```
 
-Expected: new test fails because the exact `Tasks` tab remains rendered and
-expanded after switching to thread B.
+Expected: thread-switch test fails because the exact `Tasks` tab remains rendered
+and expanded after switching to thread B; same-thread loading test passes.
 
-- [ ] **Step 3: Reset panel only when thread ID changes**
+- [ ] **Step 4: Reset panel only when thread ID changes**
 
 After `metaOpen` state initialization in `ChatInterface`, add:
 
@@ -274,7 +342,7 @@ After `metaOpen` state initialization in `ChatInterface`, add:
 Do not add `isLoading`, `todos`, message count, or run state dependencies. This
 preserves the user's panel choice throughout runs in the same thread.
 
-- [ ] **Step 4: Run component test and verify GREEN**
+- [ ] **Step 5: Run component test and verify GREEN**
 
 Run:
 
@@ -285,7 +353,7 @@ yarn node --import tsx --test --test-isolation=none \
 
 Expected: all tests pass, including thread-switch collapse.
 
-- [ ] **Step 5: Run existing task layout test**
+- [ ] **Step 6: Run existing task layout test**
 
 Run:
 
@@ -295,7 +363,7 @@ yarn node --test tests/task-list-layout.test.mjs
 
 Expected: pass; expanded task layout remains unchanged.
 
-- [ ] **Step 6: Commit Task 2**
+- [ ] **Step 7: Commit Task 2**
 
 ```bash
 git add src/app/components/ChatInterface.tsx tests/chat-interface-document-state.test.tsx
@@ -318,6 +386,7 @@ yarn node --import tsx --test --test-isolation=none \
   tests/chat-state-selection.test.ts \
   tests/chat-interface-document-state.test.tsx \
   tests/use-chat-stream-options.test.ts \
+  tests/langgraph-run-executor.test.ts \
   tests/task-list-layout.test.mjs
 ```
 

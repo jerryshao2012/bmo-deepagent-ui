@@ -13,7 +13,7 @@ import {
 } from "@testing-library/react";
 import { NuqsTestingAdapter } from "nuqs/adapters/testing";
 import { useQueryState } from "nuqs";
-import { SWRConfig, unstable_serialize } from "swr";
+import { SWRConfig, unstable_serialize, type Cache } from "swr";
 
 import { ChatInterface } from "../src/app/components/ChatInterface";
 import { ChatContext } from "../src/providers/ChatContext";
@@ -173,7 +173,7 @@ function renderChat({
   const cache = new Map([
     [unstable_serialize({ kind: "thread-status", threadId: "A" }), "idle"],
     [unstable_serialize({ kind: "thread-status", threadId: "B" }), "idle"],
-  ]);
+  ]) as unknown as Cache<any>;
   return render(
     <SWRConfig value={{ provider: () => cache, dedupingInterval: 0 }}>
       <NuqsTestingAdapter
@@ -305,6 +305,66 @@ test("wiki count waits for confirmed documents and does not leak availability ac
   }
 });
 
+test("open wiki does not probe next thread before document availability is confirmed", async () => {
+  configure();
+  const uploadFolders: string[] = [];
+  const wikiTreeThreads: string[] = [];
+  const writes: StateWrite[] = [];
+  const bListResponse = deferred<Response>();
+  let listCalls = 0;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    wikiTreeThreads,
+    onList: async (threadId) => {
+      listCalls += 1;
+      if (threadId === "A") {
+        return documentsResponse([
+          { name: "listed.pdf", size: 4, type: "file" },
+        ]);
+      }
+      return bListResponse.promise;
+    },
+  });
+
+  try {
+    renderChat({
+      client: makeClient(writes),
+      chat: baseChat(() => {}),
+      canSwitch: true,
+    });
+    await waitFor(() => assert.equal(listCalls, 1));
+    await waitFor(() =>
+      assert.ok(screen.getByRole("button", { name: /Wiki/ }))
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Wiki/ }));
+    await waitFor(() => assert.ok(wikiTreeThreads.includes("A")));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitFor(() => assert.equal(listCalls, 2));
+    assert.equal(
+      wikiTreeThreads.every((threadId) => threadId === "A"),
+      true
+    );
+
+    await act(async () => {
+      bListResponse.resolve(new Response(null, { status: 404 }));
+      await bListResponse.promise;
+    });
+    await waitFor(() =>
+      assert.ok(
+        writes.some(
+          (write) =>
+            write.threadId === "B" && write.values.has_documents === false
+        )
+      )
+    );
+    assert.equal(screen.queryByRole("button", { name: /^Wiki/ }), null);
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("stale wiki count response cannot repopulate after switching threads", async () => {
   configure();
   const uploadFolders: string[] = [];
@@ -349,9 +409,10 @@ test("stale wiki count response cannot repopulate after switching threads", asyn
       strictMode: true,
     });
     await waitFor(() =>
-      assert.ok(
+      assert.equal(
         wikiTreeThreads.length > 0 &&
-          wikiTreeThreads.every((threadId) => threadId === "A")
+          wikiTreeThreads.every((threadId) => threadId === "A"),
+        true
       )
     );
 
@@ -365,7 +426,10 @@ test("stale wiki count response cannot repopulate after switching threads", asyn
         )
       )
     );
-    assert.ok(wikiTreeThreads.every((threadId) => threadId === "A"));
+    assert.equal(
+      wikiTreeThreads.every((threadId) => threadId === "A"),
+      true
+    );
 
     await act(async () => {
       for (const response of aWikiResponses) {
@@ -377,8 +441,13 @@ test("stale wiki count response cannot repopulate after switching threads", asyn
     });
 
     await dropFile(view.container, "b.pdf");
-    await waitFor(() => assert.ok(wikiTreeThreads.includes("B")));
-    assert.ok(screen.getByRole("button", { name: "Wiki", exact: true }));
+    await waitFor(() =>
+      assert.equal(
+        wikiTreeThreads.some((threadId) => threadId === "B"),
+        true
+      )
+    );
+    assert.ok(screen.getByRole("button", { name: /^Wiki$/ }));
 
     await act(async () => {
       bWikiResponse.resolve(
@@ -387,7 +456,7 @@ test("stale wiki count response cannot repopulate after switching threads", asyn
       await bWikiResponse.promise;
     });
     await waitFor(() =>
-      assert.ok(screen.getByRole("button", { name: "Wiki7", exact: true }))
+      assert.ok(screen.getByRole("button", { name: /^Wiki7$/ }))
     );
   } finally {
     restoreFetch();

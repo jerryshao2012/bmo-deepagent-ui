@@ -25,9 +25,9 @@
     "postinstall": "mkdir -p public/pdfjs && cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdfjs/"
   },
   "dependencies": {
-    "@langchain/core": "^1.1.19",
+    "@langchain/core": "^1.1.48",
     "@langchain/langgraph": "^1.0.2",
-    "@langchain/langgraph-sdk": "^1.0.3",
+    "@langchain/langgraph-sdk": "^1.9.25",
     "@microsoft/fetch-event-source": "^2.0.1",
     "@radix-ui/colors": "^1.0.0",
     "@radix-ui/react-avatar": "^1.1.11",

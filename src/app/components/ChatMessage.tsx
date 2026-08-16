@@ -14,9 +14,9 @@ import type {
 import { Message } from "@langchain/langgraph-sdk";
 import {
   extractSubAgentContent,
-  extractNestedToolCallsFromSubAgentOutput,
   extractStringFromMessageContent,
 } from "@/app/utils/utils";
+import { getNestedToolCallsForTask } from "@/app/utils/subagent-stream-adapter";
 import { cn } from "@/lib/utils";
 
 interface ChatMessageProps {
@@ -59,7 +59,9 @@ export const ChatMessage = React.memo<ChatMessageProps>(
     const hasContent = messageContent && messageContent.trim() !== "";
     const hasToolCalls = toolCalls.length > 0;
     const formattedDuration =
-      typeof durationSeconds === "number" && !isNaN(durationSeconds) ? `${durationSeconds.toFixed(1)}s` : null;
+      typeof durationSeconds === "number" && !isNaN(durationSeconds)
+        ? `${durationSeconds.toFixed(1)}s`
+        : null;
     const subAgents = useMemo(() => {
       return toolCalls
         .filter((toolCall: ToolCall) => {
@@ -74,9 +76,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(
           const subagentType = (toolCall.args as Record<string, unknown>)[
             "subagent_type"
           ] as string;
-          const nestedToolCalls = extractNestedToolCallsFromSubAgentOutput(
-            toolCall.result
-          );
+          const nestedToolCalls = getNestedToolCallsForTask(stream, toolCall);
           return {
             id: toolCall.id,
             name: toolCall.name,
@@ -87,7 +87,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(
             status: toolCall.status,
           } as SubAgent;
         });
-    }, [toolCalls]);
+    }, [stream, toolCalls]);
 
     const [copied, setCopied] = useState(false);
     const handleCopy = useCallback(() => {
@@ -114,7 +114,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(
     return (
       <div
         className={cn(
-          "flex w-full max-w-full overflow-x-hidden chat-message-enter",
+          "chat-message-enter flex w-full max-w-full overflow-x-hidden",
           isUser && "flex-row-reverse"
         )}
       >
@@ -125,7 +125,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(
           )}
         >
           {hasContent && (
-            <div className={cn("relative flex items-end gap-0 group")}>
+            <div className={cn("group relative flex items-end gap-0")}>
               <div
                 className={cn(
                   "mt-4 overflow-hidden break-words text-sm font-normal leading-[150%]",
@@ -170,23 +170,27 @@ export const ChatMessage = React.memo<ChatMessageProps>(
           {isUser && isProcessing && (
             <div className="user-processing-indicator mt-1.5 flex items-center justify-end gap-1.5 text-xs text-muted-foreground">
               <span className="tracking-wide">Processing</span>
-              <span className="user-processing-dots" aria-hidden="true">
+              <span
+                className="user-processing-dots"
+                aria-hidden="true"
+              >
                 <span />
                 <span />
                 <span />
               </span>
             </div>
           )}
-          {formattedDuration && (message.type === "human" || message.type === "ai") && (
-            <div
-              className={cn(
-                "mt-1 text-xs text-muted-foreground",
-                isUser && "text-right"
-              )}
-            >
-              Server reply time: {formattedDuration}
-            </div>
-          )}
+          {formattedDuration &&
+            (message.type === "human" || message.type === "ai") && (
+              <div
+                className={cn(
+                  "mt-1 text-xs text-muted-foreground",
+                  isUser && "text-right"
+                )}
+              >
+                Server reply time: {formattedDuration}
+              </div>
+            )}
           {hasToolCalls && (
             <div className="mt-4 flex w-full flex-col">
               {toolCalls.map((toolCall: ToolCall) => {
@@ -230,7 +234,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                   </div>
                   {isSubAgentExpanded(subAgent.id) && (
                     <div className="w-full max-w-full">
-                      <div className="bg-surface border-border-light rounded-md border p-4">
+                      <div className="border-border-light rounded-md border bg-surface p-4">
                         <h4 className="text-primary/70 mb-2 text-xs font-semibold uppercase tracking-wider">
                           Input
                         </h4>
@@ -258,22 +262,28 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                                 Tool Invocations
                               </h4>
                               <div className="flex w-full flex-col gap-1">
-                                {subAgent.nestedToolCalls.map((nestedToolCall) => {
-                                  const nestedToolCallGenUiComponent = ui?.find(
-                                    (u) =>
-                                      u.metadata?.tool_call_id === nestedToolCall.id
-                                  );
-                                  return (
-                                    <ToolCallBox
-                                      key={nestedToolCall.id}
-                                      toolCall={nestedToolCall}
-                                      uiComponent={nestedToolCallGenUiComponent}
-                                      stream={stream}
-                                      graphId={graphId}
-                                      isLoading={isLoading}
-                                    />
-                                  );
-                                })}
+                                {subAgent.nestedToolCalls.map(
+                                  (nestedToolCall) => {
+                                    const nestedToolCallGenUiComponent =
+                                      ui?.find(
+                                        (u) =>
+                                          u.metadata?.tool_call_id ===
+                                          nestedToolCall.id
+                                      );
+                                    return (
+                                      <ToolCallBox
+                                        key={nestedToolCall.id}
+                                        toolCall={nestedToolCall}
+                                        uiComponent={
+                                          nestedToolCallGenUiComponent
+                                        }
+                                        stream={stream}
+                                        graphId={graphId}
+                                        isLoading={isLoading}
+                                      />
+                                    );
+                                  }
+                                )}
                               </div>
                             </div>
                           )}

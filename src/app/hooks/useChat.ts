@@ -1,14 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useStream } from "@langchain/langgraph-sdk/react";
+import {
+  useStream,
+  type UseStream,
+  type UseStreamOptions,
+  type UseStreamThread,
+} from "@langchain/langgraph-sdk/react";
 import {
   type Message,
   type Assistant,
   type Checkpoint,
 } from "@langchain/langgraph-sdk";
 import { v4 as uuidv4 } from "uuid";
-import type { UseStreamThread } from "@langchain/langgraph-sdk/react";
 import type { TodoItem } from "@/app/types/types";
 import { useClient } from "@/providers/ClientContext";
 import { useQueryState } from "nuqs";
@@ -149,6 +153,8 @@ export function useChat({
     baselineMessageCount: number;
   } | null>(null);
 
+  // Python graphs cannot expose the SDK's TypeScript DeepAgent brand, but the
+  // server still emits the same subgraph events and runtime stream interface.
   const stream = useStream<StateType>({
     assistantId: activeAssistant?.assistant_id || "",
     client: client ?? undefined,
@@ -158,6 +164,7 @@ export function useChat({
     defaultHeaders: { "x-auth-scheme": "langsmith" },
     // Enable fetching state history when switching to existing threads
     fetchStateHistory: true,
+    filterSubagentMessages: true,
     // Revalidate thread list when stream finishes, errors, or creates new thread
     onFinish: onHistoryRevalidateAction,
     onError: (error) => {
@@ -167,12 +174,11 @@ export function useChat({
       onHistoryRevalidateAction?.();
     },
     onCreated: onHistoryRevalidateAction,
-    experimental_thread: thread,
-  });
-  const runExecutor = useMemo(
-    () => new LangGraphRunExecutor(stream),
-    [stream]
-  );
+    thread,
+  } as UseStreamOptions<StateType> & {
+    filterSubagentMessages: boolean;
+  }) as unknown as UseStream<StateType>;
+  const runExecutor = useMemo(() => new LangGraphRunExecutor(stream), [stream]);
 
   useEffect(() => {
     const previousThreadId = previousThreadIdRef.current;
@@ -396,7 +402,12 @@ export function useChat({
       // Update thread list immediately when sending a message
       onHistoryRevalidateAction?.();
     },
-    [stream.messages.length, runExecutor, activeAssistant?.config, onHistoryRevalidateAction]
+    [
+      stream.messages.length,
+      runExecutor,
+      activeAssistant?.config,
+      onHistoryRevalidateAction,
+    ]
   );
 
   const runSingleStep = useCallback(

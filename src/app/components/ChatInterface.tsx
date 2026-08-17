@@ -55,6 +55,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { useProcessedMessages } from "@/app/hooks/useProcessedMessages";
+import { selectParallelResearchProgress } from "@/app/utils/parallel-research-progress";
 import { useThreadDocumentAvailability } from "@/app/hooks/useThreadDocumentAvailability";
 import {
   type PendingDocumentFolder,
@@ -940,6 +941,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   );
 
   const processedMessages = useProcessedMessages(messages, interrupt);
+  const parallelResearchProgress = useMemo(
+    () => selectParallelResearchProgress(processedMessages),
+    [processedMessages]
+  );
 
   const displayTodos = useMemo(() => {
     const hasPending = todos.some((t) => t.status === "pending");
@@ -1313,6 +1318,23 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                               {...getAriaExpandedProps(metaOpen === "tasks")}
                             >
                               {(() => {
+                                if (parallelResearchProgress) {
+                                  return [
+                                    <Sparkles
+                                      key="icon"
+                                      size={16}
+                                      className="text-primary"
+                                    />,
+                                    <span
+                                      key="label"
+                                      className="ml-[1px] min-w-0 truncate text-sm"
+                                    >
+                                      Parallel research: {parallelResearchProgress.completed}/
+                                      {parallelResearchProgress.total} complete
+                                    </span>,
+                                  ];
+                                }
+
                                 if (isCompleted) {
                                   return [
                                     <CheckCircle

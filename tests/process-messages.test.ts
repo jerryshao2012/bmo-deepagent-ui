@@ -17,8 +17,19 @@ function human(id: string, content: string): Message {
   return { id, type: "human", content } as Message;
 }
 
-function tool(id: string, content: string, toolCallId = "missing"): Message {
-  return { id, type: "tool", content, tool_call_id: toolCallId } as Message;
+function tool(
+  id: string,
+  content: string,
+  toolCallId = "missing",
+  fields: Record<string, unknown> = {}
+): Message {
+  return {
+    id,
+    type: "tool",
+    content,
+    tool_call_id: toolCallId,
+    ...fields,
+  } as Message;
 }
 
 function ids(messages: Message[]): string[] {
@@ -304,4 +315,28 @@ test("preserves input and existing tool-result association", () => {
       result: "done",
     },
   ]);
+});
+
+test("preserves error status from correlated tool results", () => {
+  const processed = processMessages(
+    [
+      ai("tool-assistant", "", {
+        tool_calls: [
+          { id: "failed-call", name: "search", args: { query: "failed" } },
+          { id: "successful-call", name: "search", args: { query: "ok" } },
+        ],
+      }),
+      tool("failed-result", "failed", "failed-call", { status: "error" }),
+      tool("successful-result", "done", "successful-call"),
+    ],
+    false
+  );
+
+  assert.deepEqual(
+    processed[0]?.toolCalls.map(({ id, status }) => ({ id, status })),
+    [
+      { id: "failed-call", status: "error" },
+      { id: "successful-call", status: "completed" },
+    ]
+  );
 });

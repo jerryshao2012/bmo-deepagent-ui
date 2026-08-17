@@ -65,7 +65,7 @@ function baseChat(
   sendMessage: (message: string, values: Record<string, unknown>) => void
 ) {
   return {
-    stream: {},
+    stream: { getSubagent: () => undefined },
     messages: [],
     todos: [],
     files: {},
@@ -1087,6 +1087,138 @@ test("cross-thread last delete cannot leak A pending folder into B or later A su
     globalThis.confirm = originalConfirm;
     console.error = originalError;
     console.warn = originalWarn;
+  }
+});
+
+test("shows active parallel research progress instead of root task ordinal", async () => {
+  configure();
+  const restoreFetch = installFetch({ uploadFolders: [] });
+  try {
+    renderChat({
+      client: makeClient([]),
+      chat: {
+        ...baseChat(() => {}),
+        todos: [
+          { id: "todo-1", content: "Root task", status: "in_progress" },
+          { id: "todo-2", content: "Second task", status: "pending" },
+          { id: "todo-3", content: "Third task", status: "pending" },
+          { id: "todo-4", content: "Fourth task", status: "pending" },
+          { id: "todo-5", content: "Fifth task", status: "pending" },
+        ],
+        messages: [
+          {
+            id: "parallel-research",
+            type: "ai",
+            content: "",
+            tool_calls: [
+              {
+                id: "research-1",
+                name: "task",
+                args: { subagent_type: "research-agent" },
+              },
+              {
+                id: "research-2",
+                name: "task",
+                args: { subagent_type: "research-agent" },
+              },
+              {
+                id: "research-3",
+                name: "task",
+                args: { subagent_type: "research-agent" },
+              },
+            ],
+          },
+          {
+            id: "research-1-result",
+            type: "tool",
+            content: "done",
+            tool_call_id: "research-1",
+          },
+          {
+            id: "research-2-result",
+            type: "tool",
+            content: "done",
+            tool_call_id: "research-2",
+          },
+        ],
+      } as never,
+    });
+
+    await screen.findByRole("button", {
+      name: "Parallel research: 2/3 complete",
+    });
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("returns to root task progress after parallel research batch is terminal", async () => {
+  configure();
+  const restoreFetch = installFetch({ uploadFolders: [] });
+  try {
+    renderChat({
+      client: makeClient([]),
+      chat: {
+        ...baseChat(() => {}),
+        todos: [
+          { id: "todo-1", content: "Root task", status: "in_progress" },
+          { id: "todo-2", content: "Second task", status: "pending" },
+          { id: "todo-3", content: "Third task", status: "pending" },
+          { id: "todo-4", content: "Fourth task", status: "pending" },
+          { id: "todo-5", content: "Fifth task", status: "pending" },
+        ],
+        messages: [
+          {
+            id: "parallel-research",
+            type: "ai",
+            content: "",
+            tool_calls: [
+              {
+                id: "research-1",
+                name: "task",
+                args: { subagent_type: "research-agent" },
+              },
+              {
+                id: "research-2",
+                name: "task",
+                args: { subagent_type: "research-agent" },
+              },
+              {
+                id: "research-3",
+                name: "task",
+                args: { subagent_type: "research-agent" },
+              },
+            ],
+          },
+          {
+            id: "research-1-result",
+            type: "tool",
+            content: "done",
+            tool_call_id: "research-1",
+          },
+          {
+            id: "research-2-result",
+            type: "tool",
+            content: "done",
+            tool_call_id: "research-2",
+          },
+          {
+            id: "research-3-result",
+            type: "tool",
+            content: "done",
+            tool_call_id: "research-3",
+          },
+        ],
+      } as never,
+    });
+
+    await screen.findByText("Task 1 of 5", { exact: true });
+    assert.equal(
+      screen.queryByText("Parallel research: 2/3 complete", { exact: true }),
+      null
+    );
+  } finally {
+    restoreFetch();
   }
 });
 

@@ -221,7 +221,10 @@ export function processMessages(
         if (toolCallIndex === -1) continue;
         data.toolCalls[toolCallIndex] = {
           ...data.toolCalls[toolCallIndex],
-          status: "completed",
+          status:
+            (message as Message & { status?: unknown }).status === "error"
+              ? "error"
+              : "completed",
           result: extractMessageText(message),
         };
         break;

@@ -335,21 +335,31 @@ test("non-busy status defers backend 409 then retries after status revalidation"
   assert.equal(attempts, 2);
 });
 
-test("upload HTTP 409 returns accepted deferred result", async () => {
-  const { result } = renderHook(() =>
-    useThreadDocumentAvailability({
-      threadId: "thread-1",
-      selectedThreadStatus: "busy",
-      listDocuments: async () => new Response(null, { status: 500 }),
-      updateThreadState: async () => {
-        throw new Error(
-          "HTTP 409: Cannot update thread state because it has in-flight runs"
-        );
-      },
-    })
+test("upload 409 catch path returns deferred then retries after status revalidation", async () => {
+  let allowWrite = false;
+  let attempts = 0;
+  const updates: StateUpdate[] = [];
+  const { result, rerender } = renderHook(
+    ({ isValidating }: { isValidating: boolean }) =>
+      useThreadDocumentAvailability({
+        threadId: "thread-1",
+        selectedThreadStatus: "idle",
+        selectedThreadStatusIsValidating: isValidating,
+        listDocuments: async () => new Response(null, { status: 500 }),
+        updateThreadState: async (threadId, values) => {
+          attempts += 1;
+          if (!allowWrite) {
+            throw new Error(
+              "HTTP 409: Cannot update thread state because it has in-flight runs"
+            );
+          }
+          updates.push({ threadId, values });
+        },
+      }),
+    { initialProps: { isValidating: false } }
   );
 
-  let persisted: unknown;
+  let persisted!: boolean | "deferred";
   await act(async () => {
     persisted = await result.current.recordUploadSuccess({
       activeThreadId: "thread-1",
@@ -358,6 +368,21 @@ test("upload HTTP 409 returns accepted deferred result", async () => {
     });
   });
   assert.equal(persisted, "deferred");
+  assert.equal(attempts, 1);
+
+  allowWrite = true;
+  rerender({ isValidating: true });
+  rerender({ isValidating: false });
+  await waitFor(() => assert.equal(attempts, 2));
+  assert.deepEqual(updates, [
+    {
+      threadId: "thread-1",
+      values: {
+        has_documents: true,
+        doc_folder: "docs/threads/thread-1",
+      },
+    },
+  ]);
 });
 
 test("stale upload HTTP 409 returns failure after thread changes", async () => {
@@ -401,7 +426,7 @@ test("stale upload HTTP 409 returns failure after thread changes", async () => {
   assert.equal(persisted, false);
 });
 
-test("deferred HTTP 409 persistence is discarded when selected thread changes", async () => {
+test("known-busy deferred persistence is discarded when selected thread changes", async () => {
   let allowWrite = false;
   const updates: StateUpdate[] = [];
   const { result, rerender } = renderHook(
@@ -505,7 +530,7 @@ test("unknown selected thread status retains deferred HTTP 409 without flushing"
   assert.deepEqual(updates, []);
 });
 
-test("unmount discards deferred HTTP 409 persistence", async () => {
+test("unmount discards known-busy deferred persistence", async () => {
   let allowWrite = false;
   const updates: StateUpdate[] = [];
   const { result, unmount } = renderHook(() =>

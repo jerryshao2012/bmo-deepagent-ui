@@ -129,6 +129,7 @@ export function useChat({
   const [serverSnapshot, setServerSnapshot] = useState<{
     threadId: string;
     runGeneration: number;
+    requestStartedIdle: boolean;
     messages: Message[];
     todos: TodoItem[];
     files: Record<string, unknown>;
@@ -272,6 +273,7 @@ export function useChat({
     const syncFromServer = async () => {
       try {
         const requestRunGeneration = runGenerationRef.current;
+        const requestStartedIdle = !stream.isLoading;
         const threadState = await chatGateway.getThreadSnapshot(threadId);
 
         if (isDisposed) {
@@ -301,6 +303,7 @@ export function useChat({
           return {
             threadId,
             runGeneration: requestRunGeneration,
+            requestStartedIdle,
             messages: serverMessages,
             todos: values.todos ?? [],
             files: values.files ?? {},
@@ -551,6 +554,7 @@ export function useChat({
       serverTodos: selectFreshServerTodosForRun({
         currentRunGeneration: runGenerationRef.current,
         serverSnapshotRunGeneration: serverSnapshot?.runGeneration,
+        requestStartedIdle: serverSnapshot?.requestStartedIdle ?? false,
         serverTodos: serverSnapshot?.todos,
       }),
     }),

@@ -164,6 +164,7 @@ test("snapshot from before a run is ineligible until a fresh snapshot arrives", 
     chatStateSelection.selectFreshServerTodosForRun({
       currentRunGeneration: 1,
       serverSnapshotRunGeneration: 0,
+      requestStartedIdle: true,
       serverTodos: [persistedTodo],
     }),
     undefined
@@ -175,6 +176,28 @@ test("snapshot confirmed after run remains eligible", () => {
     chatStateSelection.selectFreshServerTodosForRun({
       currentRunGeneration: 1,
       serverSnapshotRunGeneration: 1,
+      requestStartedIdle: true,
+      serverTodos: [persistedTodo],
+    }),
+    [persistedTodo]
+  );
+});
+
+test("in-run snapshot stays ineligible until an idle request confirms state", () => {
+  assert.equal(
+    chatStateSelection.selectFreshServerTodosForRun({
+      currentRunGeneration: 1,
+      serverSnapshotRunGeneration: 1,
+      requestStartedIdle: false,
+      serverTodos: [persistedTodo],
+    }),
+    undefined
+  );
+  assert.deepEqual(
+    chatStateSelection.selectFreshServerTodosForRun({
+      currentRunGeneration: 1,
+      serverSnapshotRunGeneration: 1,
+      requestStartedIdle: true,
       serverTodos: [persistedTodo],
     }),
     [persistedTodo]

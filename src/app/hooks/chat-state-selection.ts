@@ -72,15 +72,18 @@ export function shouldReplaceServerSnapshot({
 export function selectFreshServerTodosForRun({
   currentRunGeneration,
   serverSnapshotRunGeneration,
+  requestStartedIdle,
   serverTodos,
 }: {
   currentRunGeneration: number;
   serverSnapshotRunGeneration?: number;
+  requestStartedIdle: boolean;
   serverTodos?: TodoItem[];
 }): TodoItem[] | undefined {
   if (
     serverSnapshotRunGeneration === undefined ||
-    serverSnapshotRunGeneration !== currentRunGeneration
+    serverSnapshotRunGeneration !== currentRunGeneration ||
+    !requestStartedIdle
   ) {
     return undefined;
   }

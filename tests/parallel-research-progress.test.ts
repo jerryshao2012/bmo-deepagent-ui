@@ -4,9 +4,7 @@ import test from "node:test";
 import type { ProcessedMessage } from "../src/app/utils/processMessages";
 import { selectParallelResearchProgress } from "../src/app/utils/parallel-research-progress";
 
-function message(
-  toolCalls: ProcessedMessage["toolCalls"]
-): ProcessedMessage {
+function message(toolCalls: ProcessedMessage["toolCalls"]): ProcessedMessage {
   return {
     message: { id: "message", type: "ai", content: "" } as never,
     toolCalls,
@@ -14,9 +12,7 @@ function message(
   };
 }
 
-function researchCall(
-  status: ProcessedMessage["toolCalls"][number]["status"]
-) {
+function researchCall(status: ProcessedMessage["toolCalls"][number]["status"]) {
   return {
     id: crypto.randomUUID(),
     name: "task",
@@ -35,6 +31,20 @@ test("returns completed count for active parallel research batch", () => {
       ]),
     ]),
     { completed: 2, total: 3 }
+  );
+});
+
+test("excludes terminal failures from active parallel research completion count", () => {
+  assert.deepEqual(
+    selectParallelResearchProgress([
+      message([
+        researchCall("completed"),
+        researchCall("error"),
+        researchCall("interrupted"),
+        researchCall("pending"),
+      ]),
+    ]),
+    { completed: 1, total: 4 }
   );
 });
 

@@ -1361,7 +1361,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                                       {parallelResearchLabel ?? (
                                         <>
                                           Task{" "}
-                                          {totalTasks - groupedTodos.pending.length}{" "}
+                                          {totalTasks -
+                                            groupedTodos.pending.length}{" "}
                                           of {totalTasks}
                                         </>
                                       )}
@@ -1399,7 +1400,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                                     {parallelResearchLabel ?? (
                                       <>
                                         Task{" "}
-                                        {totalTasks - groupedTodos.pending.length}{" "}
+                                        {totalTasks -
+                                          groupedTodos.pending.length}{" "}
                                         of {totalTasks}
                                       </>
                                     )}

@@ -1153,7 +1153,10 @@ test("shows active parallel research progress instead of root task ordinal", asy
       exact: true,
     });
     await waitFor(() =>
-      assert.match(activeTaskContent.parentElement?.textContent ?? "", /\d+\.\ds/)
+      assert.match(
+        activeTaskContent.parentElement?.textContent ?? "",
+        /\d+\.\ds/
+      )
     );
   } finally {
     restoreFetch();

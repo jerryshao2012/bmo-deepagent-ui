@@ -1318,24 +1318,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                               {...getAriaExpandedProps(metaOpen === "tasks")}
                             >
                               {(() => {
-                                if (parallelResearchProgress) {
-                                  return [
-                                    <Sparkles
-                                      key="icon"
-                                      size={16}
-                                      className="text-primary"
-                                    />,
-                                    <span
-                                      key="label"
-                                      className="ml-[1px] min-w-0 truncate text-sm"
-                                    >
-                                      Parallel research: {parallelResearchProgress.completed}/
-                                      {parallelResearchProgress.total} complete
-                                    </span>,
-                                  ];
-                                }
-
-                                if (isCompleted) {
+                                if (isCompleted && !parallelResearchProgress) {
                                   return [
                                     <CheckCircle
                                       key="icon"
@@ -1370,9 +1353,19 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                                       key="label"
                                       className="ml-[1px] min-w-0 truncate text-sm"
                                     >
-                                      Task{" "}
-                                      {totalTasks - groupedTodos.pending.length}{" "}
-                                      of {totalTasks}
+                                      {parallelResearchProgress ? (
+                                        <>
+                                          Parallel research: {" "}
+                                          {parallelResearchProgress.completed}/
+                                          {parallelResearchProgress.total} complete
+                                        </>
+                                      ) : (
+                                        <>
+                                          Task{" "}
+                                          {totalTasks - groupedTodos.pending.length}{" "}
+                                          of {totalTasks}
+                                        </>
+                                      )}
                                     </span>,
                                     <div
                                       key="content"
@@ -1404,9 +1397,19 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                                     key="label"
                                     className="ml-[1px] min-w-0 truncate text-sm"
                                   >
-                                    Task{" "}
-                                    {totalTasks - groupedTodos.pending.length}{" "}
-                                    of {totalTasks}
+                                    {parallelResearchProgress ? (
+                                      <>
+                                        Parallel research: {" "}
+                                        {parallelResearchProgress.completed}/
+                                        {parallelResearchProgress.total} complete
+                                      </>
+                                    ) : (
+                                      <>
+                                        Task{" "}
+                                        {totalTasks - groupedTodos.pending.length}{" "}
+                                        of {totalTasks}
+                                      </>
+                                    )}
                                   </span>,
                                 ];
                               })()}

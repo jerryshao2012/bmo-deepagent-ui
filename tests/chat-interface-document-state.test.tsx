@@ -1098,6 +1098,8 @@ test("shows active parallel research progress instead of root task ordinal", asy
       client: makeClient([]),
       chat: {
         ...baseChat(() => {}),
+        isLoading: true,
+        chatStartTime: Date.now() - 1_000,
         todos: [
           { id: "todo-1", content: "Root task", status: "in_progress" },
           { id: "todo-2", content: "Second task", status: "pending" },
@@ -1145,8 +1147,14 @@ test("shows active parallel research progress instead of root task ordinal", asy
     });
 
     await screen.findByRole("button", {
-      name: "Parallel research: 2/3 complete",
+      name: /Parallel research:\s*2\/3 complete\s+Root task/,
     });
+    const activeTaskContent = await screen.findByText("Root task", {
+      exact: true,
+    });
+    await waitFor(() =>
+      assert.match(activeTaskContent.parentElement?.textContent ?? "", /\d+\.\ds/)
+    );
   } finally {
     restoreFetch();
   }

@@ -1117,9 +1117,9 @@ test("tasks panel collapses when switching threads", async () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
     await act(async () => {});
-    assert.equal(
-      screen.queryByRole("button", { name: "Tasks", exact: true }),
-      null
+    assert.ok(
+      screen.queryByRole("button", { name: "Tasks", exact: true }) === null,
+      "Tasks panel should close after switching threads"
     );
     const retainedTrigger = screen.getByRole("button", {
       name: /Task 0 of 1/,

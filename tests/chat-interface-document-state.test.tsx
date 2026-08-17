@@ -128,15 +128,20 @@ function Harness({
   client,
   chat,
   canSwitch = false,
+  canToggleLoading = false,
 }: {
   client: never;
   chat: never;
   canSwitch?: boolean;
+  canToggleLoading?: boolean;
 }) {
   const [, setThreadId] = useQueryState("threadId");
+  const [isLoading, setIsLoading] = React.useState(false);
   return (
     <ClientContext.Provider value={{ client }}>
-      <ChatContext.Provider value={chat}>
+      <ChatContext.Provider
+        value={canToggleLoading ? { ...chat, isLoading } : chat}
+      >
         {canSwitch && (
           <>
             <button
@@ -153,6 +158,14 @@ function Harness({
             </button>
           </>
         )}
+        {canToggleLoading && (
+          <button
+            type="button"
+            onClick={() => setIsLoading((loading) => !loading)}
+          >
+            Toggle loading
+          </button>
+        )}
         <ChatInterface assistant={assistant} />
       </ChatContext.Provider>
     </ClientContext.Provider>
@@ -163,11 +176,13 @@ function renderChat({
   client,
   chat,
   canSwitch = false,
+  canToggleLoading = false,
   strictMode = false,
 }: {
   client: never;
   chat: never;
   canSwitch?: boolean;
+  canToggleLoading?: boolean;
   strictMode?: boolean;
 }) {
   const cache = new Map([
@@ -186,6 +201,7 @@ function renderChat({
               client={client}
               chat={chat}
               canSwitch={canSwitch}
+              canToggleLoading={canToggleLoading}
             />
           </React.StrictMode>
         ) : (
@@ -193,6 +209,7 @@ function renderChat({
             client={client}
             chat={chat}
             canSwitch={canSwitch}
+            canToggleLoading={canToggleLoading}
           />
         )}
       </NuqsTestingAdapter>
@@ -1070,5 +1087,87 @@ test("cross-thread last delete cannot leak A pending folder into B or later A su
     globalThis.confirm = originalConfirm;
     console.error = originalError;
     console.warn = originalWarn;
+  }
+});
+
+test("tasks panel collapses when switching threads", async () => {
+  configure();
+  const restoreFetch = installFetch({ uploadFolders: [] });
+  try {
+    renderChat({
+      client: makeClient([]),
+      chat: {
+        ...baseChat(() => {}),
+        todos: [{ id: "todo-1", content: "Retained task", status: "pending" }],
+      } as never,
+      canSwitch: true,
+    });
+
+    const collapsedTrigger = await screen.findByRole("button", {
+      name: /Task 0 of 1/,
+    });
+    assert.equal(collapsedTrigger.getAttribute("aria-expanded"), "false");
+    fireEvent.click(collapsedTrigger);
+    assert.equal(
+      screen
+        .getByRole("button", { name: "Tasks", exact: true })
+        .getAttribute("aria-expanded"),
+      "true"
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitFor(() =>
+      assert.equal(
+        screen.queryByRole("button", { name: "Tasks", exact: true }),
+        null
+      )
+    );
+    const retainedTrigger = screen.getByRole("button", {
+      name: /Task 0 of 1/,
+    });
+    assert.equal(retainedTrigger.getAttribute("aria-expanded"), "false");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("same-thread loading changes keep an open tasks panel", async () => {
+  configure();
+  const restoreFetch = installFetch({ uploadFolders: [] });
+  try {
+    renderChat({
+      client: makeClient([]),
+      chat: {
+        ...baseChat(() => {}),
+        todos: [
+          { id: "todo-1", content: "Active task", status: "in_progress" },
+        ],
+        interrupt: {} as never,
+      } as never,
+      canToggleLoading: true,
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: /Task 1 of 1/ }));
+    const tasksTab = screen.getByRole("button", { name: "Tasks", exact: true });
+    assert.equal(tasksTab.getAttribute("aria-expanded"), "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle loading" }));
+    await waitFor(() =>
+      assert.equal(
+        screen
+          .getByRole("button", { name: "Tasks", exact: true })
+          .getAttribute("aria-expanded"),
+        "true"
+      )
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Toggle loading" }));
+    assert.equal(
+      screen
+        .getByRole("button", { name: "Tasks", exact: true })
+        .getAttribute("aria-expanded"),
+      "true"
+    );
+  } finally {
+    restoreFetch();
   }
 });

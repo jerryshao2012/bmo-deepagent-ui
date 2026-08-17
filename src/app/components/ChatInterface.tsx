@@ -100,6 +100,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [metaOpen, setMetaOpen] = useState<
     "tasks" | "files" | "documents" | "wiki" | null
   >(null);
+  useEffect(() => {
+    setMetaOpen(null);
+  }, [currentThreadId]);
   const [skillsDrawerOpen, setSkillsDrawerOpen] = useState(false);
   const tasksContainerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);

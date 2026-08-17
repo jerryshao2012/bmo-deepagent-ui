@@ -167,6 +167,32 @@ test("unknown failure remains a transient retry", async () => {
   assert.deepEqual(scheduler.delays, [THREAD_SNAPSHOT_RETRY_MS[0]]);
 });
 
+test("delivery failure retries without an unhandled rejection", async () => {
+  const scheduler = new FakeScheduler();
+  const unhandled: unknown[] = [];
+  const captureUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", captureUnhandled);
+
+  try {
+    const poller = new ThreadSnapshotPoller(
+      async () => "snapshot",
+      () => {
+        throw new Error("delivery failed");
+      },
+      scheduler
+    );
+
+    poller.start();
+    await settle();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    assert.deepEqual(unhandled, []);
+    assert.deepEqual(scheduler.delays, [THREAD_SNAPSHOT_RETRY_MS[0]]);
+  } finally {
+    process.off("unhandledRejection", captureUnhandled);
+  }
+});
+
 test("waits for each request to settle before scheduling another", async () => {
   const scheduler = new FakeScheduler();
   const request = deferred<number>();
@@ -191,9 +217,33 @@ test("waits for each request to settle before scheduling another", async () => {
   assert.equal(scheduler.size, 1);
 });
 
+test("repeated start does not overlap a pending lifecycle request", () => {
+  const scheduler = new FakeScheduler();
+  const request = deferred<number>();
+  let calls = 0;
+  const poller = new ThreadSnapshotPoller(
+    () => {
+      calls += 1;
+      return request.promise;
+    },
+    () => {},
+    scheduler
+  );
+
+  poller.start();
+  poller.start();
+
+  assert.equal(calls, 1);
+  assert.equal(scheduler.size, 0);
+});
+
 test("stop cancels a pending poll", async () => {
   const scheduler = new FakeScheduler();
-  const poller = new ThreadSnapshotPoller(async () => "snapshot", () => {}, scheduler);
+  const poller = new ThreadSnapshotPoller(
+    async () => "snapshot",
+    () => {},
+    scheduler
+  );
 
   poller.start();
   await settle();
@@ -222,4 +272,35 @@ test("late response after stop is neither delivered nor rescheduled", async () =
   assert.deepEqual(delivered, []);
   assert.equal(scheduler.size, 0);
   assert.deepEqual(scheduler.delays, []);
+});
+
+test("stop then start ignores old response and delivers fresh lifecycle", async () => {
+  const scheduler = new FakeScheduler();
+  const oldRequest = deferred<string>();
+  const freshRequest = deferred<string>();
+  const delivered: string[] = [];
+  let calls = 0;
+  const poller = new ThreadSnapshotPoller(
+    () => {
+      calls += 1;
+      return calls === 1 ? oldRequest.promise : freshRequest.promise;
+    },
+    (value) => delivered.push(value),
+    scheduler
+  );
+
+  poller.start();
+  poller.stop();
+  poller.start();
+  oldRequest.resolve("old");
+  await settle();
+
+  assert.deepEqual(delivered, []);
+  assert.equal(scheduler.size, 0);
+
+  freshRequest.resolve("fresh");
+  await settle();
+
+  assert.deepEqual(delivered, ["fresh"]);
+  assert.deepEqual(scheduler.delays, [THREAD_SNAPSHOT_POLL_MS]);
 });

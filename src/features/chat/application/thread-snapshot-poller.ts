@@ -1,5 +1,7 @@
 export const THREAD_SNAPSHOT_POLL_MS = 2_500;
-export const THREAD_SNAPSHOT_RETRY_MS = [5_000, 10_000, 20_000, 30_000] as const;
+export const THREAD_SNAPSHOT_RETRY_MS = [
+  5_000, 10_000, 20_000, 30_000,
+] as const;
 
 export interface ThreadSnapshotPollerScheduler {
   setTimeout(callback: () => void, delayMs: number): unknown;
@@ -39,6 +41,7 @@ export class ThreadSnapshotPoller<T> {
   ) {}
 
   start(): void {
+    if (this.active) return;
     this.stop();
     this.active = true;
     this.retryIndex = 0;
@@ -65,23 +68,32 @@ export class ThreadSnapshotPoller<T> {
       value = await this.request();
     } catch (error) {
       if (!this.isActive(epoch) || isMissingSnapshot(error)) return;
-
-      const delay = THREAD_SNAPSHOT_RETRY_MS[this.retryIndex];
-      this.retryIndex = Math.min(
-        this.retryIndex + 1,
-        THREAD_SNAPSHOT_RETRY_MS.length - 1
-      );
-      if (!this.isActive(epoch)) return;
-      this.schedule(epoch, delay);
+      this.scheduleRetry(epoch);
       return;
     }
 
     if (!this.isActive(epoch)) return;
     this.retryIndex = 0;
     if (!this.isActive(epoch)) return;
-    this.deliver(value);
+    try {
+      this.deliver(value);
+    } catch {
+      if (!this.isActive(epoch)) return;
+      this.scheduleRetry(epoch);
+      return;
+    }
     if (!this.isActive(epoch)) return;
     this.schedule(epoch, THREAD_SNAPSHOT_POLL_MS);
+  }
+
+  private scheduleRetry(epoch: number): void {
+    const delay = THREAD_SNAPSHOT_RETRY_MS[this.retryIndex];
+    this.retryIndex = Math.min(
+      this.retryIndex + 1,
+      THREAD_SNAPSHOT_RETRY_MS.length - 1
+    );
+    if (!this.isActive(epoch)) return;
+    this.schedule(epoch, delay);
   }
 
   private schedule(epoch: number, delayMs: number): void {

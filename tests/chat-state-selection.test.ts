@@ -83,3 +83,100 @@ test("matching snapshot ownership returns server todos", () => {
     [persistedTodo]
   );
 });
+
+test("same-thread stale snapshot is rejected while idle", () => {
+  assert.equal(
+    typeof chatStateSelection.shouldReplaceServerSnapshot,
+    "function"
+  );
+  assert.equal(
+    chatStateSelection.shouldReplaceServerSnapshot({
+      previousSnapshot: { threadId: "thread-a", updatedAt: 200 },
+      incomingThreadId: "thread-a",
+      incomingUpdatedAt: 100,
+      incomingMessageCount: 2,
+      streamIsLoading: false,
+      streamMessageCount: 0,
+    }),
+    false
+  );
+});
+
+test("different-thread snapshot is accepted regardless of timestamp", () => {
+  assert.equal(
+    chatStateSelection.shouldReplaceServerSnapshot({
+      previousSnapshot: { threadId: "thread-a", updatedAt: 200 },
+      incomingThreadId: "thread-b",
+      incomingUpdatedAt: 100,
+      incomingMessageCount: 0,
+      streamIsLoading: false,
+      streamMessageCount: 3,
+    }),
+    true
+  );
+});
+
+test("same-thread newer snapshot remains accepted", () => {
+  assert.equal(
+    chatStateSelection.shouldReplaceServerSnapshot({
+      previousSnapshot: { threadId: "thread-a", updatedAt: 100 },
+      incomingThreadId: "thread-a",
+      incomingUpdatedAt: 200,
+      incomingMessageCount: 0,
+      streamIsLoading: false,
+      streamMessageCount: 3,
+    }),
+    true
+  );
+});
+
+test("same-thread more-complete snapshot is accepted only when not older", () => {
+  assert.equal(
+    chatStateSelection.shouldReplaceServerSnapshot({
+      previousSnapshot: { threadId: "thread-a", updatedAt: 200 },
+      incomingThreadId: "thread-a",
+      incomingUpdatedAt: 100,
+      incomingMessageCount: 5,
+      streamIsLoading: true,
+      streamMessageCount: 1,
+    }),
+    false
+  );
+  assert.equal(
+    chatStateSelection.shouldReplaceServerSnapshot({
+      previousSnapshot: { threadId: "thread-a", updatedAt: 100 },
+      incomingThreadId: "thread-a",
+      incomingUpdatedAt: 200,
+      incomingMessageCount: 5,
+      streamIsLoading: true,
+      streamMessageCount: 1,
+    }),
+    true
+  );
+});
+
+test("snapshot from before a run is ineligible until a fresh snapshot arrives", () => {
+  assert.equal(
+    typeof chatStateSelection.selectFreshServerTodosForRun,
+    "function"
+  );
+  assert.equal(
+    chatStateSelection.selectFreshServerTodosForRun({
+      currentRunGeneration: 1,
+      serverSnapshotRunGeneration: 0,
+      serverTodos: [persistedTodo],
+    }),
+    undefined
+  );
+});
+
+test("snapshot confirmed after run remains eligible", () => {
+  assert.deepEqual(
+    chatStateSelection.selectFreshServerTodosForRun({
+      currentRunGeneration: 1,
+      serverSnapshotRunGeneration: 1,
+      serverTodos: [persistedTodo],
+    }),
+    [persistedTodo]
+  );
+});

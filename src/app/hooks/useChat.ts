@@ -21,7 +21,9 @@ import { LangGraphRunExecutor } from "@/features/chat/infrastructure/langgraph-r
 import { CHAT_STREAM_OPTIONS } from "./chat-stream-options";
 import {
   selectEffectiveTodos,
+  selectFreshServerTodosForRun,
   selectServerTodosForThread,
+  shouldReplaceServerSnapshot,
 } from "./chat-state-selection";
 
 export type StateType = {
@@ -126,6 +128,7 @@ export function useChat({
   >(null);
   const [serverSnapshot, setServerSnapshot] = useState<{
     threadId: string;
+    runGeneration: number;
     messages: Message[];
     todos: TodoItem[];
     files: Record<string, unknown>;
@@ -150,6 +153,7 @@ export function useChat({
   const [localFiles, setLocalFiles] = useState<Record<string, unknown>>({});
   const [streamError, setStreamError] = useState<Error | null>(null);
   const turnCountRef = useRef(0);
+  const runGenerationRef = useRef(0);
   const previousThreadIdRef = useRef<string | null | undefined>(undefined);
   const locallyUpdatedFilesRef = useRef<Record<string, string>>({});
   const pendingTurnRef = useRef<{
@@ -200,6 +204,7 @@ export function useChat({
 
       if (!isInitialThreadIdAssignment) {
         turnCountRef.current = 0;
+        runGenerationRef.current = 0;
         pendingTurnRef.current = null;
         setLocalChatStartMs(null);
         setLocalChatElapsedSeconds(null);
@@ -266,6 +271,7 @@ export function useChat({
 
     const syncFromServer = async () => {
       try {
+        const requestRunGeneration = runGenerationRef.current;
         const threadState = await chatGateway.getThreadSnapshot(threadId);
 
         if (isDisposed) {
@@ -279,14 +285,14 @@ export function useChat({
           : Date.now();
 
         setServerSnapshot((previousSnapshot) => {
-          const previousUpdatedAt = previousSnapshot?.updatedAt ?? 0;
-          const isMoreRecent = serverUpdatedAt > previousUpdatedAt;
-          const isMoreComplete = serverMessages.length > stream.messages.length;
-          const isDifferentThread = previousSnapshot?.threadId !== threadId;
-          const shouldReplace =
-            isDifferentThread ||
-            isMoreComplete ||
-            (!stream.isLoading && (isMoreRecent || serverMessages.length > 0));
+          const shouldReplace = shouldReplaceServerSnapshot({
+            previousSnapshot,
+            incomingThreadId: threadId,
+            incomingUpdatedAt: serverUpdatedAt,
+            incomingMessageCount: serverMessages.length,
+            streamIsLoading: stream.isLoading,
+            streamMessageCount: stream.messages.length,
+          });
 
           if (!shouldReplace) {
             return previousSnapshot;
@@ -294,6 +300,7 @@ export function useChat({
 
           return {
             threadId,
+            runGeneration: requestRunGeneration,
             messages: serverMessages,
             todos: values.todos ?? [],
             files: values.files ?? {},
@@ -397,6 +404,7 @@ export function useChat({
           startedAt,
         },
       }));
+      runGenerationRef.current += 1;
       runExecutor.submit(
         { messages: [newMessage], ...stateUpdates },
         {
@@ -427,6 +435,7 @@ export function useChat({
       optimisticMessages?: Message[]
     ) => {
       setStreamError(null);
+      runGenerationRef.current += 1;
       if (checkpoint) {
         runExecutor.submit(undefined, {
           ...(optimisticMessages
@@ -475,6 +484,7 @@ export function useChat({
   const continueStream = useCallback(
     (hasTaskToolCall?: boolean) => {
       setStreamError(null);
+      runGenerationRef.current += 1;
       runExecutor.submit(undefined, {
         // Optimistically clear todos when continuing the stream so stale
         // task list from a previous turn doesn't remain visible.
@@ -498,6 +508,7 @@ export function useChat({
 
   const markCurrentThreadAsResolved = useCallback(() => {
     setStreamError(null);
+    runGenerationRef.current += 1;
     runExecutor.submit(null, { command: { goto: "__end__", update: null } });
     // Update thread list when marking thread as resolved
     onHistoryRevalidateAction?.();
@@ -506,6 +517,7 @@ export function useChat({
   const resumeInterrupt = useCallback(
     (value: any) => {
       setStreamError(null);
+      runGenerationRef.current += 1;
       runExecutor.submit(null, { command: { resume: value } });
       // Update thread list when resuming from interrupt
       onHistoryRevalidateAction?.();
@@ -536,7 +548,11 @@ export function useChat({
     serverTodos: selectServerTodosForThread({
       currentThreadId: threadId,
       serverThreadId: serverSnapshot?.threadId,
-      serverTodos: serverSnapshot?.todos,
+      serverTodos: selectFreshServerTodosForRun({
+        currentRunGeneration: runGenerationRef.current,
+        serverSnapshotRunGeneration: serverSnapshot?.runGeneration,
+        serverTodos: serverSnapshot?.todos,
+      }),
     }),
   });
 

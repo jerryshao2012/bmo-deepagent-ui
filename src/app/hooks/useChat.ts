@@ -18,6 +18,7 @@ import { useClient } from "@/providers/ClientContext";
 import { useQueryState } from "nuqs";
 import { LangGraphChatGateway } from "@/features/chat/infrastructure/langgraph-chat-gateway";
 import { LangGraphRunExecutor } from "@/features/chat/infrastructure/langgraph-run-executor";
+import { ThreadSnapshotPoller } from "@/features/chat/application/thread-snapshot-poller";
 import { CHAT_STREAM_OPTIONS } from "./chat-stream-options";
 import {
   selectEffectiveTodos,
@@ -39,6 +40,19 @@ export type StateType = {
   no_web?: boolean | null;
   has_documents?: boolean | null;
   verification_round?: number;
+};
+
+type ServerSnapshot = {
+  threadId: string;
+  runGeneration: number;
+  requestStartedIdle: boolean;
+  messages: Message[];
+  todos: TodoItem[];
+  files: Record<string, unknown>;
+  email?: StateType["email"];
+  ui?: StateType["ui"];
+  no_web?: StateType["no_web"];
+  updatedAt: number;
 };
 
 function extractFileText(value: unknown): string {
@@ -126,18 +140,9 @@ export function useChat({
   const [localChatElapsedSeconds, setLocalChatElapsedSeconds] = useState<
     number | null
   >(null);
-  const [serverSnapshot, setServerSnapshot] = useState<{
-    threadId: string;
-    runGeneration: number;
-    requestStartedIdle: boolean;
-    messages: Message[];
-    todos: TodoItem[];
-    files: Record<string, unknown>;
-    email?: StateType["email"];
-    ui?: StateType["ui"];
-    no_web?: StateType["no_web"];
-    updatedAt: number;
-  } | null>(null);
+  const [serverSnapshot, setServerSnapshot] = useState<ServerSnapshot | null>(
+    null
+  );
   const [messageTimings, setMessageTimings] = useState<
     Record<
       string,
@@ -190,6 +195,14 @@ export function useChat({
     filterSubagentMessages: boolean;
   }) as unknown as UseStream<StateType>;
   const runExecutor = useMemo(() => new LangGraphRunExecutor(stream), [stream]);
+  const streamSnapshotRef = useRef({
+    isLoading: stream.isLoading,
+    messageCount: stream.messages.length,
+  });
+  streamSnapshotRef.current = {
+    isLoading: stream.isLoading,
+    messageCount: stream.messages.length,
+  };
 
   useEffect(() => {
     const previousThreadId = previousThreadIdRef.current;
@@ -268,64 +281,55 @@ export function useChat({
       return;
     }
 
-    let isDisposed = false;
-
-    const syncFromServer = async () => {
-      try {
+    const poller = new ThreadSnapshotPoller<ServerSnapshot>(
+      async () => {
         const requestRunGeneration = runGenerationRef.current;
-        const requestStartedIdle = !stream.isLoading;
+        const requestStartedIdle = !streamSnapshotRef.current.isLoading;
         const threadState = await chatGateway.getThreadSnapshot(threadId);
-
-        if (isDisposed) {
-          return;
-        }
-
         const values = threadState?.values ?? ({} as Partial<StateType>);
         const serverMessages = values.messages ?? [];
         const serverUpdatedAt = threadState?.updatedAt
           ? new Date(threadState.updatedAt).getTime()
           : Date.now();
 
+        return {
+          threadId,
+          runGeneration: requestRunGeneration,
+          requestStartedIdle,
+          messages: serverMessages,
+          todos: values.todos ?? [],
+          files: values.files ?? {},
+          email: values.email,
+          ui: values.ui,
+          no_web: values.no_web,
+          updatedAt: serverUpdatedAt,
+        };
+      },
+      (snapshot) => {
         setServerSnapshot((previousSnapshot) => {
           const shouldReplace = shouldReplaceServerSnapshot({
             previousSnapshot,
-            incomingThreadId: threadId,
-            incomingUpdatedAt: serverUpdatedAt,
-            incomingMessageCount: serverMessages.length,
-            streamIsLoading: stream.isLoading,
-            streamMessageCount: stream.messages.length,
+            incomingThreadId: snapshot.threadId,
+            incomingUpdatedAt: snapshot.updatedAt,
+            incomingMessageCount: snapshot.messages.length,
+            streamIsLoading: streamSnapshotRef.current.isLoading,
+            streamMessageCount: streamSnapshotRef.current.messageCount,
           });
 
           if (!shouldReplace) {
             return previousSnapshot;
           }
 
-          return {
-            threadId,
-            runGeneration: requestRunGeneration,
-            requestStartedIdle,
-            messages: serverMessages,
-            todos: values.todos ?? [],
-            files: values.files ?? {},
-            email: values.email,
-            ui: values.ui,
-            no_web: values.no_web,
-            updatedAt: serverUpdatedAt,
-          };
+          return snapshot;
         });
-      } catch {
-        // Ignore transient fetch errors; stream reconnection may still recover.
       }
-    };
-
-    syncFromServer();
-    const interval = setInterval(syncFromServer, 2500);
+    );
+    poller.start();
 
     return () => {
-      isDisposed = true;
-      clearInterval(interval);
+      poller.stop();
     };
-  }, [chatGateway, threadId, stream.isLoading, stream.messages.length]);
+  }, [chatGateway, threadId]);
 
   useEffect(() => {
     const pendingTurn = pendingTurnRef.current;

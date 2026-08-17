@@ -26,6 +26,13 @@ test("chat hook delegates persistence and run execution", async () => {
   assert.doesNotMatch(source, /stream\.stop\s*\(/);
 });
 
+test("chat hook uses cancellable snapshot polling", async () => {
+  const source = await readFile("src/app/hooks/useChat.ts", "utf8");
+
+  assert.match(source, /ThreadSnapshotPoller/);
+  assert.doesNotMatch(source, /setInterval\(syncFromServer,\s*2500\)/);
+});
+
 test("thread hook delegates LangGraph SDK operations", async () => {
   const source = await readFile("src/app/hooks/useThreads.ts", "utf8");
 

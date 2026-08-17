@@ -1160,6 +1160,74 @@ test("shows active parallel research progress instead of root task ordinal", asy
   }
 });
 
+test("preserves completed root task details during active parallel research", async () => {
+  configure();
+  const restoreFetch = installFetch({ uploadFolders: [] });
+  try {
+    renderChat({
+      client: makeClient([]),
+      chat: {
+        ...baseChat(() => {}),
+        chatElapsedSeconds: 12.3,
+        todos: [
+          { id: "todo-1", content: "First task", status: "completed" },
+          { id: "todo-2", content: "Second task", status: "completed" },
+          { id: "todo-3", content: "Third task", status: "completed" },
+          { id: "todo-4", content: "Fourth task", status: "completed" },
+          { id: "todo-5", content: "Fifth task", status: "completed" },
+        ],
+        messages: [
+          {
+            id: "parallel-research",
+            type: "ai",
+            content: "",
+            tool_calls: [
+              {
+                id: "research-1",
+                name: "task",
+                args: { subagent_type: "research-agent" },
+              },
+              {
+                id: "research-2",
+                name: "task",
+                args: { subagent_type: "research-agent" },
+              },
+              {
+                id: "research-3",
+                name: "task",
+                args: { subagent_type: "research-agent" },
+              },
+            ],
+          },
+          {
+            id: "research-1-result",
+            type: "tool",
+            content: "done",
+            tool_call_id: "research-1",
+          },
+          {
+            id: "research-2-result",
+            type: "tool",
+            content: "done",
+            tool_call_id: "research-2",
+          },
+        ],
+      } as never,
+    });
+
+    const parallelProgressLabel = await screen.findByText(
+      "Parallel research: 2/3 complete",
+      { exact: true }
+    );
+    const tasksTrigger = parallelProgressLabel.closest("button");
+    assert.ok(tasksTrigger);
+    assert.ok(tasksTrigger.querySelector("svg.text-success\\/80"));
+    await screen.findByText("(Total for 12.3 seconds)", { exact: true });
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("returns to root task progress after parallel research batch is terminal", async () => {
   configure();
   const restoreFetch = installFetch({ uploadFolders: [] });

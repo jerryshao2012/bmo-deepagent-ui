@@ -1318,7 +1318,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                               {...getAriaExpandedProps(metaOpen === "tasks")}
                             >
                               {(() => {
-                                if (isCompleted && !parallelResearchProgress) {
+                                const parallelResearchLabel =
+                                  parallelResearchProgress &&
+                                  `Parallel research: ${parallelResearchProgress.completed}/${parallelResearchProgress.total} complete`;
+
+                                if (isCompleted) {
                                   return [
                                     <CheckCircle
                                       key="icon"
@@ -1329,7 +1333,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                                       key="label"
                                       className="ml-[1px] min-w-0 truncate text-sm"
                                     >
-                                      All tasks completed.
+                                      {parallelResearchLabel ??
+                                        "All tasks completed."}
                                     </span>,
                                     <span
                                       key="duration"
@@ -1353,13 +1358,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                                       key="label"
                                       className="ml-[1px] min-w-0 truncate text-sm"
                                     >
-                                      {parallelResearchProgress ? (
-                                        <>
-                                          Parallel research: {" "}
-                                          {parallelResearchProgress.completed}/
-                                          {parallelResearchProgress.total} complete
-                                        </>
-                                      ) : (
+                                      {parallelResearchLabel ?? (
                                         <>
                                           Task{" "}
                                           {totalTasks - groupedTodos.pending.length}{" "}
@@ -1397,13 +1396,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                                     key="label"
                                     className="ml-[1px] min-w-0 truncate text-sm"
                                   >
-                                    {parallelResearchProgress ? (
-                                      <>
-                                        Parallel research: {" "}
-                                        {parallelResearchProgress.completed}/
-                                        {parallelResearchProgress.total} complete
-                                      </>
-                                    ) : (
+                                    {parallelResearchLabel ?? (
                                       <>
                                         Task{" "}
                                         {totalTasks - groupedTodos.pending.length}{" "}

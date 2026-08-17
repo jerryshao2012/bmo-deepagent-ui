@@ -13,7 +13,7 @@
 ### Task 1: Center Expanded Task List
 
 **Files:**
-- Create: `tests/task-list-layout.test.mjs`
+- Create: `../../../tests/task-list-layout.test.mjs`
 - Modify: `src/app/components/ChatInterface.tsx:1555-1585`
 
 - [x] **Step 1: Write failing source-level regression test**

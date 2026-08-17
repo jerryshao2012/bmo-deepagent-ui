@@ -17,7 +17,7 @@ Expanded panel wrapper supplies horizontal padding only. Each rendered status gr
 
 ## Components and Data Flow
 
-Change only task-list layout classes in `src/app/components/ChatInterface.tsx`: make the shared content wrapper's `py-2` conditional on the Tasks view and add `last:mb-0` to visible task groups. Todo grouping, filtering, status ordering, scroll behavior, Files/Documents/Wiki spacing, and click behavior remain unchanged.
+Change only task-list layout classes in `../../../src/app/components/ChatInterface.tsx`: make the shared content wrapper's `py-2` conditional on the Tasks view and add `last:mb-0` to visible task groups. Todo grouping, filtering, status ordering, scroll behavior, Files/Documents/Wiki spacing, and click behavior remain unchanged.
 
 ## Error Handling
 

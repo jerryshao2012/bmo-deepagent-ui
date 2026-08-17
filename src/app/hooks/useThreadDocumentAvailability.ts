@@ -131,6 +131,10 @@ export function useThreadDocumentAvailability({
     ): Promise<boolean | "deferred"> => {
       const persist = async () => {
         if (!isCurrent(targetThreadId, epoch, allowUnrendered)) return false;
+        if (selectedThreadStatusRef.current === "busy") {
+          deferPersistence(targetThreadId, values, epoch, allowUnrendered);
+          return acceptDeferred ? "deferred" : false;
+        }
 
         try {
           await updateThreadStateRef.current(targetThreadId, values);

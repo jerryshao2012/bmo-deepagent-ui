@@ -253,61 +253,51 @@ test("upload callback accepts the existing created thread before query-state rer
   ]);
 });
 
-test("HTTP 409 defers latest persistence until selected thread is confirmed non-busy", async () => {
-  let allowWrite = false;
+test("known busy status defers latest document persistence without attempting a write", async () => {
+  let attempts = 0;
   const updates: StateUpdate[] = [];
-  const errors: unknown[][] = [];
-  const originalConsoleError = console.error;
-  console.error = (...args: unknown[]) => errors.push(args);
-
-  try {
-    const { result, rerender } = renderHook(
-      ({ status }: { status: "busy" | "idle" }) =>
-        useThreadDocumentAvailability({
-          threadId: "thread-1",
-          selectedThreadStatus: status,
-          listDocuments: async () => listResponse([]),
-          updateThreadState: async (_threadId, values) => {
-            if (!allowWrite) {
-              throw new Error(
-                "HTTP 409: Cannot update thread state because it has in-flight runs"
-              );
-            }
-            updates.push({ threadId: "thread-1", values });
-          },
-        }),
-      { initialProps: { status: "busy" as "busy" | "idle" } }
-    );
-
-    await waitFor(() => assert.equal(result.current.isRefreshing, false));
-    await act(async () => {
-      await result.current.recordUploadSuccess({
-        activeThreadId: "thread-1",
-        documents: [{ name: "new.pdf", size: 9, type: "file" }],
-        docFolder: "docs/threads/thread-1",
-      });
-    });
-    assert.deepEqual(updates, []);
-    assert.deepEqual(errors, []);
-
-    allowWrite = true;
-    rerender({ status: "idle" });
-    await waitFor(() => assert.equal(updates.length, 1));
-    assert.deepEqual(updates, [
-      {
+  const { result, rerender } = renderHook(
+    ({ status }: { status: "busy" | "idle" }) =>
+      useThreadDocumentAvailability({
         threadId: "thread-1",
-        values: {
-          has_documents: true,
-          doc_folder: "docs/threads/thread-1",
+        selectedThreadStatus: status,
+        listDocuments: async () => listResponse([]),
+        updateThreadState: async (_threadId, values) => {
+          attempts += 1;
+          updates.push({ threadId: "thread-1", values });
         },
+      }),
+    { initialProps: { status: "busy" as "busy" | "idle" } }
+  );
+
+  await waitFor(() => assert.equal(result.current.isRefreshing, false));
+  assert.equal(attempts, 0);
+
+  let persisted!: boolean | "deferred";
+  await act(async () => {
+    persisted = await result.current.recordUploadSuccess({
+      activeThreadId: "thread-1",
+      documents: [{ name: "new.pdf", size: 9, type: "file" }],
+      docFolder: "docs/threads/thread-1",
+    });
+  });
+  assert.equal(persisted, "deferred");
+  assert.equal(attempts, 0);
+
+  rerender({ status: "idle" });
+  await waitFor(() => assert.equal(attempts, 1));
+  assert.deepEqual(updates, [
+    {
+      threadId: "thread-1",
+      values: {
+        has_documents: true,
+        doc_folder: "docs/threads/thread-1",
       },
-    ]);
-  } finally {
-    console.error = originalConsoleError;
-  }
+    },
+  ]);
 });
 
-test("cached idle status retries deferred 409 once after completed status revalidation", async () => {
+test("non-busy status defers backend 409 then retries after status revalidation", async () => {
   let allowWrite = false;
   let attempts = 0;
   const { result, rerender } = renderHook(
@@ -377,7 +367,7 @@ test("stale upload HTTP 409 returns failure after thread changes", async () => {
     ({ threadId }: { threadId: "A" | "B" }) =>
       useThreadDocumentAvailability({
         threadId,
-        selectedThreadStatus: "busy",
+        selectedThreadStatus: "idle",
         listDocuments: async () => new Response(null, { status: 500 }),
         updateThreadState: async () => {
           started.resolve();
@@ -465,12 +455,17 @@ test("repeated HTTP 409 waits for a future status confirmation after one flush",
           );
         },
       }),
-    { initialProps: { status: "busy" as "busy" | "idle" } }
+    { initialProps: { status: "idle" as "busy" | "idle" } }
   );
 
   await waitFor(() => assert.equal(result.current.isRefreshing, false));
   assert.equal(attempts, 1);
 
+  await act(async () => {
+    rerender({ status: "busy" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  });
+  assert.equal(attempts, 1);
   await act(async () => {
     rerender({ status: "idle" });
     await new Promise<void>((resolve) => setImmediate(resolve));

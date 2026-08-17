@@ -27,6 +27,12 @@ on one thread can remain open on the next thread.
 - Before any root snapshot has been obtained, including an initial retrieval
   failure, fall back to stream todos. After a valid snapshot exists, retain it
   across transient polling failures, matching current snapshot behavior.
+- Associate each snapshot with its owning thread and never use it for another
+  thread.
+- Reject older same-thread polling responses so overlapping requests cannot
+  roll task state backward.
+- After a run starts, keep final live todos authoritative until a snapshot
+  request started after that run became idle confirms persisted state.
 - Keep `fetchStateHistory: false`; do not restore persisted nested subagent
   history.
 - Keep live nested subagent events and tool calls unchanged.
@@ -40,12 +46,20 @@ on one thread can remain open on the next thread.
 
 ### Todo Source Selection
 
-Add a small pure selector near chat hook state-selection code. Inputs are live
-stream todos, optional server-snapshot todos, and stream loading state.
+Add small pure selectors near chat hook state-selection code. Inputs include
+live stream todos, optional server-snapshot todos, thread ownership, snapshot
+timestamp, run generation, request-time idle state, and stream loading state.
 
 - `isLoading === true`: return live stream todos.
-- idle with a server snapshot: return server-snapshot todos.
+- idle with a current-thread snapshot confirmed after the latest run: return
+  server-snapshot todos.
 - idle without a server snapshot: return live stream todos.
+
+Snapshot replacement rejects older responses for the same thread. A snapshot
+requested before or during a run remains ineligible after completion; only a
+request started while idle in the current run generation can restore persisted
+todos. This prevents stale or intermediate task lists from replacing the final
+live list.
 
 `useChat` will use this selector for `effectiveTodos` independently of
 `shouldPreferServerSnapshot`, which remains unchanged for messages and other

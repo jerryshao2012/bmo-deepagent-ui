@@ -4,7 +4,7 @@
 
 **Goal:** Restore persisted root task lists after reload while keeping live run tasks authoritative and collapsing metadata only when thread changes.
 
-**Architecture:** Decouple todo source selection from message-count reconciliation through a pure selector used by `useChat`. Keep persisted nested history disabled, preserve live subgraph streaming, and add a thread-ID-scoped panel reset in `ChatInterface` without reacting to run loading changes.
+**Architecture:** Decouple todo source selection from message-count reconciliation through pure selectors used by `useChat`. Scope snapshots by thread, reject out-of-order same-thread responses, and require post-run idle confirmation before persisted todos replace final live todos. Keep persisted nested history disabled, preserve live subgraph streaming, and add a thread-ID-scoped panel reset in `ChatInterface` without reacting to run loading changes.
 
 **Tech Stack:** TypeScript, React 19, Next.js 16, LangGraph SDK, Node test runner, Testing Library, ESLint, Prettier
 
@@ -12,8 +12,8 @@
 
 ## File Structure
 
-- Create `src/app/hooks/chat-state-selection.ts`: pure todo-source policy with no React or SDK side effects.
-- Create `tests/chat-state-selection.test.ts`: direct tests for idle hydration, live-run precedence, and no-snapshot fallback.
+- Create `src/app/hooks/chat-state-selection.ts`: pure todo-source, ownership, ordering, and run-freshness policies with no React or SDK side effects.
+- Create `tests/chat-state-selection.test.ts`: direct tests for idle hydration, live-run precedence, no-snapshot fallback, thread ownership, out-of-order responses, and post-run freshness.
 - Modify `src/app/hooks/useChat.ts`: use the todo selector independently from message reconciliation.
 - Modify `src/app/components/ChatInterface.tsx`: close metadata panel on thread ID changes only.
 - Modify `tests/chat-interface-document-state.test.tsx`: verify task panel closes on thread switch while task data remains available.
@@ -21,6 +21,7 @@
 ### Task 1: Restore Persisted Root Todos While Idle
 
 **Files:**
+
 - Create: `tests/chat-state-selection.test.ts`
 - Create: `src/app/hooks/chat-state-selection.ts`
 - Modify: `src/app/hooks/useChat.ts:516-528`
@@ -145,18 +146,31 @@ Add import:
 import { selectEffectiveTodos } from "./chat-state-selection";
 ```
 
-Replace message-coupled todo selection:
+Replace message-coupled todo selection. Before passing persisted todos to this
+selector, require matching thread ownership, matching run generation, and a
+snapshot request that started while idle. Reject older same-thread snapshot
+responses before updating stored snapshot state:
 
 ```typescript
-  const effectiveTodos = selectEffectiveTodos({
-    isLoading: stream.isLoading,
-    streamTodos: stream.values.todos,
-    serverTodos: serverSnapshot?.todos,
-  });
+const effectiveTodos = selectEffectiveTodos({
+  isLoading: stream.isLoading,
+  streamTodos: stream.values.todos,
+  serverTodos: selectServerTodosForThread({
+    currentThreadId: threadId,
+    serverThreadId: serverSnapshot?.threadId,
+    serverTodos: selectFreshServerTodosForRun({
+      currentRunGeneration: runGenerationRef.current,
+      serverSnapshotRunGeneration: serverSnapshot?.runGeneration,
+      requestStartedIdle: serverSnapshot?.requestStartedIdle,
+      serverTodos: serverSnapshot?.todos,
+    }),
+  }),
+});
 ```
 
 Leave `shouldPreferServerSnapshot`, `effectiveMessages`, other state fields,
-`CHAT_STREAM_OPTIONS`, snapshot polling, and stream submission unchanged.
+`CHAT_STREAM_OPTIONS`, polling cadence/error handling, and stream submission
+behavior unchanged.
 
 - [ ] **Step 5: Run selector tests and verify GREEN**
 
@@ -166,7 +180,8 @@ Run:
 yarn node --import tsx --test tests/chat-state-selection.test.ts
 ```
 
-Expected: `3 passed`.
+Expected: selector policy tests pass, including ownership, stale-response, and
+post-run freshness cases.
 
 - [ ] **Step 6: Confirm nested-history policy remains intact**
 
@@ -174,7 +189,7 @@ Run both policy tests:
 
 ```bash
 yarn node --import tsx --test tests/use-chat-stream-options.test.ts
-yarn node --import tsx --test tests/langgraph-run-executor.test.ts
+yarn node --import tsx --test tests/use-agent-chat-run-executor.test.ts
 ```
 
 Expected: pass with `fetchStateHistory: false`,
@@ -191,6 +206,7 @@ git commit -m "fix: restore persisted root tasks"
 ### Task 2: Collapse Metadata on Thread Switch Only
 
 **Files:**
+
 - Modify: `tests/chat-interface-document-state.test.tsx`
 - Modify: `src/app/components/ChatInterface.tsx:98-106`
 
@@ -200,24 +216,26 @@ Add `canToggleLoading = false` to `Harness` and `renderChat` options. Inside
 `Harness`, derive the provider value without changing the query-state thread:
 
 ```typescript
-  const [isLoading, setIsLoading] = React.useState(false);
-  const providedChat = canToggleLoading
-    ? ({ ...(chat as object), isLoading } as never)
-    : chat;
+const [isLoading, setIsLoading] = React.useState(false);
+const providedChat = canToggleLoading
+  ? ({ ...(chat as object), isLoading } as never)
+  : chat;
 ```
 
 Use `providedChat` as `ChatContext.Provider` value and render this control next
 to existing thread-switch controls when enabled:
 
 ```tsx
-{canToggleLoading && (
-  <button
-    type="button"
-    onClick={() => setIsLoading((value) => !value)}
-  >
-    Toggle loading
-  </button>
-)}
+{
+  canToggleLoading && (
+    <button
+      type="button"
+      onClick={() => setIsLoading((value) => !value)}
+    >
+      Toggle loading
+    </button>
+  );
+}
 ```
 
 - [ ] **Step 2: Add thread-switch and same-thread regression tests**
@@ -247,13 +265,11 @@ test("tasks panel collapses when switching threads", async () => {
       canSwitch: true,
     });
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Task 0 of 1/ })
-    );
+    fireEvent.click(await screen.findByRole("button", { name: /Task 0 of 1/ }));
     assert.equal(
-      screen.getByRole("button", { name: "Tasks" }).getAttribute(
-        "aria-expanded"
-      ),
+      screen
+        .getByRole("button", { name: "Tasks" })
+        .getAttribute("aria-expanded"),
       "true"
     );
 
@@ -263,9 +279,9 @@ test("tasks panel collapses when switching threads", async () => {
       assert.equal(screen.queryByRole("button", { name: "Tasks" }), null)
     );
     assert.equal(
-      screen.getByRole("button", { name: /Task 0 of 1/ }).getAttribute(
-        "aria-expanded"
-      ),
+      screen
+        .getByRole("button", { name: /Task 0 of 1/ })
+        .getAttribute("aria-expanded"),
       "false"
     );
   } finally {
@@ -294,16 +310,14 @@ test("same-thread loading changes keep an open tasks panel", async () => {
       canToggleLoading: true,
     });
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Task 1 of 1/ })
-    );
+    fireEvent.click(await screen.findByRole("button", { name: /Task 1 of 1/ }));
     fireEvent.click(screen.getByRole("button", { name: "Toggle loading" }));
 
     await waitFor(() =>
       assert.equal(
-        screen.getByRole("button", { name: "Tasks" }).getAttribute(
-          "aria-expanded"
-        ),
+        screen
+          .getByRole("button", { name: "Tasks" })
+          .getAttribute("aria-expanded"),
         "true"
       )
     );
@@ -312,9 +326,9 @@ test("same-thread loading changes keep an open tasks panel", async () => {
 
     await waitFor(() =>
       assert.equal(
-        screen.getByRole("button", { name: "Tasks" }).getAttribute(
-          "aria-expanded"
-        ),
+        screen
+          .getByRole("button", { name: "Tasks" })
+          .getAttribute("aria-expanded"),
         "true"
       )
     );
@@ -345,9 +359,9 @@ and expanded after switching to thread B; same-thread loading test passes.
 After `metaOpen` state initialization in `ChatInterface`, add:
 
 ```typescript
-  useEffect(() => {
-    setMetaOpen(null);
-  }, [currentThreadId]);
+useEffect(() => {
+  setMetaOpen(null);
+}, [currentThreadId]);
 ```
 
 Do not add `isLoading`, `todos`, message count, or run state dependencies. This
@@ -384,6 +398,7 @@ git commit -m "fix: collapse task panel on thread switch"
 ### Task 3: Final Frontend Verification
 
 **Files:**
+
 - Verify: `src/app/hooks/chat-state-selection.ts`
 - Verify: `src/app/hooks/useChat.ts`
 - Verify: `src/app/components/ChatInterface.tsx`
@@ -397,7 +412,7 @@ yarn node --import tsx --test --test-isolation=none \
   tests/chat-state-selection.test.ts \
   tests/chat-interface-document-state.test.tsx \
   tests/use-chat-stream-options.test.ts \
-  tests/langgraph-run-executor.test.ts \
+  tests/use-agent-chat-run-executor.test.ts \
   tests/task-list-layout.test.mjs
 ```
 

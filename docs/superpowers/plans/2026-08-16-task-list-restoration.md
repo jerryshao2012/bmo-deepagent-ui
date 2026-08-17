@@ -189,7 +189,7 @@ Run both policy tests:
 
 ```bash
 yarn node --import tsx --test tests/use-chat-stream-options.test.ts
-yarn node --import tsx --test tests/use-agent-chat-run-executor.test.ts
+yarn node --import tsx --test tests/langgraph-run-executor.test.ts
 ```
 
 Expected: pass with `fetchStateHistory: false`,
@@ -412,7 +412,7 @@ yarn node --import tsx --test --test-isolation=none \
   tests/chat-state-selection.test.ts \
   tests/chat-interface-document-state.test.tsx \
   tests/use-chat-stream-options.test.ts \
-  tests/use-agent-chat-run-executor.test.ts \
+  tests/langgraph-run-executor.test.ts \
   tests/task-list-layout.test.mjs
 ```
 

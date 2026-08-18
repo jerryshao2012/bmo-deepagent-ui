@@ -5,67 +5,101 @@ interface LangGraphStreamCommands {
   stop(): unknown;
 }
 
-export class LangGraphRunExecutor implements RunExecutor {
-  private readonly pendingSubmissions: Array<{
-    onAccepted?: () => void;
-    accepted: boolean;
-  }> = [];
-  private readonly acceptedRunIds = new Set<string>();
+interface SubmissionLifecycle {
+  onAccepted?: () => void;
+}
 
-  constructor(private readonly stream: LangGraphStreamCommands) {}
+interface PendingSubmission {
+  onAccepted?: () => void;
+}
+
+export class LangGraphRunExecutor implements RunExecutor {
+  private stream: LangGraphStreamCommands;
+  private readonly pendingSubmissions: PendingSubmission[] = [];
+  private readonly createdRunIds = new Set<string>();
+
+  constructor(stream: LangGraphStreamCommands) {
+    this.stream = stream;
+  }
+
+  setStream(stream: LangGraphStreamCommands): void {
+    this.stream = stream;
+  }
 
   submit(
     values?: unknown,
     options?: unknown,
-    lifecycle?: { onAccepted?: () => void }
-  ): Promise<void> {
-    const streamOptions =
+    lifecycle?: SubmissionLifecycle
+  ): void {
+    const streamOptions: Record<string, unknown> =
       options && typeof options === "object"
-        ? { ...options, streamSubgraphs: true }
-        : { streamSubgraphs: true };
-    const pendingSubmission = {
+        ? { ...(options as Record<string, unknown>) }
+        : {};
+    const pendingSubmission: PendingSubmission = {
       onAccepted: lifecycle?.onAccepted,
-      accepted: false,
     };
     this.pendingSubmissions.push(pendingSubmission);
+    const callerOnError =
+      typeof streamOptions.onError === "function"
+        ? (streamOptions.onError as (error: unknown, run: unknown) => void)
+        : undefined;
+    streamOptions.streamSubgraphs = true;
+    streamOptions.onError = (error: unknown, run: unknown) => {
+      try {
+        callerOnError?.(error, run);
+      } finally {
+        this.retireSubmission(pendingSubmission);
+      }
+    };
 
     try {
-      return Promise.resolve(this.stream.submit(values, streamOptions))
-        .then(() => undefined)
-        .catch((error) => {
-          if (!pendingSubmission.accepted) {
-            this.removePendingSubmission(pendingSubmission);
-          }
-          throw error;
-        });
+      void Promise.resolve(this.stream.submit(values, streamOptions)).catch(
+        () => {
+          this.retireSubmission(pendingSubmission);
+        }
+      );
     } catch (error) {
-      this.removePendingSubmission(pendingSubmission);
+      this.retireSubmission(pendingSubmission);
       throw error;
     }
   }
 
-  acceptNextRun(runId?: string): void {
-    if (runId && this.acceptedRunIds.has(runId)) return;
-    if (runId) this.acceptedRunIds.add(runId);
+  onRunCreated(runId?: string): void {
+    if (runId && this.createdRunIds.has(runId)) return;
+    if (runId) this.createdRunIds.add(runId);
 
     const pendingSubmission = this.pendingSubmissions.shift();
-    if (!pendingSubmission || pendingSubmission.accepted) return;
+    if (!pendingSubmission) return;
 
-    pendingSubmission.accepted = true;
-    pendingSubmission.onAccepted?.();
+    try {
+      pendingSubmission.onAccepted?.();
+    } catch (error) {
+      console.error("Run acceptance callback failed:", error);
+    }
+  }
+
+  onRunError(runId?: string): void {
+    if (runId) return;
+    this.retireFirstUncreatedSubmission();
+  }
+
+  onRunFinished(runId?: string): void {
+    if (runId) return;
+    this.retireFirstUncreatedSubmission();
   }
 
   stop(): void {
     this.stream.stop();
   }
 
-  private removePendingSubmission(pendingSubmission: {
-    onAccepted?: () => void;
-    accepted: boolean;
-  }): void {
+  private retireSubmission(pendingSubmission: PendingSubmission): void {
     const pendingIndex = this.pendingSubmissions.indexOf(pendingSubmission);
     if (pendingIndex !== -1) {
       this.pendingSubmissions.splice(pendingIndex, 1);
     }
+  }
+
+  private retireFirstUncreatedSubmission(): void {
+    this.pendingSubmissions.shift();
   }
 }

@@ -9,11 +9,6 @@ export interface ChatGateway<State> {
 }
 
 export interface RunExecutor {
-  submit(
-    values?: unknown,
-    options?: unknown,
-    lifecycle?: { onAccepted?: () => void }
-  ): Promise<void>;
-  acceptNextRun(runId?: string): void;
+  submit(values?: unknown, options?: unknown): void;
   stop(): void;
 }

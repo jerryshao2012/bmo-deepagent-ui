@@ -1033,7 +1033,7 @@ test("accepted A submission clears A evidence while preserving B evidence", asyn
   }
 });
 
-test("pre-acceptance rejection retains A evidence and created A clears only A", async () => {
+test("pre-creation A failure retains A evidence while created B clears only B", async () => {
   configure();
   const writes: StateWrite[] = [];
   const sent: Array<{
@@ -1065,10 +1065,8 @@ test("pre-acceptance rejection retains A evidence and created A clears only A", 
       client: makeClient(writes),
       chat: baseChat((message, values, options) => {
         sent.push({ message, values, onAccepted: options?.onAccepted });
-        if (message === "Research A rejected") {
-          void Promise.reject(new Error("run creation rejected")).catch(
-            () => {}
-          );
+        if (message === "Research B created") {
+          options?.onAccepted?.();
         }
       }),
       canSwitch: true,
@@ -1086,41 +1084,36 @@ test("pre-acceptance rejection retains A evidence and created A clears only A", 
     await waitFor(() => assert.equal(aLists, 2));
     await waitForComposer();
 
-    submitMessage("Research A rejected");
-    submitMessage("Research A before creation");
-    assert.deepEqual(
-      sent.slice(0, 2).map(({ message, values }) => [message, values]),
-      [
-        [
-          "Research A rejected",
-          { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
-        ],
-        [
-          "Research A before creation",
-          { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
-        ],
-      ]
-    );
-    assert.equal(typeof sent[0].onAccepted, "function");
-    sent[0].onAccepted?.();
-
+    submitMessage("Research A pre-creation failure");
     fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
     await waitFor(() => assert.equal(bLists, 2));
     await waitForComposer();
-    submitMessage("Research B after A creation");
+    submitMessage("Research B created");
     fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
     await waitFor(() => assert.equal(aLists, 3));
     await waitForComposer();
-    submitMessage("Research A after creation");
+    submitMessage("Research A retry");
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitFor(() => assert.equal(bLists, 3));
+    await waitForComposer();
+    submitMessage("Research B after creation");
 
     assert.deepEqual(
-      sent.slice(2).map(({ message, values }) => [message, values]),
+      sent.map(({ message, values }) => [message, values]),
       [
         [
-          "Research B after A creation",
+          "Research A pre-creation failure",
+          { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
+        ],
+        [
+          "Research B created",
           { no_web: false, has_documents: true, doc_folder: "docs/threads/B" },
         ],
-        ["Research A after creation", { no_web: false }],
+        [
+          "Research A retry",
+          { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
+        ],
+        ["Research B after creation", { no_web: false }],
       ]
     );
     assert.deepEqual(writes, []);

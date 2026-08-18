@@ -5,7 +5,7 @@ import { submitResearchMessage } from "../src/app/utils/submit-research-message"
 
 for (const testCase of [
   {
-    name: "unknown availability",
+    name: "unknown availability without matching pending document",
     availability: null,
     pendingDocFolder: undefined,
     expected: { no_web: false },
@@ -14,30 +14,31 @@ for (const testCase of [
     name: "confirmed false availability",
     availability: false,
     pendingDocFolder: undefined,
-    expected: { no_web: true, has_documents: false },
+    expected: { no_web: true, has_documents: false, doc_folder: null },
   },
   {
     name: "confirmed true availability",
     availability: true,
+    threadId: "thread-a",
     pendingDocFolder: undefined,
     expected: {
       no_web: false,
       has_documents: true,
-      doc_folder: "docs/threads/existing-thread",
+      doc_folder: "docs/threads/thread-a",
     },
   },
   {
     name: "pending document folder",
     availability: null,
-    threadId: "existing-thread",
+    threadId: "thread-a",
     pendingDocument: {
-      threadId: "existing-thread",
-      docFolder: "docs/threads/existing-thread",
+      threadId: "thread-a",
+      docFolder: "docs/threads/thread-a",
     },
     expected: {
       no_web: false,
       has_documents: true,
-      doc_folder: "docs/threads/existing-thread",
+      doc_folder: "docs/threads/thread-a",
     },
   },
 ] as const) {
@@ -85,7 +86,7 @@ test("confirmed false ignores a same-thread pending document folder", () => {
 
   submitResearchMessage({
     message: "Research A",
-    noWeb: false,
+    noWeb: true,
     availability: false,
     threadId: "A",
     pendingDocument: {
@@ -95,5 +96,7 @@ test("confirmed false ignores a same-thread pending document folder", () => {
     sendMessage: (_message, values) => calls.push(values),
   });
 
-  assert.deepEqual(calls, [{ no_web: false, has_documents: false }]);
+  assert.deepEqual(calls, [
+    { no_web: true, has_documents: false, doc_folder: null },
+  ]);
 });

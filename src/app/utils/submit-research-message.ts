@@ -25,13 +25,15 @@ export function submitResearchMessage<Result>({
 }: SubmitResearchMessageOptions<Result>): Result {
   const stateUpdates: Record<string, unknown> = { no_web: noWeb };
 
-  if (availability !== null) {
-    stateUpdates.has_documents = availability;
-  }
-
-  if (availability === true && threadId) {
-    stateUpdates.doc_folder = `docs/threads/${threadId}`;
-  } else if (availability !== false && pendingDocument?.threadId === threadId) {
+  if (availability === false) {
+    stateUpdates.has_documents = false;
+    stateUpdates.doc_folder = null;
+  } else if (availability === true) {
+    stateUpdates.has_documents = true;
+    if (threadId) {
+      stateUpdates.doc_folder = `docs/threads/${threadId}`;
+    }
+  } else if (pendingDocument?.threadId === threadId) {
     stateUpdates.doc_folder = pendingDocument.docFolder;
     stateUpdates.has_documents = true;
   }

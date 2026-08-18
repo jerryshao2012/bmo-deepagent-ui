@@ -912,7 +912,9 @@ test("rejected persistence is surfaced and a delete performs one graph write", a
       threadId: "thread-1",
       sendMessage: (_message, values) => sends.push(values),
     });
-    assert.deepEqual(sends, [{ no_web: false, has_documents: false }]);
+    assert.deepEqual(sends, [
+      { no_web: false, has_documents: false, doc_folder: null },
+    ]);
   } finally {
     console.error = originalConsoleError;
   }

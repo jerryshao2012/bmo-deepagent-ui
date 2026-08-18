@@ -356,10 +356,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       return;
     }
 
-    documentNamesByThreadRef.current.set(
-      currentThreadId,
-      new Set(documents.map((document) => document.name))
-    );
+    if (documents.length === 0) {
+      documentNamesByThreadRef.current.delete(currentThreadId);
+    } else {
+      documentNamesByThreadRef.current.set(
+        currentThreadId,
+        new Set(documents.map((document) => document.name))
+      );
+    }
   }, [availabilityEvidence, currentThreadId, documentAvailability, documents]);
 
   // Open an SSE stream for real-time ingest progress.
@@ -757,6 +761,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         documentNamesByThreadRef.current.get(targetThreadId);
       documentNames?.delete(filename);
       const hasOwnerScopedDocuments = (documentNames?.size ?? 0) > 0;
+      if (!hasOwnerScopedDocuments) {
+        documentNamesByThreadRef.current.delete(targetThreadId);
+      }
       const { hasDocuments } = await recordDeleteSuccess(
         filename,
         targetThreadId
@@ -924,21 +931,26 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         evidence: availabilityEvidence,
         threadId: currentThreadId,
       });
+      const clearsPendingDocumentEvidence =
+        !!currentThreadId &&
+        (currentDocumentAvailability === true ||
+          (currentDocumentAvailability === null && pending));
+      let didAccept = false;
       submitResearchMessage({
         message: messageText,
         noWeb: !webSearchEnabled,
         availability: currentDocumentAvailability,
         threadId: currentThreadId,
         pendingDocument: pending,
+        onAccepted: () => {
+          if (didAccept || !clearsPendingDocumentEvidence || !currentThreadId) {
+            return;
+          }
+          didAccept = true;
+          pendingDocFoldersRef.current.delete(currentThreadId);
+        },
         sendMessage,
       });
-      if (
-        currentThreadId &&
-        (currentDocumentAvailability === true ||
-          (currentDocumentAvailability === null && pending))
-      ) {
-        pendingDocFoldersRef.current.delete(currentThreadId);
-      }
       setInput("");
     },
     [

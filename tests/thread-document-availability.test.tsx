@@ -67,12 +67,21 @@ test("empty and populated lists update only local documents and tagged evidence"
   });
 });
 
-for (const listDocuments of [
-  async () => Promise.reject(new Error("offline")),
-  async () => new Response(null, { status: 500 }),
-  async () => new Response("{", { status: 200 }),
+for (const { name, listDocuments } of [
+  {
+    name: "network rejection",
+    listDocuments: async () => Promise.reject(new Error("offline")),
+  },
+  {
+    name: "HTTP 500 response",
+    listDocuments: async () => new Response(null, { status: 500 }),
+  },
+  {
+    name: "malformed JSON response",
+    listDocuments: async () => new Response("{", { status: 200 }),
+  },
 ]) {
-  test("failed document list leaves evidence unknown", async () => {
+  test(`failed document list (${name}) leaves evidence unknown`, async () => {
     const { result } = renderLocalAvailability("failed", listDocuments);
     await waitFor(() => assert.equal(result.current.isRefreshing, false));
     assert.equal(result.current.availability, null);

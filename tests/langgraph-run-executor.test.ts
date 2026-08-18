@@ -3,6 +3,16 @@ import test from "node:test";
 
 import { LangGraphRunExecutor } from "../src/features/chat/infrastructure/langgraph-run-executor";
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((settle, fail) => {
+    resolve = settle;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
 test("adds subgraph streaming to every submission without changing caller options", () => {
   const submissions: Array<{ values: unknown; options: unknown }> = [];
   const stream = {
@@ -44,4 +54,33 @@ test("adds subgraph streaming to every submission without changing caller option
       options: { streamSubgraphs: true },
     },
   ]);
+});
+
+test("does not leak a rejected submission acceptance callback into a later run", async () => {
+  const firstSubmission = deferred<void>();
+  const secondSubmission = deferred<void>();
+  const submissions = [firstSubmission, secondSubmission];
+  const executor = new LangGraphRunExecutor({
+    submit() {
+      return submissions.shift()?.promise;
+    },
+    stop() {},
+  });
+  const accepted: string[] = [];
+
+  const first = executor.submit(undefined, undefined, {
+    onAccepted: () => accepted.push("A"),
+  });
+  const second = executor.submit(undefined, undefined, {
+    onAccepted: () => accepted.push("B"),
+  });
+
+  firstSubmission.reject(new Error("run creation rejected"));
+  await assert.rejects(first, /run creation rejected/);
+  executor.acceptNextRun("run-b");
+  executor.acceptNextRun("run-b");
+  secondSubmission.resolve();
+  await second;
+
+  assert.deepEqual(accepted, ["B"]);
 });

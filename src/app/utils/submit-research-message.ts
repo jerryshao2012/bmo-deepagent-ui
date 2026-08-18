@@ -8,6 +8,10 @@ export interface AvailabilityEvidence {
   available: boolean;
 }
 
+export interface SendMessageOptions {
+  onAccepted?: () => void;
+}
+
 export function availabilityForCurrentThread({
   availability,
   evidence,
@@ -26,9 +30,11 @@ export interface SubmitResearchMessageOptions<Result> {
   availability: boolean | null;
   threadId: string | null;
   pendingDocument?: PendingDocumentFolder;
+  onAccepted?: () => void;
   sendMessage: (
     message: string,
-    stateUpdates: Record<string, unknown>
+    stateUpdates: Record<string, unknown>,
+    options?: SendMessageOptions
   ) => Result;
 }
 
@@ -38,6 +44,7 @@ export function submitResearchMessage<Result>({
   availability,
   threadId,
   pendingDocument,
+  onAccepted,
   sendMessage,
 }: SubmitResearchMessageOptions<Result>): Result {
   const stateUpdates: Record<string, unknown> = { no_web: noWeb };
@@ -53,5 +60,9 @@ export function submitResearchMessage<Result>({
     stateUpdates.has_documents = true;
   }
 
-  return sendMessage(message, stateUpdates);
+  return sendMessage(
+    message,
+    stateUpdates,
+    onAccepted ? { onAccepted } : undefined
+  );
 }

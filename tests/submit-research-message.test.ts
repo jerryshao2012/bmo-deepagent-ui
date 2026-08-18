@@ -169,3 +169,19 @@ test("matching evidence preserves transient unknown availability", () => {
     null
   );
 });
+
+test("forwards optional server-acceptance callback without changing normal sends", () => {
+  const accepted = () => {};
+  const calls: Array<unknown> = [];
+
+  submitResearchMessage({
+    message: "Research A",
+    noWeb: false,
+    availability: null,
+    threadId: "A",
+    onAccepted: accepted,
+    sendMessage: (_message, _values, options) => calls.push(options),
+  });
+
+  assert.deepEqual(calls, [{ onAccepted: accepted }]);
+});

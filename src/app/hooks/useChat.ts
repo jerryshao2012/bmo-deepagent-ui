@@ -160,6 +160,7 @@ export function useChat({
   const [streamError, setStreamError] = useState<Error | null>(null);
   const turnCountRef = useRef(0);
   const runGenerationRef = useRef(0);
+  const runExecutorRef = useRef<LangGraphRunExecutor | null>(null);
   const previousThreadIdRef = useRef<string | null | undefined>(undefined);
   const locallyUpdatedFilesRef = useRef<Record<string, string>>({});
   const pendingTurnRef = useRef<{
@@ -189,12 +190,16 @@ export function useChat({
       setStreamError(errorObject);
       onHistoryRevalidateAction?.();
     },
-    onCreated: onHistoryRevalidateAction,
+    onCreated: (run) => {
+      runExecutorRef.current?.acceptNextRun(run.run_id);
+      onHistoryRevalidateAction?.();
+    },
     thread,
   } as UseStreamOptions<StateType> & {
     filterSubagentMessages: boolean;
   }) as unknown as UseStream<StateType>;
   const runExecutor = useMemo(() => new LangGraphRunExecutor(stream), [stream]);
+  runExecutorRef.current = runExecutor;
   const streamSnapshotRef = useRef({
     isLoading: stream.isLoading,
     messageCount: stream.messages.length,
@@ -384,7 +389,11 @@ export function useChat({
   }, [stream.isLoading, stream.messages]);
 
   const sendMessage = useCallback(
-    (content: string, stateUpdates?: Record<string, any>) => {
+    (
+      content: string,
+      stateUpdates?: Record<string, any>,
+      options?: { onAccepted?: () => void }
+    ) => {
       setStreamError(null);
       const humanMessageId = uuidv4();
       const newMessage: Message = {
@@ -412,7 +421,7 @@ export function useChat({
         },
       }));
       runGenerationRef.current += 1;
-      runExecutor.submit(
+      const submission = runExecutor.submit(
         { messages: [newMessage], ...stateUpdates },
         {
           optimisticValues: (prev: StateType) => ({
@@ -421,8 +430,10 @@ export function useChat({
             todos: [],
           }),
           config: { ...(activeAssistant?.config ?? {}), recursion_limit: 100 },
-        }
+        },
+        { onAccepted: options?.onAccepted }
       );
+      void submission.catch(() => {});
       // Update thread list immediately when sending a message
       onHistoryRevalidateAction?.();
     },
@@ -444,21 +455,25 @@ export function useChat({
       setStreamError(null);
       runGenerationRef.current += 1;
       if (checkpoint) {
-        runExecutor.submit(undefined, {
-          ...(optimisticMessages
-            ? { optimisticValues: { messages: optimisticMessages } }
-            : {}),
-          config: activeAssistant?.config,
-          checkpoint: checkpoint,
-          ...(isRerunningSubagent
-            ? { interruptAfter: ["tools"] }
-            : { interruptBefore: ["tools"] }),
-        });
+        void runExecutor
+          .submit(undefined, {
+            ...(optimisticMessages
+              ? { optimisticValues: { messages: optimisticMessages } }
+              : {}),
+            config: activeAssistant?.config,
+            checkpoint: checkpoint,
+            ...(isRerunningSubagent
+              ? { interruptAfter: ["tools"] }
+              : { interruptBefore: ["tools"] }),
+          })
+          .catch(() => {});
       } else {
-        runExecutor.submit(
-          { messages },
-          { config: activeAssistant?.config, interruptBefore: ["tools"] }
-        );
+        void runExecutor
+          .submit(
+            { messages },
+            { config: activeAssistant?.config, interruptBefore: ["tools"] }
+          )
+          .catch(() => {});
       }
     },
     [runExecutor, activeAssistant?.config]
@@ -492,21 +507,23 @@ export function useChat({
     (hasTaskToolCall?: boolean) => {
       setStreamError(null);
       runGenerationRef.current += 1;
-      runExecutor.submit(undefined, {
-        // Optimistically clear todos when continuing the stream so stale
-        // task list from a previous turn doesn't remain visible.
-        optimisticValues: (prev: StateType) => ({
-          ...prev,
-          todos: [],
-        }),
-        config: {
-          ...(activeAssistant?.config || {}),
-          recursion_limit: 100,
-        },
-        ...(hasTaskToolCall
-          ? { interruptAfter: ["tools"] }
-          : { interruptBefore: ["tools"] }),
-      });
+      void runExecutor
+        .submit(undefined, {
+          // Optimistically clear todos when continuing the stream so stale
+          // task list from a previous turn doesn't remain visible.
+          optimisticValues: (prev: StateType) => ({
+            ...prev,
+            todos: [],
+          }),
+          config: {
+            ...(activeAssistant?.config || {}),
+            recursion_limit: 100,
+          },
+          ...(hasTaskToolCall
+            ? { interruptAfter: ["tools"] }
+            : { interruptBefore: ["tools"] }),
+        })
+        .catch(() => {});
       // Update thread list when continuing stream
       onHistoryRevalidateAction?.();
     },
@@ -516,7 +533,9 @@ export function useChat({
   const markCurrentThreadAsResolved = useCallback(() => {
     setStreamError(null);
     runGenerationRef.current += 1;
-    runExecutor.submit(null, { command: { goto: "__end__", update: null } });
+    void runExecutor
+      .submit(null, { command: { goto: "__end__", update: null } })
+      .catch(() => {});
     // Update thread list when marking thread as resolved
     onHistoryRevalidateAction?.();
   }, [runExecutor, onHistoryRevalidateAction]);
@@ -525,7 +544,9 @@ export function useChat({
     (value: any) => {
       setStreamError(null);
       runGenerationRef.current += 1;
-      runExecutor.submit(null, { command: { resume: value } });
+      void runExecutor
+        .submit(null, { command: { resume: value } })
+        .catch(() => {});
       // Update thread list when resuming from interrupt
       onHistoryRevalidateAction?.();
     },

@@ -56,7 +56,11 @@ const documentsResponse = (items: unknown[]) =>
   });
 
 function baseChat(
-  sendMessage: (message: string, values: Record<string, unknown>) => void
+  sendMessage: (
+    message: string,
+    values: Record<string, unknown>,
+    options?: { onAccepted?: () => void }
+  ) => unknown
 ) {
   return {
     stream: { getSubagent: () => undefined },
@@ -964,7 +968,10 @@ test("accepted A submission clears A evidence while preserving B evidence", asyn
   try {
     const view = renderChat({
       client: makeClient(writes),
-      chat: baseChat((message, values) => sent.push([message, values])),
+      chat: baseChat((message, values, options) => {
+        sent.push([message, values]);
+        if (message === "Research A") options?.onAccepted?.();
+      }),
       canSwitch: true,
     });
     await waitForComposer();
@@ -1020,6 +1027,102 @@ test("accepted A submission clears A evidence while preserving B evidence", asyn
         { no_web: false, has_documents: true, doc_folder: "docs/threads/B" },
       ],
     ]);
+    assert.deepEqual(writes, []);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("pre-acceptance rejection retains A evidence and created A clears only A", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const sent: Array<{
+    message: string;
+    values: Record<string, unknown>;
+    onAccepted?: () => void;
+  }> = [];
+  const uploadFolders: string[] = [];
+  let aLists = 0;
+  let bLists = 0;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    onList: async (threadId) => {
+      if (threadId === "A") {
+        aLists += 1;
+        return aLists === 1
+          ? documentsResponse([])
+          : new Response(null, { status: 500 });
+      }
+      bLists += 1;
+      return bLists === 1
+        ? documentsResponse([])
+        : new Response(null, { status: 500 });
+    },
+  });
+
+  try {
+    const view = renderChat({
+      client: makeClient(writes),
+      chat: baseChat((message, values, options) => {
+        sent.push({ message, values, onAccepted: options?.onAccepted });
+        if (message === "Research A rejected") {
+          void Promise.reject(new Error("run creation rejected")).catch(
+            () => {}
+          );
+        }
+      }),
+      canSwitch: true,
+    });
+    await waitForComposer();
+    await dropFile(view.container, "a.pdf");
+    await waitFor(() => assert.deepEqual(uploadFolders, ["threads/A"]));
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForComposer();
+    await dropFile(view.container, "b.pdf");
+    await waitFor(() =>
+      assert.deepEqual(uploadFolders, ["threads/A", "threads/B"])
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitFor(() => assert.equal(aLists, 2));
+    await waitForComposer();
+
+    submitMessage("Research A rejected");
+    submitMessage("Research A before creation");
+    assert.deepEqual(
+      sent.slice(0, 2).map(({ message, values }) => [message, values]),
+      [
+        [
+          "Research A rejected",
+          { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
+        ],
+        [
+          "Research A before creation",
+          { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
+        ],
+      ]
+    );
+    assert.equal(typeof sent[0].onAccepted, "function");
+    sent[0].onAccepted?.();
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitFor(() => assert.equal(bLists, 2));
+    await waitForComposer();
+    submitMessage("Research B after A creation");
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitFor(() => assert.equal(aLists, 3));
+    await waitForComposer();
+    submitMessage("Research A after creation");
+
+    assert.deepEqual(
+      sent.slice(2).map(({ message, values }) => [message, values]),
+      [
+        [
+          "Research B after A creation",
+          { no_web: false, has_documents: true, doc_folder: "docs/threads/B" },
+        ],
+        ["Research A after creation", { no_web: false }],
+      ]
+    );
     assert.deepEqual(writes, []);
   } finally {
     restoreFetch();

@@ -97,6 +97,9 @@ test("upload resolves void and records local evidence for created thread", async
     threadId: "created",
     available: true,
   });
+  assert.deepEqual(result.current.documents, [
+    { name: "upload.pdf", size: 1, type: "file" },
+  ]);
 });
 
 test("upload without an owning thread resolves undefined", async () => {

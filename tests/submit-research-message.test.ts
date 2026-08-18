@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { submitResearchMessage } from "../src/app/utils/submit-research-message";
+import {
+  availabilityForCurrentThread,
+  submitResearchMessage,
+} from "../src/app/utils/submit-research-message";
 
 for (const testCase of [
   {
@@ -113,4 +116,56 @@ test("confirmed false ignores a same-thread pending document folder", () => {
   assert.deepEqual(calls, [
     { no_web: true, has_documents: false, doc_folder: null },
   ]);
+});
+
+test("stale A false cannot override B pending upload evidence", () => {
+  const availability = availabilityForCurrentThread({
+    availability: false,
+    evidence: { threadId: "A", available: false },
+    threadId: "B",
+  });
+  const calls: Array<Record<string, unknown>> = [];
+
+  submitResearchMessage({
+    message: "Research B",
+    noWeb: false,
+    availability,
+    threadId: "B",
+    pendingDocument: { threadId: "B", docFolder: "docs/threads/B" },
+    sendMessage: (_message, values) => calls.push(values),
+  });
+
+  assert.deepEqual(calls, [
+    { no_web: false, has_documents: true, doc_folder: "docs/threads/B" },
+  ]);
+});
+
+test("stale A positive cannot leak document state into B", () => {
+  const availability = availabilityForCurrentThread({
+    availability: true,
+    evidence: { threadId: "A", available: true },
+    threadId: "B",
+  });
+  const calls: Array<Record<string, unknown>> = [];
+
+  submitResearchMessage({
+    message: "Research B",
+    noWeb: false,
+    availability,
+    threadId: "B",
+    sendMessage: (_message, values) => calls.push(values),
+  });
+
+  assert.deepEqual(calls, [{ no_web: false }]);
+});
+
+test("matching evidence preserves transient unknown availability", () => {
+  assert.equal(
+    availabilityForCurrentThread({
+      availability: null,
+      evidence: { threadId: "B", available: true },
+      threadId: "B",
+    }),
+    null
+  );
 });

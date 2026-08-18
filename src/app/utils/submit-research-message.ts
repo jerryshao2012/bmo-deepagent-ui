@@ -3,6 +3,23 @@ export interface PendingDocumentFolder {
   docFolder: string;
 }
 
+export interface AvailabilityEvidence {
+  threadId: string;
+  available: boolean;
+}
+
+export function availabilityForCurrentThread({
+  availability,
+  evidence,
+  threadId,
+}: {
+  availability: boolean | null;
+  evidence: AvailabilityEvidence | null;
+  threadId: string | null;
+}): boolean | null {
+  return evidence?.threadId === threadId ? availability : null;
+}
+
 export interface SubmitResearchMessageOptions<Result> {
   message: string;
   noWeb: boolean;

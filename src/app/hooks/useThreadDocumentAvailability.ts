@@ -19,16 +19,23 @@ interface UploadSuccess {
   documents: ThreadDocument[];
 }
 
+export interface AvailabilityEvidence {
+  threadId: string;
+  available: boolean;
+}
+
+export interface DeleteResult {
+  hasDocuments: boolean | null;
+}
+
 export function useThreadDocumentAvailability({
   threadId,
   listDocuments,
 }: UseThreadDocumentAvailabilityOptions) {
   const [documents, setDocuments] = useState<ThreadDocument[]>([]);
   const [availability, setAvailability] = useState<boolean | null>(null);
-  const [availabilityEvidence, setAvailabilityEvidence] = useState<{
-    threadId: string;
-    available: boolean;
-  } | null>(null);
+  const [availabilityEvidence, setAvailabilityEvidence] =
+    useState<AvailabilityEvidence | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const documentsRef = useRef<ThreadDocument[]>([]);
   const threadIdRef = useRef(threadId);
@@ -158,7 +165,10 @@ export function useThreadDocumentAvailability({
   );
 
   const recordUploadSuccess = useCallback(
-    async ({ activeThreadId, documents: uploadedDocuments }: UploadSuccess) => {
+    async ({
+      activeThreadId,
+      documents: uploadedDocuments,
+    }: UploadSuccess): Promise<void> => {
       const targetThreadId = activeThreadId ?? threadIdRef.current;
       if (!targetThreadId) return;
 
@@ -194,7 +204,10 @@ export function useThreadDocumentAvailability({
   );
 
   const recordDeleteSuccess = useCallback(
-    async (filename: string, activeThreadId?: string) => {
+    async (
+      filename: string,
+      activeThreadId?: string
+    ): Promise<DeleteResult> => {
       const targetThreadId = activeThreadId ?? threadIdRef.current;
       if (!targetThreadId) {
         return { hasDocuments: null };

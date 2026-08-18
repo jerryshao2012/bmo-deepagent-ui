@@ -58,6 +58,7 @@ import { selectParallelResearchProgress } from "@/app/utils/parallel-research-pr
 import { useThreadDocumentAvailability } from "@/app/hooks/useThreadDocumentAvailability";
 import { useThreadStatus } from "@/app/hooks/useThreads";
 import {
+  availabilityForCurrentThread,
   type PendingDocumentFolder,
   submitResearchMessage,
 } from "@/app/utils/submit-research-message";
@@ -876,10 +877,15 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       if (!messageText.trim() || composerLocked) return;
       // Include unsent local upload evidence only for its owning thread.
       const pending = pendingDocFolderRef.current;
+      const currentDocumentAvailability = availabilityForCurrentThread({
+        availability: documentAvailability,
+        evidence: availabilityEvidence,
+        threadId: currentThreadId,
+      });
       submitResearchMessage({
         message: messageText,
         noWeb: !webSearchEnabled,
-        availability: documentAvailability,
+        availability: currentDocumentAvailability,
         threadId: currentThreadId,
         pendingDocument: pending ?? undefined,
         sendMessage,
@@ -900,6 +906,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       webSearchEnabled,
       currentThreadId,
       documentAvailability,
+      availabilityEvidence,
     ]
   );
 

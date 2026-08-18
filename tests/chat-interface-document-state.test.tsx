@@ -781,6 +781,8 @@ test("document refresh, upload, and delete never write LangGraph thread state", 
 
     await dropFile(view.container, "uploaded.pdf");
     await waitFor(() => assert.deepEqual(uploadFolders, ["threads/A"]));
+    await screen.findByTitle("View uploaded.pdf");
+    await act(async () => {});
     assert.deepEqual(writes, []);
   } finally {
     globalThis.confirm = originalConfirm;

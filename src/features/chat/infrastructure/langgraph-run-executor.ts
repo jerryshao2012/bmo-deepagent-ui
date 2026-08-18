@@ -10,6 +10,7 @@ interface SubmissionLifecycle {
 }
 
 interface PendingSubmission {
+  stream: LangGraphStreamCommands;
   values: unknown;
   options: Record<string, unknown>;
   onAccepted?: () => void;
@@ -17,10 +18,11 @@ interface PendingSubmission {
 }
 
 export class LangGraphRunExecutor implements RunExecutor {
+  private static readonly MAX_REMEMBERED_CREATED_RUN_IDS = 128;
   private stream: LangGraphStreamCommands;
   private readonly queuedSubmissions: PendingSubmission[] = [];
   private inFlightSubmission: PendingSubmission | null = null;
-  private readonly createdRunIds = new Set<string>();
+  private readonly createdRunIds = new Map<string, undefined>();
 
   constructor(stream: LangGraphStreamCommands) {
     this.stream = stream;
@@ -40,6 +42,9 @@ export class LangGraphRunExecutor implements RunExecutor {
         ? { ...(options as Record<string, unknown>) }
         : {};
     const pendingSubmission: PendingSubmission = {
+      // Capture committed stream when caller submits. A later thread render
+      // must not redirect this queued request to another thread's stream.
+      stream: this.stream,
       values,
       options: streamOptions,
       onAccepted: lifecycle?.onAccepted,
@@ -51,8 +56,7 @@ export class LangGraphRunExecutor implements RunExecutor {
   }
 
   onRunCreated(runId?: string): void {
-    if (runId && this.createdRunIds.has(runId)) return;
-    if (runId) this.createdRunIds.add(runId);
+    if (runId && !this.rememberCreatedRun(runId)) return;
 
     const pendingSubmission = this.inFlightSubmission;
     if (!pendingSubmission || pendingSubmission.accepted) return;
@@ -76,7 +80,7 @@ export class LangGraphRunExecutor implements RunExecutor {
   }
 
   stop(): void {
-    this.stream.stop();
+    (this.inFlightSubmission?.stream ?? this.stream).stop();
   }
 
   private startNextSubmission(): void {
@@ -90,7 +94,10 @@ export class LangGraphRunExecutor implements RunExecutor {
       // The SDK invokes onCreated before its submit Promise settles. Legacy
       // void handles must likewise create synchronously before returning.
       void Promise.resolve(
-        this.stream.submit(pendingSubmission.values, pendingSubmission.options)
+        pendingSubmission.stream.submit(
+          pendingSubmission.values,
+          pendingSubmission.options
+        )
       )
         .finally(() => {
           this.completeSubmission(pendingSubmission);
@@ -106,5 +113,19 @@ export class LangGraphRunExecutor implements RunExecutor {
     if (this.inFlightSubmission !== pendingSubmission) return;
     this.inFlightSubmission = null;
     this.startNextSubmission();
+  }
+
+  private rememberCreatedRun(runId: string): boolean {
+    if (this.createdRunIds.has(runId)) return false;
+
+    this.createdRunIds.set(runId, undefined);
+    if (
+      this.createdRunIds.size >
+      LangGraphRunExecutor.MAX_REMEMBERED_CREATED_RUN_IDS
+    ) {
+      const oldestRunId = this.createdRunIds.keys().next().value;
+      if (oldestRunId) this.createdRunIds.delete(oldestRunId);
+    }
+    return true;
   }
 }

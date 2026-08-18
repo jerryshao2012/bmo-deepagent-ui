@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   useStream,
   type UseStream,
@@ -206,7 +213,9 @@ export function useChat({
     runExecutorRef.current = new LangGraphRunExecutor(stream);
   }
   const runExecutor = runExecutorRef.current;
-  runExecutor.setStream(stream);
+  useLayoutEffect(() => {
+    runExecutor.setStream(stream);
+  }, [runExecutor, stream]);
   const streamSnapshotRef = useRef({
     isLoading: stream.isLoading,
     messageCount: stream.messages.length,

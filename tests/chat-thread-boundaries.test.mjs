@@ -26,6 +26,20 @@ test("chat hook delegates persistence and run execution", async () => {
   assert.doesNotMatch(source, /stream\.stop\s*\(/);
 });
 
+test("chat hook refreshes its stream executor only after React commits", async () => {
+  const source = await readFile("src/app/hooks/useChat.ts", "utf8");
+
+  assert.match(source, /useLayoutEffect/);
+  assert.match(
+    source,
+    /useLayoutEffect\(\(\) => \{\s*runExecutor\.setStream\(stream\);\s*\}, \[runExecutor, stream\]\);/
+  );
+  assert.doesNotMatch(
+    source,
+    /const runExecutor = runExecutorRef\.current;\s*runExecutor\.setStream\(stream\);/
+  );
+});
+
 test("chat hook uses cancellable snapshot polling", async () => {
   const source = await readFile("src/app/hooks/useChat.ts", "utf8");
 

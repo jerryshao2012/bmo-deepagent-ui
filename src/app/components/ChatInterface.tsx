@@ -325,16 +325,24 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       setMetaOpen(null);
     }
   }, [hasCurrentWikiDocuments, metaOpen]);
-  // Retains local evidence from an upload until its owning thread sends a message.
-  const pendingDocFolderRef = useRef<PendingDocumentFolder | null>(null);
+  // Retains unsent positive document evidence for each owning thread.
+  const pendingDocFoldersRef = useRef(new Map<string, string>());
 
   useEffect(() => {
     if (
-      availabilityEvidence?.available === false &&
-      availabilityEvidence.threadId === currentThreadId &&
-      pendingDocFolderRef.current?.threadId === currentThreadId
+      !availabilityEvidence ||
+      availabilityEvidence.threadId !== currentThreadId
     ) {
-      pendingDocFolderRef.current = null;
+      return;
+    }
+
+    if (availabilityEvidence.available) {
+      pendingDocFoldersRef.current.set(
+        availabilityEvidence.threadId,
+        `docs/threads/${availabilityEvidence.threadId}`
+      );
+    } else {
+      pendingDocFoldersRef.current.delete(availabilityEvidence.threadId);
     }
   }, [availabilityEvidence, currentThreadId]);
 
@@ -646,10 +654,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           activeThreadId,
           documents: uploadedDocuments,
         });
-        pendingDocFolderRef.current = {
-          threadId: activeThreadId,
-          docFolder,
-        };
+        pendingDocFoldersRef.current.set(activeThreadId, docFolder);
 
         // Note: wiki ingestion is auto-triggered by the server (webapp.py) on upload.
         // No need to explicitly call /wiki/ingest here — the server registers
@@ -722,11 +727,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         filename,
         currentThreadId
       );
-      if (
-        hasDocuments === false &&
-        pendingDocFolderRef.current?.threadId === currentThreadId
-      ) {
-        pendingDocFolderRef.current = null;
+      if (hasDocuments === false) {
+        pendingDocFoldersRef.current.delete(currentThreadId);
       }
     } catch (error) {
       console.error("Failed to delete document:", error);
@@ -875,8 +877,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       }
       const messageText = input;
       if (!messageText.trim() || composerLocked) return;
-      // Include unsent local upload evidence only for its owning thread.
-      const pending = pendingDocFolderRef.current;
+      // Include unsent positive document evidence only for its owning thread.
+      const pendingDocFolder = currentThreadId
+        ? pendingDocFoldersRef.current.get(currentThreadId)
+        : undefined;
+      const pending: PendingDocumentFolder | undefined =
+        currentThreadId && pendingDocFolder
+          ? { threadId: currentThreadId, docFolder: pendingDocFolder }
+          : undefined;
       const currentDocumentAvailability = availabilityForCurrentThread({
         availability: documentAvailability,
         evidence: availabilityEvidence,
@@ -887,14 +895,15 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         noWeb: !webSearchEnabled,
         availability: currentDocumentAvailability,
         threadId: currentThreadId,
-        pendingDocument: pending ?? undefined,
+        pendingDocument: pending,
         sendMessage,
       });
       if (
-        documentAvailability !== false &&
-        pending?.threadId === currentThreadId
+        currentThreadId &&
+        (currentDocumentAvailability === true ||
+          (currentDocumentAvailability === null && pending))
       ) {
-        pendingDocFolderRef.current = null;
+        pendingDocFoldersRef.current.delete(currentThreadId);
       }
       setInput("");
     },

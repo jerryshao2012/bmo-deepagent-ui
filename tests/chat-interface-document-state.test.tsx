@@ -461,6 +461,344 @@ async function dropFile(container: HTMLElement, filename = "upload.pdf") {
   });
 }
 
+function submitMessage(message: string) {
+  fireEvent.change(screen.getByPlaceholderText("Write your message..."), {
+    target: { value: message },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+}
+
+async function waitForComposer() {
+  await waitFor(() =>
+    assert.equal(
+      (
+        screen.getByPlaceholderText(
+          "Write your message..."
+        ) as HTMLTextAreaElement
+      ).disabled,
+      false
+    )
+  );
+}
+
+test("retains A upload evidence through B navigation when A refresh later fails", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const sent: Array<[string, Record<string, unknown>]> = [];
+  const uploadFolders: string[] = [];
+  let aLists = 0;
+  let bLists = 0;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    onList: async (threadId) => {
+      if (threadId === "A") {
+        aLists += 1;
+        return aLists === 1
+          ? documentsResponse([])
+          : new Response(null, { status: 500 });
+      }
+      bLists += 1;
+      return documentsResponse([]);
+    },
+  });
+
+  try {
+    const view = renderChat({
+      client: makeClient(writes),
+      chat: baseChat((message, values) => sent.push([message, values])),
+      canSwitch: true,
+    });
+    await waitFor(() => assert.equal(aLists, 1));
+    await waitForComposer();
+    await dropFile(view.container, "a.pdf");
+    await waitFor(() => assert.deepEqual(uploadFolders, ["threads/A"]));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForComposer();
+    await waitFor(() => assert.equal(bLists, 1));
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitFor(() => assert.equal(aLists, 2));
+    await act(async () => {});
+
+    submitMessage("Research A");
+    assert.deepEqual(sent, [
+      [
+        "Research A",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
+      ],
+    ]);
+    assert.deepEqual(writes, []);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("keeps simultaneous uploads scoped to each thread's canonical folder", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const sent: Array<[string, Record<string, unknown>]> = [];
+  const uploadFolders: string[] = [];
+  let aLists = 0;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    onList: async (threadId) => {
+      if (threadId === "A") {
+        aLists += 1;
+        return aLists === 1
+          ? documentsResponse([])
+          : new Response(null, { status: 500 });
+      }
+      return documentsResponse([]);
+    },
+  });
+
+  try {
+    const view = renderChat({
+      client: makeClient(writes),
+      chat: baseChat((message, values) => sent.push([message, values])),
+      canSwitch: true,
+    });
+    await waitForComposer();
+    await dropFile(view.container, "a.pdf");
+    await waitFor(() => assert.deepEqual(uploadFolders, ["threads/A"]));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForComposer();
+    await dropFile(view.container, "b.pdf");
+    await waitFor(() =>
+      assert.deepEqual(uploadFolders, ["threads/A", "threads/B"])
+    );
+
+    submitMessage("Research B");
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitForComposer();
+    await waitFor(() => assert.equal(aLists, 2));
+    await act(async () => {});
+    submitMessage("Research A");
+
+    assert.deepEqual(sent, [
+      [
+        "Research B",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/B" },
+      ],
+      [
+        "Research A",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
+      ],
+    ]);
+    assert.deepEqual(writes, []);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("delete-to-empty removes only deleted thread's unsent positive evidence", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const sent: Array<[string, Record<string, unknown>]> = [];
+  const uploadFolders: string[] = [];
+  const deletedThreads: string[] = [];
+  const originalConfirm = globalThis.confirm;
+  globalThis.confirm = () => true;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    onList: async (threadId) =>
+      documentsResponse(
+        threadId === "A"
+          ? [{ name: "a.pdf", size: 3, type: "file" }]
+          : [{ name: "b.pdf", size: 3, type: "file" }]
+      ),
+    onDelete: async (_filename, threadId) => {
+      deletedThreads.push(threadId);
+      return new Response(null, { status: 200 });
+    },
+  });
+
+  try {
+    const view = renderChat({
+      client: makeClient(writes),
+      chat: baseChat((message, values) => sent.push([message, values])),
+      canSwitch: true,
+    });
+    await waitForComposer();
+    await dropFile(view.container, "a.pdf");
+    await waitFor(() => assert.deepEqual(uploadFolders, ["threads/A"]));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForComposer();
+    await dropFile(view.container, "b.pdf");
+    await waitFor(() =>
+      assert.deepEqual(uploadFolders, ["threads/A", "threads/B"])
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitForComposer();
+    await screen.findByRole("button", { name: /^Docs/ });
+    fireEvent.click(screen.getByRole("button", { name: /^Docs/ }));
+    await screen.findByTitle("View a.pdf");
+    fireEvent.click(screen.getByTitle("Delete document"));
+    await waitFor(() => assert.deepEqual(deletedThreads, ["A"]));
+    await waitFor(() => assert.equal(screen.queryByTitle("View a.pdf"), null));
+    submitMessage("Research A after delete");
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForComposer();
+    submitMessage("Research B remains");
+    assert.deepEqual(sent, [
+      [
+        "Research A after delete",
+        { no_web: false, has_documents: false, doc_folder: null },
+      ],
+      [
+        "Research B remains",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/B" },
+      ],
+    ]);
+    assert.deepEqual(writes, []);
+  } finally {
+    globalThis.confirm = originalConfirm;
+    restoreFetch();
+  }
+});
+
+test("accepted A submission clears only A evidence and preserves B evidence", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const sent: Array<[string, Record<string, unknown>]> = [];
+  const uploadFolders: string[] = [];
+  const listCalls = { A: 0, B: 0 };
+  const restoreFetch = installFetch({
+    uploadFolders,
+    onList: async (threadId) => {
+      listCalls[threadId as "A" | "B"] += 1;
+      return listCalls[threadId as "A" | "B"] === 1
+        ? documentsResponse([])
+        : new Response(null, { status: 500 });
+    },
+  });
+
+  try {
+    const view = renderChat({
+      client: makeClient(writes),
+      chat: baseChat((message, values) => sent.push([message, values])),
+      canSwitch: true,
+    });
+    await waitForComposer();
+    await dropFile(view.container, "a.pdf");
+    await waitFor(() => assert.deepEqual(uploadFolders, ["threads/A"]));
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForComposer();
+    await dropFile(view.container, "b.pdf");
+    await waitFor(() =>
+      assert.deepEqual(uploadFolders, ["threads/A", "threads/B"])
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitForComposer();
+    await waitFor(() => assert.equal(listCalls.A, 2));
+    await act(async () => {});
+    submitMessage("Research A");
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForComposer();
+    await waitFor(() => assert.equal(listCalls.B, 2));
+    await act(async () => {});
+    submitMessage("Research B");
+
+    assert.deepEqual(sent, [
+      [
+        "Research A",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
+      ],
+      [
+        "Research B",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/B" },
+      ],
+    ]);
+    assert.deepEqual(writes, []);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("A confirmation never leaks document state into B when B refresh fails", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const sent: Array<[string, Record<string, unknown>]> = [];
+  const uploadFolders: string[] = [];
+  let bLists = 0;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    onList: async (threadId) => {
+      if (threadId === "B") {
+        bLists += 1;
+        return new Response(null, { status: 500 });
+      }
+      return documentsResponse([]);
+    },
+  });
+
+  try {
+    const view = renderChat({
+      client: makeClient(writes),
+      chat: baseChat((message, values) => sent.push([message, values])),
+      canSwitch: true,
+    });
+    await waitForComposer();
+    await dropFile(view.container, "a.pdf");
+    await waitFor(() => assert.deepEqual(uploadFolders, ["threads/A"]));
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitFor(() => assert.equal(bLists, 1));
+    await waitForComposer();
+
+    submitMessage("Research B");
+    assert.deepEqual(sent, [["Research B", { no_web: false }]]);
+    assert.deepEqual(writes, []);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("stale A empty availability cannot clear B unsent positive evidence", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const sent: Array<[string, Record<string, unknown>]> = [];
+  const uploadFolders: string[] = [];
+  const aList = deferred<Response>();
+  const restoreFetch = installFetch({
+    uploadFolders,
+    onList: async (threadId) =>
+      threadId === "A" ? aList.promise : documentsResponse([]),
+  });
+
+  try {
+    const view = renderChat({
+      client: makeClient(writes),
+      chat: baseChat((message, values) => sent.push([message, values])),
+      canSwitch: true,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForComposer();
+    await dropFile(view.container, "b.pdf");
+    await waitFor(() => assert.deepEqual(uploadFolders, ["threads/B"]));
+
+    await act(async () => {
+      aList.resolve(documentsResponse([]));
+      await aList.promise;
+    });
+    submitMessage("Research B");
+
+    assert.deepEqual(sent, [
+      [
+        "Research B",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/B" },
+      ],
+    ]);
+    assert.deepEqual(writes, []);
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("shows active parallel research progress instead of root task ordinal", async () => {
   configure();
   const restoreFetch = installFetch({ uploadFolders: [] });

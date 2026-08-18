@@ -59,48 +59,125 @@ const MAX_CACHED_HYDRATIONS = 500;
 const MAX_CONCURRENT_HYDRATIONS = 4;
 
 type CachedHydration = {
+  deploymentUrl: string;
+  identityScope: string;
   updatedAt: string;
-  values: unknown;
+  preview: HydratedPreview;
 };
 
-const recoveredStateCache = new Map<string, CachedHydration>();
+type HydratedPreview = {
+  humanTitle: string | null;
+  description: string;
+  hasHumanTitle: boolean;
+};
+
+type ThreadPreview = {
+  title: string;
+  description: string;
+  isUserDefinedTitle: boolean;
+  hasHumanTitle: boolean;
+};
+
+const recoveredPreviewCache = new Map<string, CachedHydration>();
+const activeIdentityScopes = new Map<string, string>();
 
 function normalizeDeploymentUrl(deploymentUrl: string): string {
   return deploymentUrl.replace(/\/+$/, "");
 }
 
-function hydrationCacheKey(deploymentUrl: string, threadId: string): string {
-  return `${normalizeDeploymentUrl(deploymentUrl)}\u0000${threadId}`;
+function hydrationCacheKey(
+  deploymentUrl: string,
+  identityScope: string,
+  threadId: string
+): string {
+  return `${normalizeDeploymentUrl(
+    deploymentUrl
+  )}\u0000${identityScope}\u0000${threadId}`;
+}
+
+function clearDeploymentCache(deploymentUrl: string): void {
+  for (const [key, cached] of recoveredPreviewCache) {
+    if (cached.deploymentUrl === deploymentUrl)
+      recoveredPreviewCache.delete(key);
+  }
+}
+
+function activateIdentityScope(
+  deploymentUrl: string,
+  identityScope: string | null
+): identityScope is string {
+  const normalizedDeploymentUrl = normalizeDeploymentUrl(deploymentUrl);
+  if (!identityScope) {
+    clearDeploymentCache(normalizedDeploymentUrl);
+    activeIdentityScopes.delete(normalizedDeploymentUrl);
+    return false;
+  }
+
+  const activeIdentityScope = activeIdentityScopes.get(normalizedDeploymentUrl);
+  if (activeIdentityScope && activeIdentityScope !== identityScope) {
+    clearDeploymentCache(normalizedDeploymentUrl);
+  }
+  activeIdentityScopes.set(normalizedDeploymentUrl, identityScope);
+  return true;
 }
 
 function getCachedHydration(
   deploymentUrl: string,
+  identityScope: string,
   thread: ThreadRecord
 ): CachedHydration | undefined {
-  const key = hydrationCacheKey(deploymentUrl, thread.thread_id);
-  const cached = recoveredStateCache.get(key);
+  const key = hydrationCacheKey(deploymentUrl, identityScope, thread.thread_id);
+  const cached = recoveredPreviewCache.get(key);
   if (!cached) return undefined;
   if (cached.updatedAt !== thread.updated_at) {
-    recoveredStateCache.delete(key);
+    recoveredPreviewCache.delete(key);
     return undefined;
   }
 
-  recoveredStateCache.delete(key);
-  recoveredStateCache.set(key, cached);
+  recoveredPreviewCache.delete(key);
+  recoveredPreviewCache.set(key, cached);
   return cached;
 }
 
 function cacheHydration(
   deploymentUrl: string,
+  identityScope: string,
   thread: ThreadRecord,
-  values: unknown
+  preview: HydratedPreview
 ): void {
-  const key = hydrationCacheKey(deploymentUrl, thread.thread_id);
-  recoveredStateCache.delete(key);
-  recoveredStateCache.set(key, { updatedAt: thread.updated_at, values });
-  if (recoveredStateCache.size > MAX_CACHED_HYDRATIONS) {
-    const oldestKey = recoveredStateCache.keys().next().value;
-    if (oldestKey !== undefined) recoveredStateCache.delete(oldestKey);
+  const normalizedDeploymentUrl = normalizeDeploymentUrl(deploymentUrl);
+  const key = hydrationCacheKey(
+    normalizedDeploymentUrl,
+    identityScope,
+    thread.thread_id
+  );
+  recoveredPreviewCache.delete(key);
+  recoveredPreviewCache.set(key, {
+    deploymentUrl: normalizedDeploymentUrl,
+    identityScope,
+    updatedAt: thread.updated_at,
+    preview,
+  });
+  if (recoveredPreviewCache.size > MAX_CACHED_HYDRATIONS) {
+    const oldestKey = recoveredPreviewCache.keys().next().value;
+    if (oldestKey !== undefined) recoveredPreviewCache.delete(oldestKey);
+  }
+}
+
+async function createIdentityScope(credential: string): Promise<string | null> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle || typeof TextEncoder === "undefined") return null;
+
+  try {
+    const digest = await subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(credential)
+    );
+    return Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, "0")
+    ).join("");
+  } catch {
+    return null;
   }
 }
 
@@ -143,27 +220,17 @@ function isThreadStatus(status: unknown): status is ThreadStatus {
   );
 }
 
-function extractThreadPreview(thread: ThreadRecord): {
-  title: string;
-  description: string;
-  isUserDefinedTitle: boolean;
-  hasHumanTitle: boolean;
-} {
-  const fallbackTitle = `Thread ${thread.thread_id.slice(0, 8)}`;
-  let title = fallbackTitle;
+function fallbackThreadTitle(threadId: string): string {
+  return `Thread ${threadId.slice(0, 8)}`;
+}
+
+function extractHydratedPreview(values: unknown): HydratedPreview {
+  let humanTitle: string | null = null;
   let description = "";
-  let isUserDefinedTitle = false;
-  let hasHumanTitle = false;
 
   try {
-    const customTitle = thread.metadata?.custom_title;
-    if (typeof customTitle === "string" && customTitle.trim()) {
-      title = customTitle.trim();
-      isUserDefinedTitle = true;
-    }
-
-    const values = thread.values as { messages?: unknown } | undefined;
-    const messages = Array.isArray(values?.messages) ? values.messages : [];
+    const state = values as { messages?: unknown } | undefined;
+    const messages = Array.isArray(state?.messages) ? state.messages : [];
     const firstHuman = messages.find(
       (message): message is { type?: unknown; content?: unknown } =>
         typeof message === "object" &&
@@ -171,9 +238,8 @@ function extractThreadPreview(thread: ThreadRecord): {
         (message as { type?: unknown }).type === "human"
     );
     const humanContent = normalizeMessageContent(firstHuman?.content);
-    hasHumanTitle = Boolean(humanContent);
-    if (!isUserDefinedTitle && humanContent) {
-      title =
+    if (humanContent) {
+      humanTitle =
         humanContent.slice(0, 50) + (humanContent.length > 50 ? "..." : "");
     }
     const firstAi = messages.find(
@@ -187,13 +253,46 @@ function extractThreadPreview(thread: ThreadRecord): {
       description = aiContent.slice(0, 100);
     }
   } catch {
-    title = isUserDefinedTitle ? title : fallbackTitle;
+    return { humanTitle: null, description: "", hasHumanTitle: false };
   }
-  return { title, description, isUserDefinedTitle, hasHumanTitle };
+  return { humanTitle, description, hasHumanTitle: Boolean(humanTitle) };
+}
+
+function extractThreadPreview(thread: ThreadRecord): ThreadPreview {
+  const hydratedPreview = extractHydratedPreview(thread.values);
+  const fallbackTitle = fallbackThreadTitle(thread.thread_id);
+  const customTitle = thread.metadata?.custom_title;
+  if (typeof customTitle === "string" && customTitle.trim()) {
+    return {
+      title: customTitle.trim(),
+      description: hydratedPreview.description,
+      isUserDefinedTitle: true,
+      hasHumanTitle: hydratedPreview.hasHumanTitle,
+    };
+  }
+  return {
+    title: hydratedPreview.humanTitle ?? fallbackTitle,
+    description: hydratedPreview.description,
+    isUserDefinedTitle: false,
+    hasHumanTitle: hydratedPreview.hasHumanTitle,
+  };
+}
+
+function previewFromHydration(
+  thread: ThreadRecord,
+  hydratedPreview: HydratedPreview
+): ThreadPreview {
+  return {
+    title: hydratedPreview.humanTitle ?? fallbackThreadTitle(thread.thread_id),
+    description: hydratedPreview.description,
+    isUserDefinedTitle: false,
+    hasHumanTitle: hydratedPreview.hasHumanTitle,
+  };
 }
 
 export class LangGraphThreadRepository implements ThreadRepository {
   private readonly client: LangGraphClient;
+  private identityScope?: Promise<string | null>;
 
   constructor(
     private readonly options: LangGraphThreadRepositoryOptions,
@@ -210,6 +309,11 @@ export class LangGraphThreadRepository implements ThreadRepository {
   }
 
   async search(query: ThreadSearchQuery): Promise<ThreadItem[]> {
+    const identityScope = await this.getIdentityScope();
+    const useCache = activateIdentityScope(
+      this.options.deploymentUrl,
+      identityScope
+    );
     const isUuid =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
         query.assistantId
@@ -246,16 +350,32 @@ export class LangGraphThreadRepository implements ThreadRepository {
         ) {
           return this.toItem(thread, query.assistantId);
         }
-        const cached = getCachedHydration(this.options.deploymentUrl, thread);
+        const cached =
+          useCache && identityScope
+            ? getCachedHydration(
+                this.options.deploymentUrl,
+                identityScope,
+                thread
+              )
+            : undefined;
         if (cached) {
           return this.toItem(
-            { ...thread, values: cached.values },
-            query.assistantId
+            thread,
+            query.assistantId,
+            previewFromHydration(thread, cached.preview)
           );
         }
         try {
           const state = await this.client.threads.getState(thread.thread_id);
-          cacheHydration(this.options.deploymentUrl, thread, state.values);
+          const hydratedPreview = extractHydratedPreview(state.values);
+          if (useCache && identityScope) {
+            cacheHydration(
+              this.options.deploymentUrl,
+              identityScope,
+              thread,
+              hydratedPreview
+            );
+          }
           return this.toItem(
             { ...thread, values: state.values },
             query.assistantId
@@ -270,6 +390,15 @@ export class LangGraphThreadRepository implements ThreadRepository {
   async getStatus(threadId: string): Promise<ThreadStatus | null> {
     const thread = await this.client.threads.get(threadId);
     return thread.status ?? null;
+  }
+
+  private getIdentityScope(): Promise<string | null> {
+    if (!this.identityScope) {
+      this.identityScope = createIdentityScope(
+        this.options.sessionToken ?? this.options.apiKey
+      );
+    }
+    return this.identityScope;
   }
 
   async delete(threadId: string): Promise<void> {
@@ -337,8 +466,11 @@ export class LangGraphThreadRepository implements ThreadRepository {
     }
   }
 
-  private toItem(thread: ThreadRecord, assistantId: string): ThreadItem {
-    const preview = extractThreadPreview(thread);
+  private toItem(
+    thread: ThreadRecord,
+    assistantId: string,
+    preview = extractThreadPreview(thread)
+  ): ThreadItem {
     return {
       id: thread.thread_id,
       createdAt: thread.created_at ? new Date(thread.created_at) : undefined,

@@ -135,10 +135,12 @@ let repositoryNumber = 0;
 
 function repository(
   client: FakeClient,
-  deploymentUrl = `http://langgraph.test/${repositoryNumber++}`
+  deploymentUrl = `http://langgraph.test/${repositoryNumber++}`,
+  apiKey = "test-key",
+  sessionToken?: string
 ) {
   return new LangGraphThreadRepository(
-    { deploymentUrl, apiKey: "test-key" },
+    { deploymentUrl, apiKey, sessionToken },
     client
   );
 }
@@ -545,6 +547,81 @@ test("does not share cached state across deployments", async () => {
   assert.equal(secondItems[0]?.title, "Second deployment");
   assert.deepEqual(first.getStateCalls, [threadId]);
   assert.deepEqual(second.getStateCalls, [threadId]);
+});
+
+test("scopes cached previews to credential and clears prior deployment sessions", async () => {
+  const threadId = "cache-credential-thread";
+  const deploymentUrl = "http://cache-credential.test";
+  const searchedThread = thread({
+    thread_id: threadId,
+    updated_at: "2026-08-18T12:00:00.000Z",
+    values: { messages: [] },
+  });
+  const first = fakeClient([searchedThread], {
+    [threadId]: {
+      values: { messages: [{ type: "human", content: "Credential A first" }] },
+    },
+  });
+  const second = fakeClient([searchedThread], {
+    [threadId]: {
+      values: { messages: [{ type: "human", content: "Credential B" }] },
+    },
+  });
+  const switchedBack = fakeClient([searchedThread], {
+    [threadId]: {
+      values: { messages: [{ type: "human", content: "Credential A again" }] },
+    },
+  });
+
+  const firstItems = await search(
+    repository(first.client, deploymentUrl, "credential-a")
+  );
+  const secondItems = await search(
+    repository(second.client, deploymentUrl, "credential-b")
+  );
+  const switchedBackItems = await search(
+    repository(switchedBack.client, deploymentUrl, "credential-a")
+  );
+
+  assert.equal(firstItems[0]?.title, "Credential A first");
+  assert.equal(secondItems[0]?.title, "Credential B");
+  assert.equal(switchedBackItems[0]?.title, "Credential A again");
+  assert.deepEqual(first.getStateCalls, [threadId]);
+  assert.deepEqual(second.getStateCalls, [threadId]);
+  assert.deepEqual(switchedBack.getStateCalls, [threadId]);
+});
+
+test("caches extracted preview data instead of checkpoint values references", async () => {
+  const threadId = "cache-preview-copy-thread";
+  const deploymentUrl = "http://cache-preview-copy.test";
+  const searchedThread = thread({
+    thread_id: threadId,
+    updated_at: "2026-08-18T12:00:00.000Z",
+    values: { messages: [] },
+  });
+  const stateValues = {
+    messages: [
+      { type: "human", content: "Original cached title" },
+      { type: "ai", content: "Original cached description" },
+    ],
+    files: [{ name: "private.txt" }],
+  };
+  const first = fakeClient([searchedThread], {
+    [threadId]: { values: stateValues },
+  });
+  const second = fakeClient([searchedThread]);
+
+  const firstItems = await search(repository(first.client, deploymentUrl));
+  stateValues.messages[0].content = "Mutated title";
+  stateValues.messages[1].content = "Mutated description";
+  const secondItems = await search(repository(second.client, deploymentUrl));
+
+  assert.equal(firstItems[0]?.title, "Original cached title");
+  assert.equal(firstItems[0]?.description, "Original cached description");
+  assert.equal(secondItems[0]?.title, "Original cached title");
+  assert.equal(secondItems[0]?.description, "Original cached description");
+  assert.deepEqual(first.getStateCalls, [threadId]);
+  assert.deepEqual(second.getStateCalls, []);
 });
 
 test("caches successful no-human state while keeping failures retryable", async () => {

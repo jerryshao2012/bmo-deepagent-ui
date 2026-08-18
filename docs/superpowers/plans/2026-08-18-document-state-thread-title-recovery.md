@@ -28,6 +28,7 @@ ID fallback on every result page.
 ### Task 1: Make run submission the document-state boundary
 
 **Files:**
+
 - Modify: `tests/submit-research-message.test.ts`
 - Modify: `src/app/utils/submit-research-message.ts:19-40`
 
@@ -118,6 +119,7 @@ git commit -m "fix: clear stale document folder on submit"
 ### Task 2: Remove passive document `updateState` writes without breaking callers
 
 **Files:**
+
 - Modify: `tests/thread-document-availability.test.tsx`
 - Modify: `tests/chat-interface-document-state.test.tsx`
 - Modify: `src/app/hooks/useThreadDocumentAvailability.ts:14-405`
@@ -224,6 +226,7 @@ git commit -m "fix: keep document availability out of graph checkpoints"
 ### Task 3: Preserve thread-owned unsent positive evidence across navigation
 
 **Files:**
+
 - Modify: `tests/chat-interface-document-state.test.tsx`
 - Modify: `src/app/components/ChatInterface.tsx:338-350,640-681,890-915`
 
@@ -297,6 +300,7 @@ git commit -m "fix: retain thread-owned document evidence"
 ### Task 4: Recover titles from checkpoint state
 
 **Files:**
+
 - Create: `tests/langgraph-thread-repository.test.ts`
 - Modify: `src/features/threads/infrastructure/langgraph-thread-repository.ts:11-109`
 
@@ -361,8 +365,8 @@ every page. Before producing `ThreadItem`, call `getState` only when:
 
 ```ts
 thread.status !== "busy" &&
-!preview.isUserDefinedTitle &&
-!preview.hasHumanTitle
+  !preview.isUserDefinedTitle &&
+  !preview.hasHumanTitle;
 ```
 
 Merge only `state.values` into the candidate thread and recompute preview. Catch
@@ -387,6 +391,7 @@ git commit -m "fix: recover completed thread titles from state"
 ### Task 5: Verify frontend integration
 
 **Files:**
+
 - Verify all frontend files changed in Tasks 1-4.
 
 - [ ] **Step 1: Run complete focused suite**

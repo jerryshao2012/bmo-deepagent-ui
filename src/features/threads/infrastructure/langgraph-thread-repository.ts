@@ -61,8 +61,15 @@ const MAX_CONCURRENT_HYDRATIONS = 4;
 type CachedHydration = {
   deploymentUrl: string;
   identityScope: string;
+  generation: number;
   updatedAt: string;
   preview: HydratedPreview;
+};
+
+type CacheScope = {
+  deploymentUrl: string;
+  identityScope: string;
+  generation: number;
 };
 
 type HydratedPreview = {
@@ -79,7 +86,8 @@ type ThreadPreview = {
 };
 
 const recoveredPreviewCache = new Map<string, CachedHydration>();
-const activeIdentityScopes = new Map<string, string>();
+const activeIdentityScopes = new Map<string, CacheScope>();
+const deploymentGenerations = new Map<string, number>();
 
 function normalizeDeploymentUrl(deploymentUrl: string): string {
   return deploymentUrl.replace(/\/+$/, "");
@@ -102,34 +110,62 @@ function clearDeploymentCache(deploymentUrl: string): void {
   }
 }
 
+function nextDeploymentGeneration(deploymentUrl: string): number {
+  const generation = (deploymentGenerations.get(deploymentUrl) ?? 0) + 1;
+  deploymentGenerations.set(deploymentUrl, generation);
+  return generation;
+}
+
 function activateIdentityScope(
   deploymentUrl: string,
   identityScope: string | null
-): identityScope is string {
+): CacheScope | null {
   const normalizedDeploymentUrl = normalizeDeploymentUrl(deploymentUrl);
   if (!identityScope) {
     clearDeploymentCache(normalizedDeploymentUrl);
     activeIdentityScopes.delete(normalizedDeploymentUrl);
-    return false;
+    nextDeploymentGeneration(normalizedDeploymentUrl);
+    return null;
   }
 
-  const activeIdentityScope = activeIdentityScopes.get(normalizedDeploymentUrl);
-  if (activeIdentityScope && activeIdentityScope !== identityScope) {
-    clearDeploymentCache(normalizedDeploymentUrl);
-  }
-  activeIdentityScopes.set(normalizedDeploymentUrl, identityScope);
-  return true;
+  const activeScope = activeIdentityScopes.get(normalizedDeploymentUrl);
+  if (activeScope?.identityScope === identityScope) return activeScope;
+
+  clearDeploymentCache(normalizedDeploymentUrl);
+  const scope = {
+    deploymentUrl: normalizedDeploymentUrl,
+    identityScope,
+    generation: nextDeploymentGeneration(normalizedDeploymentUrl),
+  };
+  activeIdentityScopes.set(normalizedDeploymentUrl, scope);
+  return scope;
+}
+
+function isActiveScope(scope: CacheScope): boolean {
+  const activeScope = activeIdentityScopes.get(scope.deploymentUrl);
+  return (
+    activeScope?.identityScope === scope.identityScope &&
+    activeScope.generation === scope.generation
+  );
 }
 
 function getCachedHydration(
-  deploymentUrl: string,
-  identityScope: string,
+  scope: CacheScope,
   thread: ThreadRecord
 ): CachedHydration | undefined {
-  const key = hydrationCacheKey(deploymentUrl, identityScope, thread.thread_id);
+  if (!isActiveScope(scope)) return undefined;
+  const key = hydrationCacheKey(
+    scope.deploymentUrl,
+    scope.identityScope,
+    thread.thread_id
+  );
   const cached = recoveredPreviewCache.get(key);
   if (!cached) return undefined;
-  if (cached.updatedAt !== thread.updated_at) {
+  if (
+    cached.updatedAt !== thread.updated_at ||
+    cached.identityScope !== scope.identityScope ||
+    cached.generation !== scope.generation
+  ) {
     recoveredPreviewCache.delete(key);
     return undefined;
   }
@@ -140,21 +176,21 @@ function getCachedHydration(
 }
 
 function cacheHydration(
-  deploymentUrl: string,
-  identityScope: string,
+  scope: CacheScope,
   thread: ThreadRecord,
   preview: HydratedPreview
 ): void {
-  const normalizedDeploymentUrl = normalizeDeploymentUrl(deploymentUrl);
+  if (!isActiveScope(scope)) return;
   const key = hydrationCacheKey(
-    normalizedDeploymentUrl,
-    identityScope,
+    scope.deploymentUrl,
+    scope.identityScope,
     thread.thread_id
   );
   recoveredPreviewCache.delete(key);
   recoveredPreviewCache.set(key, {
-    deploymentUrl: normalizedDeploymentUrl,
-    identityScope,
+    deploymentUrl: scope.deploymentUrl,
+    identityScope: scope.identityScope,
+    generation: scope.generation,
     updatedAt: thread.updated_at,
     preview,
   });
@@ -310,7 +346,7 @@ export class LangGraphThreadRepository implements ThreadRepository {
 
   async search(query: ThreadSearchQuery): Promise<ThreadItem[]> {
     const identityScope = await this.getIdentityScope();
-    const useCache = activateIdentityScope(
+    const cacheScope = activateIdentityScope(
       this.options.deploymentUrl,
       identityScope
     );
@@ -350,14 +386,9 @@ export class LangGraphThreadRepository implements ThreadRepository {
         ) {
           return this.toItem(thread, query.assistantId);
         }
-        const cached =
-          useCache && identityScope
-            ? getCachedHydration(
-                this.options.deploymentUrl,
-                identityScope,
-                thread
-              )
-            : undefined;
+        const cached = cacheScope
+          ? getCachedHydration(cacheScope, thread)
+          : undefined;
         if (cached) {
           return this.toItem(
             thread,
@@ -368,13 +399,8 @@ export class LangGraphThreadRepository implements ThreadRepository {
         try {
           const state = await this.client.threads.getState(thread.thread_id);
           const hydratedPreview = extractHydratedPreview(state.values);
-          if (useCache && identityScope) {
-            cacheHydration(
-              this.options.deploymentUrl,
-              identityScope,
-              thread,
-              hydratedPreview
-            );
+          if (cacheScope) {
+            cacheHydration(cacheScope, thread, hydratedPreview);
           }
           return this.toItem(
             { ...thread, values: state.values },

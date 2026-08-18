@@ -37,6 +37,7 @@ type ThreadStateSnapshot = {
 type GetStateOptions = {
   delayMs?: number;
   delayForThread?: (threadId: string) => number;
+  deferredState?: Promise<ThreadStateSnapshot>;
 };
 
 type FakeClient = {
@@ -97,6 +98,9 @@ function fakeClient(
             await new Promise((resolve) => setTimeout(resolve, delayMs));
           }
           if (failState) throw new Error("state unavailable");
+          const deferredState = getStateOptions.deferredState
+            ? await getStateOptions.deferredState
+            : undefined;
           getStateCompletionCalls.push(threadId);
           return {
             thread_id: `state-${threadId}`,
@@ -108,6 +112,7 @@ function fakeClient(
               is_favorite: false,
             },
             ...states[threadId],
+            ...deferredState,
           };
         } finally {
           concurrentGetStates -= 1;
@@ -151,6 +156,14 @@ async function search(repository: LangGraphThreadRepository, pageIndex = 0) {
     pageIndex,
     pageSize: 20,
   });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 test("selects preview fields when searching threads", async () => {
@@ -589,6 +602,74 @@ test("scopes cached previews to credential and clears prior deployment sessions"
   assert.deepEqual(first.getStateCalls, [threadId]);
   assert.deepEqual(second.getStateCalls, [threadId]);
   assert.deepEqual(switchedBack.getStateCalls, [threadId]);
+});
+
+test("does not let delayed identity generations repopulate a reactivated deployment cache", async () => {
+  const threadId = "cache-generation-thread";
+  const deploymentUrl = "http://cache-generation.test";
+  const searchedThread = thread({
+    thread_id: threadId,
+    updated_at: "2026-08-18T12:00:00.000Z",
+    values: { messages: [] },
+  });
+  const delayedState = deferred<ThreadStateSnapshot>();
+  const delayedA = fakeClient([searchedThread], {}, false, {
+    deferredState: delayedState.promise,
+  });
+  const activeB = fakeClient([searchedThread], {
+    [threadId]: {
+      values: { messages: [{ type: "human", content: "B title" }] },
+    },
+  });
+  const reactivatedA = fakeClient([
+    thread({
+      ...searchedThread,
+      values: { messages: [{ type: "human", content: "Projected A title" }] },
+    }),
+  ]);
+  const freshA = fakeClient([searchedThread], {
+    [threadId]: {
+      values: { messages: [{ type: "human", content: "Fresh A title" }] },
+    },
+  });
+  const freshB = fakeClient([searchedThread], {
+    [threadId]: {
+      values: { messages: [{ type: "human", content: "Fresh B title" }] },
+    },
+  });
+
+  const delayedAItems = search(
+    repository(delayedA.client, deploymentUrl, "credential-generation-a")
+  );
+  while (delayedA.getStateCalls.length === 0) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  const bItems = await search(
+    repository(activeB.client, deploymentUrl, "credential-generation-b")
+  );
+  const projectedAItems = await search(
+    repository(reactivatedA.client, deploymentUrl, "credential-generation-a")
+  );
+  delayedState.resolve({
+    values: { messages: [{ type: "human", content: "Delayed stale A" }] },
+  });
+  const [delayedItem] = await delayedAItems;
+  const freshAItems = await search(
+    repository(freshA.client, deploymentUrl, "credential-generation-a")
+  );
+  const freshBItems = await search(
+    repository(freshB.client, deploymentUrl, "credential-generation-b")
+  );
+
+  assert.equal(bItems[0]?.title, "B title");
+  assert.equal(projectedAItems[0]?.title, "Projected A title");
+  assert.equal(delayedItem?.title, "Delayed stale A");
+  assert.equal(freshAItems[0]?.title, "Fresh A title");
+  assert.equal(freshBItems[0]?.title, "Fresh B title");
+  assert.deepEqual(delayedA.getStateCalls, [threadId]);
+  assert.deepEqual(reactivatedA.getStateCalls, []);
+  assert.deepEqual(freshA.getStateCalls, [threadId]);
+  assert.deepEqual(freshB.getStateCalls, [threadId]);
 });
 
 test("caches extracted preview data instead of checkpoint values references", async () => {

@@ -8,7 +8,7 @@ type Thread = {
   thread_id: string;
   created_at?: string;
   updated_at: string;
-  status?: string;
+  status: ThreadStatus;
   metadata?: Record<string, unknown>;
   values?: unknown;
 };
@@ -171,7 +171,8 @@ test("keeps custom titles over human messages without loading checkpoint state",
 });
 
 test("recovers missing completed titles from state for idle, interrupted, and error threads", async () => {
-  const threads = ["idle", "interrupted", "error"].map((status) =>
+  const recoveryStatuses: ThreadStatus[] = ["idle", "interrupted", "error"];
+  const threads = recoveryStatuses.map((status) =>
     thread({
       thread_id: `${status}-thread-id`,
       status,
@@ -181,7 +182,7 @@ test("recovers missing completed titles from state for idle, interrupted, and er
   const fake = fakeClient(
     threads,
     Object.fromEntries(
-      ["idle", "interrupted", "error"].map((status) => [
+      recoveryStatuses.map((status) => [
         `${status}-thread-id`,
         {
           values: {
@@ -245,6 +246,18 @@ test("uses stable ID fallback for busy threads and never loads their state", asy
   assert.deepEqual(fake.getCalls, []);
 });
 
+test("does not hydrate threads with an unrecognized runtime status", async () => {
+  const fake = fakeClient([
+    thread({ status: "unknown" as ThreadStatus, values: { messages: [] } }),
+  ]);
+
+  const items = await search(repository(fake.client));
+
+  assert.equal(items[0]?.title, "Thread 12345678");
+  assert.deepEqual(fake.getStateCalls, []);
+  assert.deepEqual(fake.getCalls, []);
+});
+
 test("uses stable ID fallback when checkpoint lookup fails or has no human message", async () => {
   const missingHuman = fakeClient([thread({ values: { messages: [] } })]);
   const unavailable = fakeClient(
@@ -295,8 +308,17 @@ test("preserves array content extraction for previews", async () => {
     thread({
       values: {
         messages: [
-          { type: "human", content: [{ text: "Array title" }] },
-          { type: "ai", content: [{ text: "Array description" }] },
+          {
+            type: "human",
+            content: [
+              { type: "image", image_url: "image" },
+              { text: "Array title" },
+            ],
+          },
+          {
+            type: "ai",
+            content: [{ type: "tool_use" }, { text: "Array description" }],
+          },
         ],
       },
     }),
@@ -306,4 +328,42 @@ test("preserves array content extraction for previews", async () => {
 
   assert.equal(items[0]?.title, "Array title");
   assert.equal(items[0]?.description, "Array description");
+});
+
+test("hydrates whitespace-only selected titles and normalizes recovered content blocks", async () => {
+  const fake = fakeClient(
+    [
+      thread({
+        values: { messages: [{ type: "human", content: "   " }] },
+      }),
+    ],
+    {
+      "12345678-1234-1234-1234-123456789abc": {
+        values: {
+          messages: [
+            {
+              type: "human",
+              content: [{ type: "image" }, { text: " Recovered title " }],
+            },
+            {
+              type: "ai",
+              content: [
+                { type: "tool_use" },
+                { text: " Recovered description " },
+              ],
+            },
+          ],
+        },
+      },
+    }
+  );
+
+  const items = await search(repository(fake.client));
+
+  assert.equal(items[0]?.title, "Recovered title");
+  assert.equal(items[0]?.description, "Recovered description");
+  assert.deepEqual(fake.getStateCalls, [
+    "12345678-1234-1234-1234-123456789abc",
+  ]);
+  assert.deepEqual(fake.getCalls, []);
 });

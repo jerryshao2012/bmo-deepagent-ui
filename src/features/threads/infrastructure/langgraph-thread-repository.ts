@@ -20,7 +20,7 @@ type ThreadRecord = {
   thread_id: string;
   created_at?: string;
   updated_at: string;
-  status?: string;
+  status: ThreadStatus;
   metadata?: Record<string, unknown> | null;
   values?: unknown;
 };
@@ -55,6 +55,27 @@ interface LangGraphClient {
   threads: LangGraphThreadsClient;
 }
 
+function normalizeMessageContent(content: unknown): string {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+
+  for (const block of content) {
+    if (typeof block !== "object" || block === null) continue;
+    const text = (block as { text?: unknown }).text;
+    if (typeof text === "string" && text.trim()) return text.trim();
+  }
+  return "";
+}
+
+function isThreadStatus(status: unknown): status is ThreadStatus {
+  return (
+    status === "idle" ||
+    status === "busy" ||
+    status === "interrupted" ||
+    status === "error"
+  );
+}
+
 function extractThreadPreview(thread: ThreadRecord): {
   title: string;
   description: string;
@@ -82,15 +103,9 @@ function extractThreadPreview(thread: ThreadRecord): {
         message !== null &&
         (message as { type?: unknown }).type === "human"
     );
-    const humanContent = Array.isArray(firstHuman?.content)
-      ? (firstHuman.content[0] as { text?: unknown } | undefined)?.text || ""
-      : firstHuman?.content || "";
-    hasHumanTitle = typeof humanContent === "string" && Boolean(humanContent);
-    if (
-      !isUserDefinedTitle &&
-      typeof humanContent === "string" &&
-      humanContent
-    ) {
+    const humanContent = normalizeMessageContent(firstHuman?.content);
+    hasHumanTitle = Boolean(humanContent);
+    if (!isUserDefinedTitle && humanContent) {
       title =
         humanContent.slice(0, 50) + (humanContent.length > 50 ? "..." : "");
     }
@@ -100,10 +115,8 @@ function extractThreadPreview(thread: ThreadRecord): {
         message !== null &&
         (message as { type?: unknown }).type === "ai"
     );
-    const aiContent = Array.isArray(firstAi?.content)
-      ? (firstAi.content[0] as { text?: unknown } | undefined)?.text || ""
-      : firstAi?.content || "";
-    if (typeof aiContent === "string" && aiContent) {
+    const aiContent = normalizeMessageContent(firstAi?.content);
+    if (aiContent) {
       description = aiContent.slice(0, 100);
     }
   } catch {
@@ -159,7 +172,8 @@ export class LangGraphThreadRepository implements ThreadRepository {
         if (
           thread.status === "busy" ||
           preview.isUserDefinedTitle ||
-          preview.hasHumanTitle
+          preview.hasHumanTitle ||
+          !isThreadStatus(thread.status)
         ) {
           return this.toItem(thread, query.assistantId);
         }
@@ -178,7 +192,7 @@ export class LangGraphThreadRepository implements ThreadRepository {
 
   async getStatus(threadId: string): Promise<ThreadStatus | null> {
     const thread = await this.client.threads.get(threadId);
-    return (thread.status as ThreadStatus) ?? null;
+    return thread.status ?? null;
   }
 
   async delete(threadId: string): Promise<void> {
@@ -252,7 +266,7 @@ export class LangGraphThreadRepository implements ThreadRepository {
       id: thread.thread_id,
       createdAt: thread.created_at ? new Date(thread.created_at) : undefined,
       updatedAt: new Date(thread.updated_at),
-      status: thread.status as ThreadStatus,
+      status: thread.status,
       assistantId,
       isFavorite: !!thread.metadata?.is_favorite,
       ...preview,

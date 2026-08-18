@@ -34,6 +34,10 @@ type ThreadStateSnapshot = {
   metadata?: Record<string, unknown>;
 };
 
+type GetStateOptions = {
+  delayMs?: number;
+};
+
 type FakeClient = {
   threads: {
     search: (query?: ThreadSearchRequest) => Promise<Thread[]>;
@@ -62,11 +66,14 @@ function thread(overrides: Partial<Thread> = {}): Thread {
 function fakeClient(
   searchedThreads: Thread[],
   states: Record<string, ThreadStateSnapshot> = {},
-  failState = false
+  failState = false,
+  getStateOptions: GetStateOptions = {}
 ) {
   const searchCalls: Array<ThreadSearchRequest | undefined> = [];
   const getStateCalls: string[] = [];
   const getCalls: string[] = [];
+  let concurrentGetStates = 0;
+  let maxConcurrentGetStates = 0;
   const client: FakeClient = {
     threads: {
       search: async (query) => {
@@ -75,18 +82,32 @@ function fakeClient(
       },
       getState: async (threadId) => {
         getStateCalls.push(threadId);
-        if (failState) throw new Error("state unavailable");
-        return {
-          thread_id: `state-${threadId}`,
-          created_at: "2001-01-01T00:00:00.000Z",
-          updated_at: "2002-02-02T00:00:00.000Z",
-          status: "busy",
-          metadata: {
-            custom_title: "State metadata poison",
-            is_favorite: false,
-          },
-          ...states[threadId],
-        };
+        concurrentGetStates += 1;
+        maxConcurrentGetStates = Math.max(
+          maxConcurrentGetStates,
+          concurrentGetStates
+        );
+        try {
+          if (getStateOptions.delayMs) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, getStateOptions.delayMs)
+            );
+          }
+          if (failState) throw new Error("state unavailable");
+          return {
+            thread_id: `state-${threadId}`,
+            created_at: "2001-01-01T00:00:00.000Z",
+            updated_at: "2002-02-02T00:00:00.000Z",
+            status: "busy",
+            metadata: {
+              custom_title: "State metadata poison",
+              is_favorite: false,
+            },
+            ...states[threadId],
+          };
+        } finally {
+          concurrentGetStates -= 1;
+        }
       },
       get: async (threadId) => {
         getCalls.push(threadId);
@@ -96,12 +117,23 @@ function fakeClient(
       update: async (threadId) => thread({ thread_id: threadId }),
     },
   };
-  return { client, searchCalls, getStateCalls, getCalls };
+  return {
+    client,
+    searchCalls,
+    getStateCalls,
+    getCalls,
+    maxConcurrentGetStates: () => maxConcurrentGetStates,
+  };
 }
 
-function repository(client: FakeClient) {
+let repositoryNumber = 0;
+
+function repository(
+  client: FakeClient,
+  deploymentUrl = `http://langgraph.test/${repositoryNumber++}`
+) {
   return new LangGraphThreadRepository(
-    { deploymentUrl: "http://langgraph.test", apiKey: "test-key" },
+    { deploymentUrl, apiKey: "test-key" },
     client
   );
 }
@@ -366,4 +398,184 @@ test("hydrates whitespace-only selected titles and normalizes recovered content 
     "12345678-1234-1234-1234-123456789abc",
   ]);
   assert.deepEqual(fake.getCalls, []);
+});
+
+test("reuses unchanged recovered state across repository instances", async () => {
+  const threadId = "cache-reuse-thread";
+  const deploymentUrl = "http://cache-reuse.test/";
+  const searchedThread = thread({
+    thread_id: threadId,
+    updated_at: "2026-08-18T12:00:00.000Z",
+    values: { messages: [] },
+  });
+  const first = fakeClient([searchedThread], {
+    [threadId]: {
+      values: { messages: [{ type: "human", content: "Cached title" }] },
+    },
+  });
+  const second = fakeClient([searchedThread]);
+
+  const firstItems = await search(repository(first.client, deploymentUrl));
+  const secondItems = await search(repository(second.client, deploymentUrl));
+
+  assert.equal(firstItems[0]?.title, "Cached title");
+  assert.equal(secondItems[0]?.title, "Cached title");
+  assert.deepEqual(first.getStateCalls, [threadId]);
+  assert.deepEqual(second.getStateCalls, []);
+});
+
+test("refreshes cached state when search updated_at changes", async () => {
+  const threadId = "cache-update-thread";
+  const deploymentUrl = "http://cache-update.test";
+  const first = fakeClient(
+    [
+      thread({
+        thread_id: threadId,
+        updated_at: "2026-08-18T12:00:00.000Z",
+        values: { messages: [] },
+      }),
+    ],
+    {
+      [threadId]: {
+        values: { messages: [{ type: "human", content: "Old title" }] },
+      },
+    }
+  );
+  const second = fakeClient(
+    [
+      thread({
+        thread_id: threadId,
+        updated_at: "2026-08-18T12:01:00.000Z",
+        values: { messages: [] },
+      }),
+    ],
+    {
+      [threadId]: {
+        values: { messages: [{ type: "human", content: "New title" }] },
+      },
+    }
+  );
+
+  const firstItems = await search(repository(first.client, deploymentUrl));
+  const secondItems = await search(repository(second.client, deploymentUrl));
+
+  assert.equal(firstItems[0]?.title, "Old title");
+  assert.equal(secondItems[0]?.title, "New title");
+  assert.deepEqual(first.getStateCalls, [threadId]);
+  assert.deepEqual(second.getStateCalls, [threadId]);
+});
+
+test("does not share cached state across deployments", async () => {
+  const threadId = "cache-deployment-thread";
+  const searchedThread = thread({
+    thread_id: threadId,
+    updated_at: "2026-08-18T12:00:00.000Z",
+    values: { messages: [] },
+  });
+  const first = fakeClient([searchedThread], {
+    [threadId]: {
+      values: { messages: [{ type: "human", content: "First deployment" }] },
+    },
+  });
+  const second = fakeClient([searchedThread], {
+    [threadId]: {
+      values: { messages: [{ type: "human", content: "Second deployment" }] },
+    },
+  });
+
+  const firstItems = await search(
+    repository(first.client, "http://cache-a.test")
+  );
+  const secondItems = await search(
+    repository(second.client, "http://cache-b.test")
+  );
+
+  assert.equal(firstItems[0]?.title, "First deployment");
+  assert.equal(secondItems[0]?.title, "Second deployment");
+  assert.deepEqual(first.getStateCalls, [threadId]);
+  assert.deepEqual(second.getStateCalls, [threadId]);
+});
+
+test("caches successful no-human state while keeping failures retryable", async () => {
+  const noHumanId = "cache-no-human-thread";
+  const failureId = "cache-failure-thread";
+  const noHumanDeployment = "http://cache-no-human.test";
+  const failureDeployment = "http://cache-failure.test";
+  const noHumanThread = thread({
+    thread_id: noHumanId,
+    updated_at: "2026-08-18T12:00:00.000Z",
+    values: { messages: [] },
+  });
+  const failureThread = thread({
+    thread_id: failureId,
+    updated_at: "2026-08-18T12:00:00.000Z",
+    values: { messages: [] },
+  });
+  const noHumanFirst = fakeClient([noHumanThread]);
+  const noHumanSecond = fakeClient([noHumanThread]);
+  const failed = fakeClient([failureThread], {}, true);
+  const retry = fakeClient([failureThread], {
+    [failureId]: {
+      values: {
+        messages: [{ type: "human", content: "Recovered after retry" }],
+      },
+    },
+  });
+
+  const [firstNoHuman] = await search(
+    repository(noHumanFirst.client, noHumanDeployment)
+  );
+  const [secondNoHuman] = await search(
+    repository(noHumanSecond.client, noHumanDeployment)
+  );
+  const [failedItem] = await search(
+    repository(failed.client, failureDeployment)
+  );
+  const [retriedItem] = await search(
+    repository(retry.client, failureDeployment)
+  );
+
+  assert.equal(firstNoHuman?.title, "Thread cache-no");
+  assert.equal(secondNoHuman?.title, "Thread cache-no");
+  assert.deepEqual(noHumanFirst.getStateCalls, [noHumanId]);
+  assert.deepEqual(noHumanSecond.getStateCalls, []);
+  assert.equal(failedItem?.title, "Thread cache-fa");
+  assert.equal(retriedItem?.title, "Recovered after retry");
+  assert.deepEqual(failed.getStateCalls, [failureId]);
+  assert.deepEqual(retry.getStateCalls, [failureId]);
+});
+
+test("limits title hydration concurrency while preserving thread order", async () => {
+  const deploymentUrl = "http://cache-concurrency.test";
+  const threads = Array.from({ length: 20 }, (_, index) =>
+    thread({
+      thread_id: `concurrency-thread-${index}`,
+      updated_at: "2026-08-18T12:00:00.000Z",
+      values: { messages: [] },
+    })
+  );
+  const states = Object.fromEntries(
+    threads.map((thread) => [
+      thread.thread_id,
+      {
+        values: {
+          messages: [{ type: "human", content: `Title ${thread.thread_id}` }],
+        },
+      },
+    ])
+  );
+  const fake = fakeClient(threads, states, false, { delayMs: 10 });
+
+  const items = await search(repository(fake.client, deploymentUrl));
+
+  assert.equal(fake.getStateCalls.length, 20);
+  assert.ok(fake.maxConcurrentGetStates() <= 4);
+  assert.deepEqual(
+    items.map((item) => item.id),
+    threads.map((thread) => thread.thread_id)
+  );
+  assert.deepEqual(
+    items.map((item) => item.title),
+    threads.map((thread) => `Title ${thread.thread_id}`)
+  );
 });

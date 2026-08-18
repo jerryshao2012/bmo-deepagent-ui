@@ -55,6 +55,73 @@ interface LangGraphClient {
   threads: LangGraphThreadsClient;
 }
 
+const MAX_CACHED_HYDRATIONS = 500;
+const MAX_CONCURRENT_HYDRATIONS = 4;
+
+type CachedHydration = {
+  updatedAt: string;
+  values: unknown;
+};
+
+const recoveredStateCache = new Map<string, CachedHydration>();
+
+function normalizeDeploymentUrl(deploymentUrl: string): string {
+  return deploymentUrl.replace(/\/+$/, "");
+}
+
+function hydrationCacheKey(deploymentUrl: string, threadId: string): string {
+  return `${normalizeDeploymentUrl(deploymentUrl)}\u0000${threadId}`;
+}
+
+function getCachedHydration(
+  deploymentUrl: string,
+  thread: ThreadRecord
+): CachedHydration | undefined {
+  const key = hydrationCacheKey(deploymentUrl, thread.thread_id);
+  const cached = recoveredStateCache.get(key);
+  if (!cached) return undefined;
+  if (cached.updatedAt !== thread.updated_at) {
+    recoveredStateCache.delete(key);
+    return undefined;
+  }
+
+  recoveredStateCache.delete(key);
+  recoveredStateCache.set(key, cached);
+  return cached;
+}
+
+function cacheHydration(
+  deploymentUrl: string,
+  thread: ThreadRecord,
+  values: unknown
+): void {
+  const key = hydrationCacheKey(deploymentUrl, thread.thread_id);
+  recoveredStateCache.delete(key);
+  recoveredStateCache.set(key, { updatedAt: thread.updated_at, values });
+  if (recoveredStateCache.size > MAX_CACHED_HYDRATIONS) {
+    const oldestKey = recoveredStateCache.keys().next().value;
+    if (oldestKey !== undefined) recoveredStateCache.delete(oldestKey);
+  }
+}
+
+async function mapWithConcurrency<T, Result>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<Result>
+): Promise<Result[]> {
+  const results = new Array<Result>(items.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await mapper(items[index]);
+    }
+  };
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return results;
+}
+
 function normalizeMessageContent(content: unknown): string {
   if (typeof content === "string") return content.trim();
   if (!Array.isArray(content)) return "";
@@ -166,8 +233,10 @@ export class LangGraphThreadRepository implements ThreadRepository {
         "values",
       ],
     });
-    return Promise.all(
-      threads.map(async (thread) => {
+    return mapWithConcurrency(
+      threads,
+      MAX_CONCURRENT_HYDRATIONS,
+      async (thread) => {
         const preview = extractThreadPreview(thread);
         if (
           thread.status === "busy" ||
@@ -177,8 +246,16 @@ export class LangGraphThreadRepository implements ThreadRepository {
         ) {
           return this.toItem(thread, query.assistantId);
         }
+        const cached = getCachedHydration(this.options.deploymentUrl, thread);
+        if (cached) {
+          return this.toItem(
+            { ...thread, values: cached.values },
+            query.assistantId
+          );
+        }
         try {
           const state = await this.client.threads.getState(thread.thread_id);
+          cacheHydration(this.options.deploymentUrl, thread, state.values);
           return this.toItem(
             { ...thread, values: state.values },
             query.assistantId
@@ -186,7 +263,7 @@ export class LangGraphThreadRepository implements ThreadRepository {
         } catch {
           return this.toItem(thread, query.assistantId);
         }
-      })
+      }
     );
   }
 

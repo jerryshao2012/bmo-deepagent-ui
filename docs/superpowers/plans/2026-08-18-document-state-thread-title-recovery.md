@@ -119,6 +119,7 @@ git commit -m "fix: clear stale document folder on submit"
 
 **Files:**
 - Modify: `tests/thread-document-availability.test.tsx`
+- Modify: `tests/chat-interface-document-state.test.tsx`
 - Modify: `src/app/hooks/useThreadDocumentAvailability.ts:14-405`
 - Modify: `src/app/components/ChatInterface.tsx:130-177`
 
@@ -148,10 +149,13 @@ assert.deepEqual(result.current.documents, uploadedDocuments);
 
 ```bash
 yarn node --import tsx --test --test-isolation=none \
-  tests/thread-document-availability.test.tsx
+  tests/thread-document-availability.test.tsx \
+  tests/chat-interface-document-state.test.tsx
 ```
 
-Expected: tests fail because current hook still invokes `updateThreadState`.
+Expected: hook expectations fail because current hook still invokes
+`updateThreadState`, and the component boundary observes at least one forbidden
+`client.threads.updateState` call.
 
 - [ ] **Step 3: Simplify hook to local evidence only**
 
@@ -212,7 +216,8 @@ graph writes, and production TypeScript compilation succeeds before commit.
 ```bash
 git add src/app/hooks/useThreadDocumentAvailability.ts \
   src/app/components/ChatInterface.tsx \
-  tests/thread-document-availability.test.tsx
+  tests/thread-document-availability.test.tsx \
+  tests/chat-interface-document-state.test.tsx
 git commit -m "fix: keep document availability out of graph checkpoints"
 ```
 
@@ -301,8 +306,9 @@ Cover:
 
 - search options select `thread_id`, `created_at`, `updated_at`, `status`,
   `metadata`, and `values`;
-- selected values already contain first human -> no `getState` call, including
-  a later page (`pageIndex: 1`);
+- selected values already contain first human -> no `getState` call;
+- later page (`pageIndex: 1`) missing both custom and human title -> `getState`
+  is required and its first human message becomes the recovered title;
 - custom title -> no `getState` call and manual title wins;
 - idle/interrupted/error without both title sources -> `getState` supplies first
   human title;

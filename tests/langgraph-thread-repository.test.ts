@@ -25,10 +25,19 @@ type ThreadSearchRequest = {
   >;
 };
 
+type ThreadStateSnapshot = {
+  values?: unknown;
+  thread_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  status?: string;
+  metadata?: Record<string, unknown>;
+};
+
 type FakeClient = {
   threads: {
     search: (query?: ThreadSearchRequest) => Promise<Thread[]>;
-    getState: (threadId: string) => Promise<{ values?: unknown }>;
+    getState: (threadId: string) => Promise<ThreadStateSnapshot>;
     get: (threadId: string) => Promise<Thread>;
     delete: (threadId: string) => Promise<void>;
     update: (
@@ -52,7 +61,7 @@ function thread(overrides: Partial<Thread> = {}): Thread {
 
 function fakeClient(
   searchedThreads: Thread[],
-  states: Record<string, { values?: unknown }> = {},
+  states: Record<string, ThreadStateSnapshot> = {},
   failState = false
 ) {
   const searchCalls: Array<ThreadSearchRequest | undefined> = [];
@@ -67,7 +76,17 @@ function fakeClient(
       getState: async (threadId) => {
         getStateCalls.push(threadId);
         if (failState) throw new Error("state unavailable");
-        return states[threadId] ?? {};
+        return {
+          thread_id: `state-${threadId}`,
+          created_at: "2001-01-01T00:00:00.000Z",
+          updated_at: "2002-02-02T00:00:00.000Z",
+          status: "busy",
+          metadata: {
+            custom_title: "State metadata poison",
+            is_favorite: false,
+          },
+          ...states[threadId],
+        };
       },
       get: async (threadId) => {
         getCalls.push(threadId);
@@ -127,18 +146,28 @@ test("keeps selected first human title without loading checkpoint state", async 
 });
 
 test("keeps custom titles over human messages without loading checkpoint state", async () => {
-  const fake = fakeClient([
-    thread({
-      metadata: { custom_title: "Manual title" },
-      values: { messages: [{ type: "human", content: "Generated title" }] },
-    }),
-  ]);
+  const fake = fakeClient(
+    [
+      thread({
+        metadata: { custom_title: "Manual title" },
+        values: { messages: [] },
+      }),
+    ],
+    {
+      "12345678-1234-1234-1234-123456789abc": {
+        values: {
+          messages: [{ type: "human", content: "State-only generated title" }],
+        },
+      },
+    }
+  );
 
   const items = await search(repository(fake.client));
 
   assert.equal(items[0]?.title, "Manual title");
   assert.equal(items[0]?.isUserDefinedTitle, true);
   assert.deepEqual(fake.getStateCalls, []);
+  assert.deepEqual(fake.getCalls, []);
 });
 
 test("recovers missing completed titles from state for idle, interrupted, and error threads", async () => {
@@ -177,9 +206,16 @@ test("recovers missing completed titles from state for idle, interrupted, and er
   assert.deepEqual(fake.getCalls, []);
 });
 
-test("recovers missing title from state on later search pages", async () => {
-  const fake = fakeClient([thread({ values: { messages: [] } })], {
-    "12345678-1234-1234-1234-123456789abc": {
+test("recovers missing title from state on later search pages without replacing search fields", async () => {
+  const searchThread = thread({
+    thread_id: "search-thread-id",
+    created_at: "2026-07-01T10:00:00.000Z",
+    updated_at: "2026-08-01T11:00:00.000Z",
+    metadata: { is_favorite: true },
+    values: { messages: [] },
+  });
+  const fake = fakeClient([searchThread], {
+    "search-thread-id": {
       values: {
         messages: [{ type: "human", content: "Second page recovered" }],
       },
@@ -189,9 +225,12 @@ test("recovers missing title from state on later search pages", async () => {
   const items = await search(repository(fake.client), 1);
 
   assert.equal(items[0]?.title, "Second page recovered");
-  assert.deepEqual(fake.getStateCalls, [
-    "12345678-1234-1234-1234-123456789abc",
-  ]);
+  assert.equal(items[0]?.id, "search-thread-id");
+  assert.equal(items[0]?.isFavorite, true);
+  assert.equal(items[0]?.createdAt?.toISOString(), "2026-07-01T10:00:00.000Z");
+  assert.equal(items[0]?.updatedAt.toISOString(), "2026-08-01T11:00:00.000Z");
+  assert.deepEqual(fake.getStateCalls, ["search-thread-id"]);
+  assert.deepEqual(fake.getCalls, []);
 });
 
 test("uses stable ID fallback for busy threads and never loads their state", async () => {
@@ -203,6 +242,7 @@ test("uses stable ID fallback for busy threads and never loads their state", asy
 
   assert.equal(items[0]?.title, "Thread 12345678");
   assert.deepEqual(fake.getStateCalls, []);
+  assert.deepEqual(fake.getCalls, []);
 });
 
 test("uses stable ID fallback when checkpoint lookup fails or has no human message", async () => {
@@ -226,6 +266,8 @@ test("uses stable ID fallback when checkpoint lookup fails or has no human messa
   assert.deepEqual(unavailable.getStateCalls, [
     "12345678-1234-1234-1234-123456789abc",
   ]);
+  assert.deepEqual(missingHuman.getCalls, []);
+  assert.deepEqual(unavailable.getCalls, []);
 });
 
 test("preserves string content extraction and truncation for previews", async () => {

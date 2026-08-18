@@ -700,6 +700,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const handleDeleteDocument = async (filename: string) => {
     if (!currentThreadId) return;
 
+    const targetThreadId = currentThreadId;
+    const hasRemainingDocuments = documents.some(
+      (document) => document.name !== filename
+    );
+
     if (!confirm(`Are you sure you want to delete "${filename}"?`)) return;
 
     try {
@@ -710,7 +715,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       const response = await authenticatedFetch(
         `${deploymentUrl.replace(/\/+$/, "")}/documents/${encodeURIComponent(
           filename
-        )}?folder=threads/${currentThreadId}`,
+        )}?folder=threads/${targetThreadId}`,
         {
           method: "DELETE",
           headers: {
@@ -725,10 +730,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
 
       const { hasDocuments } = await recordDeleteSuccess(
         filename,
-        currentThreadId
+        targetThreadId
       );
-      if (hasDocuments === false) {
-        pendingDocFoldersRef.current.delete(currentThreadId);
+      if ((hasDocuments ?? hasRemainingDocuments) === false) {
+        pendingDocFoldersRef.current.delete(targetThreadId);
       }
     } catch (error) {
       console.error("Failed to delete document:", error);

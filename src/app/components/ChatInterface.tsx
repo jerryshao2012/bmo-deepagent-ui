@@ -41,7 +41,6 @@ import { cn } from "@/lib/utils";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { FilesPopover } from "@/app/components/TasksFilesSidebar";
 import { WikiTreeViewer } from "@/app/components/WikiTreeViewer";
-import { useThreadStatus } from "@/app/hooks/useThreads";
 import { useQueryState } from "nuqs";
 import {
   DocumentViewerPanel,
@@ -57,6 +56,7 @@ import {
 import { useProcessedMessages } from "@/app/hooks/useProcessedMessages";
 import { selectParallelResearchProgress } from "@/app/utils/parallel-research-progress";
 import { useThreadDocumentAvailability } from "@/app/hooks/useThreadDocumentAvailability";
+import { useThreadStatus } from "@/app/hooks/useThreads";
 import {
   type PendingDocumentFolder,
   submitResearchMessage,
@@ -138,7 +138,6 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const {
     data: selectedThreadStatus,
     isLoading: isSelectedThreadStatusLoading,
-    isValidating: isSelectedThreadStatusValidating,
   } = useThreadStatus(currentThreadId);
 
   const client = useClient();
@@ -153,25 +152,15 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       }
     );
   }, []);
-  const updateThreadDocumentState = useCallback(
-    async (threadId: string, values: Record<string, unknown>) => {
-      await client.threads.updateState(threadId, { values });
-    },
-    [client]
-  );
   const {
     documents,
     availability: documentAvailability,
+    availabilityEvidence,
     recordUploadSuccess,
     recordDeleteSuccess,
   } = useThreadDocumentAvailability({
     threadId: currentThreadId,
-    selectedThreadStatus: isSelectedThreadStatusLoading
-      ? null
-      : selectedThreadStatus ?? null,
-    selectedThreadStatusIsValidating: isSelectedThreadStatusValidating,
     listDocuments,
-    updateThreadState: updateThreadDocumentState,
   });
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -335,19 +324,18 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       setMetaOpen(null);
     }
   }, [hasCurrentWikiDocuments, metaOpen]);
-  // Tracks a pending doc_folder that couldn't be set via updateState
-  // because the thread had no graph_id yet (no runs). It will be included
-  // in the first sendMessage call instead.
+  // Tracks a pending doc_folder to include in the first sendMessage call.
   const pendingDocFolderRef = useRef<PendingDocumentFolder | null>(null);
 
   useEffect(() => {
     if (
-      documentAvailability === false &&
+      availabilityEvidence?.available === false &&
+      availabilityEvidence.threadId === currentThreadId &&
       pendingDocFolderRef.current?.threadId === currentThreadId
     ) {
       pendingDocFolderRef.current = null;
     }
-  }, [currentThreadId, documentAvailability]);
+  }, [availabilityEvidence, currentThreadId]);
 
   // Open an SSE stream for real-time ingest progress.
   const startIngestProgressStream = useCallback((threadId: string) => {
@@ -653,22 +641,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         }
 
         const docFolder = `docs/threads/${activeThreadId}`;
-        const statePersisted = await recordUploadSuccess({
+        await recordUploadSuccess({
           activeThreadId,
           documents: uploadedDocuments,
-          docFolder,
         });
-        if (!statePersisted) {
-          console.warn(
-            "Failed to set document availability in thread state; retrying on first message."
-          );
-          pendingDocFolderRef.current = {
-            threadId: activeThreadId,
-            docFolder,
-          };
-        } else if (pendingDocFolderRef.current?.threadId === activeThreadId) {
-          pendingDocFolderRef.current = null;
-        }
+        pendingDocFolderRef.current = {
+          threadId: activeThreadId,
+          docFolder,
+        };
 
         // Note: wiki ingestion is auto-triggered by the server (webapp.py) on upload.
         // No need to explicitly call /wiki/ingest here — the server registers
@@ -737,13 +717,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         throw new Error(`Failed to delete document: ${response.status}`);
       }
 
-      const deleteResult = await recordDeleteSuccess(filename, currentThreadId);
-      if (
-        deleteResult.hasDocuments === false &&
-        pendingDocFolderRef.current?.threadId === currentThreadId
-      ) {
-        pendingDocFolderRef.current = null;
-      }
+      const { hasDocuments } = await recordDeleteSuccess(
+        filename,
+        currentThreadId
+      );
+      if (hasDocuments === null) return;
     } catch (error) {
       console.error("Failed to delete document:", error);
       alert(

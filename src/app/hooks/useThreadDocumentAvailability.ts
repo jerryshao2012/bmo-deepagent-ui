@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ThreadStatus } from "@/features/threads/application/thread-repository";
-
 export interface ThreadDocument {
   name: string;
   size: number;
@@ -13,75 +11,35 @@ export interface ThreadDocument {
 
 interface UseThreadDocumentAvailabilityOptions {
   threadId: string | null;
-  selectedThreadStatus?: ThreadStatus | null;
-  selectedThreadStatusIsValidating?: boolean;
   listDocuments: (threadId: string) => Promise<Response>;
-  updateThreadState: (
-    threadId: string,
-    values: Record<string, unknown>
-  ) => Promise<void>;
 }
 
 interface UploadSuccess {
   activeThreadId?: string;
   documents: ThreadDocument[];
-  docFolder: string;
-}
-
-const unavailableState = {
-  has_documents: false,
-  doc_folder: null,
-};
-
-function isInFlightRunConflict(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.startsWith("HTTP 409:") && message.includes("has in-flight runs")
-  );
-}
-
-interface PendingPersistence {
-  values: Record<string, unknown>;
-  epoch: number;
-  allowUnrendered: boolean;
 }
 
 export function useThreadDocumentAvailability({
   threadId,
-  selectedThreadStatus,
-  selectedThreadStatusIsValidating = false,
   listDocuments,
-  updateThreadState,
 }: UseThreadDocumentAvailabilityOptions) {
   const [documents, setDocuments] = useState<ThreadDocument[]>([]);
   const [availability, setAvailability] = useState<boolean | null>(null);
+  const [availabilityEvidence, setAvailabilityEvidence] = useState<{
+    threadId: string;
+    available: boolean;
+  } | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const documentsRef = useRef<ThreadDocument[]>([]);
   const threadIdRef = useRef(threadId);
-  const selectedThreadStatusRef = useRef<ThreadStatus | null | undefined>(
-    selectedThreadStatus
-  );
   const listDocumentsRef = useRef(listDocuments);
-  const updateThreadStateRef = useRef(updateThreadState);
   const renderedThreadIdRef = useRef(threadId);
   const operationEpochRef = useRef(0);
   const mountedRef = useRef(true);
-  const persistenceTailsRef = useRef(new Map<string, Promise<void>>());
-  const pendingPersistenceRef = useRef(new Map<string, PendingPersistence>());
-  const statusConfirmationRef = useRef({
-    threadId,
-    status: selectedThreadStatus,
-    isValidating: selectedThreadStatusIsValidating,
-  });
 
   threadIdRef.current = threadId;
-  selectedThreadStatusRef.current = selectedThreadStatus;
   listDocumentsRef.current = listDocuments;
-  updateThreadStateRef.current = updateThreadState;
   if (renderedThreadIdRef.current !== threadId) {
-    if (renderedThreadIdRef.current) {
-      pendingPersistenceRef.current.delete(renderedThreadIdRef.current);
-    }
     renderedThreadIdRef.current = threadId;
     operationEpochRef.current += 1;
   }
@@ -104,92 +62,6 @@ export function useThreadDocumentAvailability({
     operationEpochRef.current += 1;
     return operationEpochRef.current;
   }, []);
-
-  const deferPersistence = useCallback(
-    (
-      targetThreadId: string,
-      values: Record<string, unknown>,
-      epoch: number,
-      allowUnrendered: boolean
-    ) => {
-      pendingPersistenceRef.current.set(targetThreadId, {
-        values,
-        epoch,
-        allowUnrendered,
-      });
-    },
-    []
-  );
-
-  const enqueuePersistence = useCallback(
-    (
-      targetThreadId: string,
-      values: Record<string, unknown>,
-      epoch: number,
-      allowUnrendered = false,
-      acceptDeferred = false
-    ): Promise<boolean | "deferred"> => {
-      const persist = async () => {
-        if (!isCurrent(targetThreadId, epoch, allowUnrendered)) return false;
-        if (selectedThreadStatusRef.current === "busy") {
-          deferPersistence(targetThreadId, values, epoch, allowUnrendered);
-          return acceptDeferred ? "deferred" : false;
-        }
-
-        try {
-          await updateThreadStateRef.current(targetThreadId, values);
-          return true;
-        } catch (error) {
-          if (isInFlightRunConflict(error)) {
-            if (!isCurrent(targetThreadId, epoch, allowUnrendered)) {
-              return false;
-            }
-            deferPersistence(targetThreadId, values, epoch, allowUnrendered);
-            return acceptDeferred ? "deferred" : false;
-          }
-          console.error("Failed to persist document availability:", error);
-          return false;
-        }
-      };
-
-      const previous =
-        persistenceTailsRef.current.get(targetThreadId) ?? Promise.resolve();
-      const persistence = previous.then(persist, persist);
-      const tail = persistence.then(
-        () => undefined,
-        () => undefined
-      );
-      persistenceTailsRef.current.set(targetThreadId, tail);
-      void tail.then(() => {
-        if (persistenceTailsRef.current.get(targetThreadId) === tail) {
-          persistenceTailsRef.current.delete(targetThreadId);
-        }
-      });
-      return persistence;
-    },
-    [deferPersistence, isCurrent]
-  );
-
-  const flushPendingPersistence = useCallback(
-    (targetThreadId: string) => {
-      const status = selectedThreadStatusRef.current;
-      if (status == null || status === "busy") return;
-
-      const pending = pendingPersistenceRef.current.get(targetThreadId);
-      if (!pending) return;
-      pendingPersistenceRef.current.delete(targetThreadId);
-      if (!isCurrent(targetThreadId, pending.epoch, pending.allowUnrendered)) {
-        return;
-      }
-      void enqueuePersistence(
-        targetThreadId,
-        pending.values,
-        pending.epoch,
-        pending.allowUnrendered
-      );
-    },
-    [enqueuePersistence, isCurrent]
-  );
 
   const refreshThread = useCallback(
     async (targetThreadId: string, epoch: number, allowUnrendered = false) => {
@@ -230,18 +102,10 @@ export function useThreadDocumentAvailability({
         const hasDocuments = nextDocuments.length > 0;
         replaceDocuments(nextDocuments);
         setAvailability(hasDocuments);
-
-        await enqueuePersistence(
-          targetThreadId,
-          hasDocuments
-            ? {
-                has_documents: true,
-                doc_folder: `docs/threads/${targetThreadId}`,
-              }
-            : unavailableState,
-          epoch,
-          allowUnrendered
-        );
+        setAvailabilityEvidence({
+          threadId: targetThreadId,
+          available: hasDocuments,
+        });
       } catch {
         if (isCurrent(targetThreadId, epoch, allowUnrendered)) {
           setAvailability(null);
@@ -252,44 +116,21 @@ export function useThreadDocumentAvailability({
         }
       }
     },
-    [enqueuePersistence, isCurrent, replaceDocuments]
+    [isCurrent, replaceDocuments]
   );
 
   useEffect(() => {
     mountedRef.current = true;
-    const pendingPersistence = pendingPersistenceRef.current;
     return () => {
       mountedRef.current = false;
       operationEpochRef.current += 1;
-      pendingPersistence.clear();
     };
   }, []);
 
   useEffect(() => {
-    const previous = statusConfirmationRef.current;
-    const sameThread = previous.threadId === threadId;
-    const statusChanged =
-      sameThread && previous.status !== selectedThreadStatus;
-    const revalidationCompleted =
-      sameThread && previous.isValidating && !selectedThreadStatusIsValidating;
-    statusConfirmationRef.current = {
-      threadId,
-      status: selectedThreadStatus,
-      isValidating: selectedThreadStatusIsValidating,
-    };
-    if (threadId && (statusChanged || revalidationCompleted)) {
-      flushPendingPersistence(threadId);
-    }
-  }, [
-    flushPendingPersistence,
-    selectedThreadStatus,
-    selectedThreadStatusIsValidating,
-    threadId,
-  ]);
-
-  useEffect(() => {
     replaceDocuments([]);
     setAvailability(null);
+    setAvailabilityEvidence(null);
     setIsRefreshing(false);
 
     if (!threadId) {
@@ -317,11 +158,7 @@ export function useThreadDocumentAvailability({
   );
 
   const recordUploadSuccess = useCallback(
-    async ({
-      activeThreadId,
-      documents: uploadedDocuments,
-      docFolder,
-    }: UploadSuccess) => {
+    async ({ activeThreadId, documents: uploadedDocuments }: UploadSuccess) => {
       const targetThreadId = activeThreadId ?? threadIdRef.current;
       if (!targetThreadId) return false;
 
@@ -345,31 +182,25 @@ export function useThreadDocumentAvailability({
         }
         replaceDocuments([...byName.values()]);
         setAvailability(true);
+        setAvailabilityEvidence({
+          threadId: targetThreadId,
+          available: true,
+        });
         setIsRefreshing(false);
       }
-
-      return enqueuePersistence(
-        targetThreadId,
-        {
-          has_documents: true,
-          doc_folder: docFolder,
-        },
-        epoch,
-        allowUnrendered,
-        true
-      );
+      if (!canRender) return;
     },
-    [beginOperation, enqueuePersistence, isCurrent, replaceDocuments]
+    [beginOperation, isCurrent, replaceDocuments]
   );
 
   const recordDeleteSuccess = useCallback(
     async (filename: string, activeThreadId?: string) => {
       const targetThreadId = activeThreadId ?? threadIdRef.current;
       if (!targetThreadId) {
-        return { persisted: false, hasDocuments: null };
+        return { hasDocuments: null };
       }
       if (threadIdRef.current !== targetThreadId) {
-        return { persisted: false, hasDocuments: null };
+        return { hasDocuments: null };
       }
 
       const epoch = beginOperation();
@@ -380,23 +211,21 @@ export function useThreadDocumentAvailability({
       if (isCurrent(targetThreadId, epoch)) {
         replaceDocuments(nextDocuments);
         setAvailability(hasDocuments);
+        setAvailabilityEvidence({
+          threadId: targetThreadId,
+          available: hasDocuments,
+        });
         setIsRefreshing(false);
       }
-
-      const persisted =
-        (await enqueuePersistence(
-          targetThreadId,
-          hasDocuments ? { has_documents: true } : unavailableState,
-          epoch
-        )) === true;
-      return { persisted, hasDocuments };
+      return { hasDocuments };
     },
-    [beginOperation, enqueuePersistence, isCurrent, replaceDocuments]
+    [beginOperation, isCurrent, replaceDocuments]
   );
 
   return {
     documents,
     availability,
+    availabilityEvidence,
     isRefreshing,
     refresh,
     recordUploadSuccess,

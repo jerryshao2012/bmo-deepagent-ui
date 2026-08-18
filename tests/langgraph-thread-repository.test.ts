@@ -36,6 +36,7 @@ type ThreadStateSnapshot = {
 
 type GetStateOptions = {
   delayMs?: number;
+  delayForThread?: (threadId: string) => number;
 };
 
 type FakeClient = {
@@ -71,6 +72,7 @@ function fakeClient(
 ) {
   const searchCalls: Array<ThreadSearchRequest | undefined> = [];
   const getStateCalls: string[] = [];
+  const getStateCompletionCalls: string[] = [];
   const getCalls: string[] = [];
   let concurrentGetStates = 0;
   let maxConcurrentGetStates = 0;
@@ -88,12 +90,14 @@ function fakeClient(
           concurrentGetStates
         );
         try {
-          if (getStateOptions.delayMs) {
-            await new Promise((resolve) =>
-              setTimeout(resolve, getStateOptions.delayMs)
-            );
+          const delayMs =
+            getStateOptions.delayForThread?.(threadId) ??
+            getStateOptions.delayMs;
+          if (delayMs) {
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
           }
           if (failState) throw new Error("state unavailable");
+          getStateCompletionCalls.push(threadId);
           return {
             thread_id: `state-${threadId}`,
             created_at: "2001-01-01T00:00:00.000Z",
@@ -121,6 +125,7 @@ function fakeClient(
     client,
     searchCalls,
     getStateCalls,
+    getStateCompletionCalls,
     getCalls,
     maxConcurrentGetStates: () => maxConcurrentGetStates,
   };
@@ -402,7 +407,8 @@ test("hydrates whitespace-only selected titles and normalizes recovered content 
 
 test("reuses unchanged recovered state across repository instances", async () => {
   const threadId = "cache-reuse-thread";
-  const deploymentUrl = "http://cache-reuse.test/";
+  const deploymentUrlWithSlash = "http://cache-reuse.test/";
+  const deploymentUrlWithoutSlash = "http://cache-reuse.test";
   const searchedThread = thread({
     thread_id: threadId,
     updated_at: "2026-08-18T12:00:00.000Z",
@@ -415,8 +421,12 @@ test("reuses unchanged recovered state across repository instances", async () =>
   });
   const second = fakeClient([searchedThread]);
 
-  const firstItems = await search(repository(first.client, deploymentUrl));
-  const secondItems = await search(repository(second.client, deploymentUrl));
+  const firstItems = await search(
+    repository(first.client, deploymentUrlWithSlash)
+  );
+  const secondItems = await search(
+    repository(second.client, deploymentUrlWithoutSlash)
+  );
 
   assert.equal(firstItems[0]?.title, "Cached title");
   assert.equal(secondItems[0]?.title, "Cached title");
@@ -461,6 +471,47 @@ test("refreshes cached state when search updated_at changes", async () => {
 
   assert.equal(firstItems[0]?.title, "Old title");
   assert.equal(secondItems[0]?.title, "New title");
+  assert.deepEqual(first.getStateCalls, [threadId]);
+  assert.deepEqual(second.getStateCalls, [threadId]);
+});
+
+test("invalidates cache for equivalent instants with different raw updated_at strings", async () => {
+  const threadId = "cache-raw-timestamp-thread";
+  const deploymentUrl = "http://cache-raw-timestamp.test";
+  const first = fakeClient(
+    [
+      thread({
+        thread_id: threadId,
+        updated_at: "2026-08-18T12:00:00Z",
+        values: { messages: [] },
+      }),
+    ],
+    {
+      [threadId]: {
+        values: { messages: [{ type: "human", content: "First timestamp" }] },
+      },
+    }
+  );
+  const second = fakeClient(
+    [
+      thread({
+        thread_id: threadId,
+        updated_at: "2026-08-18T08:00:00-04:00",
+        values: { messages: [] },
+      }),
+    ],
+    {
+      [threadId]: {
+        values: { messages: [{ type: "human", content: "Second timestamp" }] },
+      },
+    }
+  );
+
+  const firstItems = await search(repository(first.client, deploymentUrl));
+  const secondItems = await search(repository(second.client, deploymentUrl));
+
+  assert.equal(firstItems[0]?.title, "First timestamp");
+  assert.equal(secondItems[0]?.title, "Second timestamp");
   assert.deepEqual(first.getStateCalls, [threadId]);
   assert.deepEqual(second.getStateCalls, [threadId]);
 });
@@ -545,6 +596,95 @@ test("caches successful no-human state while keeping failures retryable", async 
   assert.deepEqual(retry.getStateCalls, [failureId]);
 });
 
+test("keeps projected human titles authoritative after cache is primed", async () => {
+  const threadId = "cache-projected-title-thread";
+  const deploymentUrl = "http://cache-projected-title.test";
+  const updatedAt = "2026-08-18T12:00:00.000Z";
+  const first = fakeClient(
+    [
+      thread({
+        thread_id: threadId,
+        updated_at: updatedAt,
+        values: { messages: [] },
+      }),
+    ],
+    {
+      [threadId]: {
+        values: {
+          messages: [{ type: "human", content: "Cached state title" }],
+        },
+      },
+    }
+  );
+  const second = fakeClient([
+    thread({
+      thread_id: threadId,
+      updated_at: updatedAt,
+      values: { messages: [{ type: "human", content: "Projected title" }] },
+    }),
+  ]);
+
+  await search(repository(first.client, deploymentUrl));
+  const items = await search(repository(second.client, deploymentUrl));
+
+  assert.equal(items[0]?.title, "Projected title");
+  assert.deepEqual(first.getStateCalls, [threadId]);
+  assert.deepEqual(second.getStateCalls, []);
+});
+
+test("evicts least-recent cached state while retaining a touched hot entry", async () => {
+  const deploymentUrl = "http://cache-lru-capacity-20260818.test";
+  const entries = Array.from({ length: 500 }, (_, index) =>
+    thread({
+      thread_id: `cache-lru-${index}`,
+      updated_at: "2026-08-18T12:00:00.000Z",
+      values: { messages: [] },
+    })
+  );
+
+  for (const entry of entries) {
+    const fake = fakeClient([entry], {
+      [entry.thread_id]: {
+        values: { messages: [{ type: "human", content: entry.thread_id }] },
+      },
+    });
+    await search(repository(fake.client, deploymentUrl));
+  }
+
+  const hot = fakeClient([entries[0]]);
+  await search(repository(hot.client, deploymentUrl));
+  const inserted = thread({
+    thread_id: "cache-lru-inserted",
+    updated_at: "2026-08-18T12:00:00.000Z",
+    values: { messages: [] },
+  });
+  const insert = fakeClient([inserted], {
+    [inserted.thread_id]: {
+      values: { messages: [{ type: "human", content: "Inserted" }] },
+    },
+  });
+  await search(repository(insert.client, deploymentUrl));
+  const leastRecent = fakeClient([entries[1]], {
+    [entries[1].thread_id]: {
+      values: {
+        messages: [{ type: "human", content: "Refetched least recent" }],
+      },
+    },
+  });
+  const hotAgain = fakeClient([entries[0]]);
+
+  const [leastRecentItems] = await search(
+    repository(leastRecent.client, deploymentUrl)
+  );
+  const [hotItems] = await search(repository(hotAgain.client, deploymentUrl));
+
+  assert.deepEqual(hot.getStateCalls, []);
+  assert.deepEqual(leastRecent.getStateCalls, [entries[1].thread_id]);
+  assert.equal(leastRecentItems?.title, "Refetched least recent");
+  assert.deepEqual(hotAgain.getStateCalls, []);
+  assert.equal(hotItems?.title, entries[0].thread_id);
+});
+
 test("limits title hydration concurrency while preserving thread order", async () => {
   const deploymentUrl = "http://cache-concurrency.test";
   const threads = Array.from({ length: 20 }, (_, index) =>
@@ -564,12 +704,16 @@ test("limits title hydration concurrency while preserving thread order", async (
       },
     ])
   );
-  const fake = fakeClient(threads, states, false, { delayMs: 10 });
+  const fake = fakeClient(threads, states, false, {
+    delayForThread: (threadId) =>
+      threadId === "concurrency-thread-0" ? 50 : 1,
+  });
 
   const items = await search(repository(fake.client, deploymentUrl));
 
   assert.equal(fake.getStateCalls.length, 20);
   assert.ok(fake.maxConcurrentGetStates() <= 4);
+  assert.notEqual(fake.getStateCompletionCalls[0], "concurrency-thread-0");
   assert.deepEqual(
     items.map((item) => item.id),
     threads.map((thread) => thread.thread_id)

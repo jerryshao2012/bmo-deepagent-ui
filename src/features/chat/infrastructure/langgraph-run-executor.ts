@@ -116,7 +116,11 @@ export class LangGraphRunExecutor implements RunExecutor {
   }
 
   private rememberCreatedRun(runId: string): boolean {
-    if (this.createdRunIds.has(runId)) return false;
+    if (this.createdRunIds.has(runId)) {
+      this.createdRunIds.delete(runId);
+      this.createdRunIds.set(runId, undefined);
+      return false;
+    }
 
     this.createdRunIds.set(runId, undefined);
     if (

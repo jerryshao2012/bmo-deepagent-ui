@@ -375,6 +375,26 @@ test("bounds remembered created run IDs while retaining terminal duplicate prote
   assert.deepEqual(accepted, ["A", "B"]);
 });
 
+test("refreshes duplicate created-run IDs so LRU evicts the actual oldest ID", () => {
+  const executor = new LangGraphRunExecutor({ submit() {}, stop() {} });
+  const accepted: string[] = [];
+
+  for (let index = 0; index < 128; index += 1) {
+    executor.onRunCreated(`cached-${index}`);
+  }
+  executor.onRunCreated("cached-0");
+  executor.onRunCreated("cached-128");
+
+  executor.submit(undefined, undefined, {
+    onAccepted: () => accepted.push("accepted"),
+  });
+  executor.onRunCreated("cached-0");
+  assert.deepEqual(accepted, []);
+  executor.onRunCreated("cached-1");
+
+  assert.deepEqual(accepted, ["accepted"]);
+});
+
 test("isolates acceptance callback exceptions from SDK lifecycle", () => {
   const executor = new LangGraphRunExecutor({ submit() {}, stop() {} });
 

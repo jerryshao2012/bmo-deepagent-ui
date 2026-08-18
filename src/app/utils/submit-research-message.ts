@@ -28,11 +28,9 @@ export function submitResearchMessage<Result>({
   if (availability === false) {
     stateUpdates.has_documents = false;
     stateUpdates.doc_folder = null;
-  } else if (availability === true) {
+  } else if (availability === true && threadId) {
     stateUpdates.has_documents = true;
-    if (threadId) {
-      stateUpdates.doc_folder = `docs/threads/${threadId}`;
-    }
+    stateUpdates.doc_folder = `docs/threads/${threadId}`;
   } else if (pendingDocument?.threadId === threadId) {
     stateUpdates.doc_folder = pendingDocument.docFolder;
     stateUpdates.has_documents = true;

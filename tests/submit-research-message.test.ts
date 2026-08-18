@@ -81,6 +81,20 @@ test("does not apply another thread's pending document folder", () => {
   assert.deepEqual(calls, [{ no_web: false }]);
 });
 
+test("confirmed true without a thread omits document state", () => {
+  const calls: Array<Record<string, unknown>> = [];
+
+  submitResearchMessage({
+    message: "Research without thread",
+    noWeb: false,
+    availability: true,
+    threadId: null,
+    sendMessage: (_message, values) => calls.push(values),
+  });
+
+  assert.deepEqual(calls, [{ no_web: false }]);
+});
+
 test("confirmed false ignores a same-thread pending document folder", () => {
   const calls: Array<Record<string, unknown>> = [];
 

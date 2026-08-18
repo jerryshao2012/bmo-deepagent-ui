@@ -981,7 +981,7 @@ test("last delete clears failed-upload pending folder before submit", async () =
       {
         threadId: "A",
         message: "Continue",
-        values: { no_web: false, has_documents: false },
+        values: { no_web: false, has_documents: false, doc_folder: null },
       },
     ]);
   } finally {
@@ -1060,7 +1060,7 @@ test("cross-thread last delete cannot leak A pending folder into B or later A su
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     assert.deepEqual(sends.at(-1), {
       message: "Research B",
-      values: { no_web: false, has_documents: false },
+      values: { no_web: false, has_documents: false, doc_folder: null },
     });
 
     const writesBeforeReturn = writes.length;
@@ -1080,7 +1080,7 @@ test("cross-thread last delete cannot leak A pending folder into B or later A su
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     assert.deepEqual(sends.at(-1), {
       message: "Research A",
-      values: { no_web: false, has_documents: false },
+      values: { no_web: false, has_documents: false, doc_folder: null },
     });
   } finally {
     restoreFetch();

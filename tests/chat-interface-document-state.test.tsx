@@ -18,6 +18,7 @@ import { SWRConfig, unstable_serialize, type Cache } from "swr";
 import { ChatInterface } from "../src/app/components/ChatInterface";
 import { ChatContext } from "../src/providers/ChatContext";
 import { ClientContext } from "../src/providers/ClientContext";
+import { LangGraphRunExecutor } from "../src/features/chat/infrastructure/langgraph-run-executor";
 
 class TestResizeObserver {
   observe() {}
@@ -1033,15 +1034,20 @@ test("accepted A submission clears A evidence while preserving B evidence", asyn
   }
 });
 
-test("pre-creation A failure retains A evidence while created B clears only B", async () => {
+test("executor-backed A completion cannot consume B acceptance", async () => {
   configure();
   const writes: StateWrite[] = [];
-  const sent: Array<{
-    message: string;
-    values: Record<string, unknown>;
-    onAccepted?: () => void;
-  }> = [];
+  const sent: Array<[string, Record<string, unknown>]> = [];
   const uploadFolders: string[] = [];
+  const firstSubmission = deferred<void>();
+  const secondSubmission = deferred<void>();
+  const streamSubmissions = [firstSubmission, secondSubmission];
+  const executor = new LangGraphRunExecutor({
+    submit() {
+      return streamSubmissions.shift()?.promise;
+    },
+    stop() {},
+  });
   let aLists = 0;
   let bLists = 0;
   const restoreFetch = installFetch({
@@ -1064,10 +1070,8 @@ test("pre-creation A failure retains A evidence while created B clears only B", 
     const view = renderChat({
       client: makeClient(writes),
       chat: baseChat((message, values, options) => {
-        sent.push({ message, values, onAccepted: options?.onAccepted });
-        if (message === "Research B created") {
-          options?.onAccepted?.();
-        }
+        sent.push([message, values]);
+        executor.submit(undefined, undefined, options);
       }),
       canSwitch: true,
     });
@@ -1084,11 +1088,16 @@ test("pre-creation A failure retains A evidence while created B clears only B", 
     await waitFor(() => assert.equal(aLists, 2));
     await waitForComposer();
 
-    submitMessage("Research A pre-creation failure");
+    submitMessage("Research A no created run");
+    await act(async () => {
+      firstSubmission.resolve();
+      await firstSubmission.promise;
+    });
     fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
     await waitFor(() => assert.equal(bLists, 2));
     await waitForComposer();
     submitMessage("Research B created");
+    executor.onRunCreated("run-b");
     fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
     await waitFor(() => assert.equal(aLists, 3));
     await waitForComposer();
@@ -1096,26 +1105,23 @@ test("pre-creation A failure retains A evidence while created B clears only B", 
     fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
     await waitFor(() => assert.equal(bLists, 3));
     await waitForComposer();
-    submitMessage("Research B after creation");
+    submitMessage("Research B after accepted run");
 
-    assert.deepEqual(
-      sent.map(({ message, values }) => [message, values]),
+    assert.deepEqual(sent, [
       [
-        [
-          "Research A pre-creation failure",
-          { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
-        ],
-        [
-          "Research B created",
-          { no_web: false, has_documents: true, doc_folder: "docs/threads/B" },
-        ],
-        [
-          "Research A retry",
-          { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
-        ],
-        ["Research B after creation", { no_web: false }],
-      ]
-    );
+        "Research A no created run",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
+      ],
+      [
+        "Research B created",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/B" },
+      ],
+      [
+        "Research A retry",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
+      ],
+      ["Research B after accepted run", { no_web: false }],
+    ]);
     assert.deepEqual(writes, []);
   } finally {
     restoreFetch();

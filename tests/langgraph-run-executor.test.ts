@@ -3,6 +3,16 @@ import test from "node:test";
 
 import { LangGraphRunExecutor } from "../src/features/chat/infrastructure/langgraph-run-executor";
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((settle, fail) => {
+    resolve = settle;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
 test("adds subgraph streaming to every submission without changing caller options", () => {
   const submissions: Array<{ values: unknown; options: unknown }> = [];
   const stream = {
@@ -27,63 +37,77 @@ test("adds subgraph streaming to every submission without changing caller option
   );
   executor.submit(undefined);
 
-  assert.deepEqual(
-    submissions.map(({ values, options }) => {
-      const { onError: _onError, ...callerOptions } = options as Record<
-        string,
-        unknown
-      >;
-      return { values, options: callerOptions };
-    }),
-    [
-      {
-        values: { messages: [] },
-        options: {
-          config: { recursion_limit: 100 },
-          checkpoint,
-          command: { resume: "approved" },
-          interruptAfter: ["tools"],
-          optimisticValues,
-          streamSubgraphs: true,
-        },
+  assert.deepEqual(submissions, [
+    {
+      values: { messages: [] },
+      options: {
+        config: { recursion_limit: 100 },
+        checkpoint,
+        command: { resume: "approved" },
+        interruptAfter: ["tools"],
+        optimisticValues,
+        streamSubgraphs: true,
       },
-      {
-        values: undefined,
-        options: { streamSubgraphs: true },
-      },
-    ]
-  );
-  assert.equal(
-    submissions.every(
-      ({ options }) =>
-        typeof (options as { onError?: unknown }).onError === "function"
-    ),
-    true
-  );
+    },
+    {
+      values: undefined,
+      options: { streamSubgraphs: true },
+    },
+  ]);
 });
 
-test("uses per-submit errors to retire a rejected A before B is created", () => {
-  const submissions: Array<{ onError?: (error: unknown) => void }> = [];
+test("resolved submit without onCreated retires A before B is created", async () => {
+  const a = deferred<void>();
+  const b = deferred<void>();
+  const submissions = [a, b];
   const executor = new LangGraphRunExecutor({
-    submit(_values, options) {
-      submissions.push(options as { onError?: (error: unknown) => void });
+    submit() {
+      return submissions.shift()?.promise;
     },
     stop() {},
   });
   const accepted: string[] = [];
 
-  assert.equal(
-    executor.submit(undefined, undefined, {
-      onAccepted: () => accepted.push("A"),
-    }),
-    undefined
-  );
+  executor.submit(undefined, undefined, {
+    onAccepted: () => accepted.push("A"),
+  });
+  a.resolve();
+  await a.promise;
   executor.submit(undefined, undefined, {
     onAccepted: () => accepted.push("B"),
   });
-
-  submissions[0].onError?.(new Error("run creation rejected"));
   executor.onRunCreated("run-b");
+
+  b.resolve();
+  await b.promise;
+
+  assert.deepEqual(accepted, ["B"]);
+});
+
+test("rejected submit without onCreated retires A before B is created", async () => {
+  const a = deferred<void>();
+  const b = deferred<void>();
+  const submissions = [a, b];
+  const executor = new LangGraphRunExecutor({
+    submit() {
+      return submissions.shift()?.promise;
+    },
+    stop() {},
+  });
+  const accepted: string[] = [];
+
+  executor.submit(undefined, undefined, {
+    onAccepted: () => accepted.push("A"),
+  });
+  a.reject(new Error("run creation rejected"));
+  await a.promise.catch(() => {});
+  executor.submit(undefined, undefined, {
+    onAccepted: () => accepted.push("B"),
+  });
+  executor.onRunCreated("run-b");
+
+  b.resolve();
+  await b.promise;
 
   assert.deepEqual(accepted, ["B"]);
 });

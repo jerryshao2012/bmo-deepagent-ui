@@ -39,25 +39,16 @@ export class LangGraphRunExecutor implements RunExecutor {
       onAccepted: lifecycle?.onAccepted,
     };
     this.pendingSubmissions.push(pendingSubmission);
-    const callerOnError =
-      typeof streamOptions.onError === "function"
-        ? (streamOptions.onError as (error: unknown, run: unknown) => void)
-        : undefined;
     streamOptions.streamSubgraphs = true;
-    streamOptions.onError = (error: unknown, run: unknown) => {
-      try {
-        callerOnError?.(error, run);
-      } finally {
-        this.retireSubmission(pendingSubmission);
-      }
-    };
 
     try {
-      void Promise.resolve(this.stream.submit(values, streamOptions)).catch(
-        () => {
+      // The SDK invokes onCreated before its submit Promise settles. Legacy
+      // void handles must likewise create synchronously before returning.
+      void Promise.resolve(this.stream.submit(values, streamOptions))
+        .finally(() => {
           this.retireSubmission(pendingSubmission);
-        }
-      );
+        })
+        .catch(() => {});
     } catch (error) {
       this.retireSubmission(pendingSubmission);
       throw error;

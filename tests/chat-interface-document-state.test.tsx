@@ -854,6 +854,95 @@ test("deferred A delete clears A evidence after B navigation without clearing B"
   }
 });
 
+test("concurrent deferred A deletes compose after B navigation", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const sent: Array<[string, Record<string, unknown>]> = [];
+  const uploadFolders: string[] = [];
+  const deleteRequests: string[] = [];
+  const deleteA = deferred<Response>();
+  const deleteB = deferred<Response>();
+  const failedARefresh = deferred<Response>();
+  const listCalls = { A: 0, B: 0 };
+  const originalConfirm = globalThis.confirm;
+  globalThis.confirm = () => true;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    onList: async (threadId) => {
+      listCalls[threadId as "A" | "B"] += 1;
+      if (threadId === "A") {
+        return listCalls.A === 1
+          ? documentsResponse([
+              { name: "a.pdf", size: 3, type: "file" },
+              { name: "b.pdf", size: 3, type: "file" },
+            ])
+          : failedARefresh.promise;
+      }
+      return listCalls.B === 1
+        ? documentsResponse([])
+        : new Response(null, { status: 500 });
+    },
+    onDelete: async (filename) => {
+      deleteRequests.push(filename);
+      return filename === "a.pdf" ? deleteA.promise : deleteB.promise;
+    },
+  });
+
+  try {
+    const view = renderChat({
+      client: makeClient(writes),
+      chat: baseChat((message, values) => sent.push([message, values])),
+      canSwitch: true,
+    });
+    await waitForComposer();
+    await screen.findByRole("button", { name: /^Docs/ });
+    fireEvent.click(screen.getByRole("button", { name: /^Docs/ }));
+    const deleteButtons = await screen.findAllByTitle("Delete document");
+    fireEvent.click(deleteButtons[0]);
+    fireEvent.click(deleteButtons[1]);
+    await waitFor(() => assert.deepEqual(deleteRequests, ["a.pdf", "b.pdf"]));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForActiveThread("B");
+    await waitFor(() => assert.equal(listCalls.B, 1));
+    await waitForComposer();
+    await dropFile(view.container, "b-thread.pdf");
+    await waitFor(() => assert.deepEqual(uploadFolders, ["threads/B"]));
+    await act(async () => {
+      deleteB.resolve(new Response(null, { status: 200 }));
+      await deleteB.promise;
+      deleteA.resolve(new Response(null, { status: 200 }));
+      await deleteA.promise;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitForActiveThread("A");
+    await waitFor(() => assert.equal(listCalls.A, 2));
+    await act(async () => {
+      failedARefresh.resolve(new Response(null, { status: 500 }));
+      await failedARefresh.promise;
+    });
+    submitMessage("Research A after concurrent deletes");
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForActiveThread("B");
+    await waitFor(() => assert.equal(listCalls.B, 2));
+    submitMessage("Research B after A deletes");
+
+    assert.deepEqual(sent, [
+      ["Research A after concurrent deletes", { no_web: false }],
+      [
+        "Research B after A deletes",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/B" },
+      ],
+    ]);
+    assert.deepEqual(writes, []);
+  } finally {
+    globalThis.confirm = originalConfirm;
+    restoreFetch();
+  }
+});
+
 test("accepted A submission clears A evidence while preserving B evidence", async () => {
   configure();
   const writes: StateWrite[] = [];

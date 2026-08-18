@@ -327,6 +327,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   }, [hasCurrentWikiDocuments, metaOpen]);
   // Retains unsent positive document evidence for each owning thread.
   const pendingDocFoldersRef = useRef(new Map<string, string>());
+  const documentNamesByThreadRef = useRef(new Map<string, Set<string>>());
 
   useEffect(() => {
     if (
@@ -345,6 +346,21 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       pendingDocFoldersRef.current.delete(availabilityEvidence.threadId);
     }
   }, [availabilityEvidence, currentThreadId]);
+
+  useEffect(() => {
+    if (
+      !currentThreadId ||
+      documentAvailability === null ||
+      availabilityEvidence?.threadId !== currentThreadId
+    ) {
+      return;
+    }
+
+    documentNamesByThreadRef.current.set(
+      currentThreadId,
+      new Set(documents.map((document) => document.name))
+    );
+  }, [availabilityEvidence, currentThreadId, documentAvailability, documents]);
 
   // Open an SSE stream for real-time ingest progress.
   const startIngestProgressStream = useCallback((threadId: string) => {
@@ -655,6 +671,12 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
           documents: uploadedDocuments,
         });
         pendingDocFoldersRef.current.set(activeThreadId, docFolder);
+        const documentNames =
+          documentNamesByThreadRef.current.get(activeThreadId) ?? new Set();
+        for (const document of uploadedDocuments) {
+          documentNames.add(document.name);
+        }
+        documentNamesByThreadRef.current.set(activeThreadId, documentNames);
 
         // Note: wiki ingestion is auto-triggered by the server (webapp.py) on upload.
         // No need to explicitly call /wiki/ingest here — the server registers
@@ -701,9 +723,12 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     if (!currentThreadId) return;
 
     const targetThreadId = currentThreadId;
-    const hasRemainingDocuments = documents.some(
-      (document) => document.name !== filename
-    );
+    if (!documentNamesByThreadRef.current.has(targetThreadId)) {
+      documentNamesByThreadRef.current.set(
+        targetThreadId,
+        new Set(documents.map((document) => document.name))
+      );
+    }
 
     if (!confirm(`Are you sure you want to delete "${filename}"?`)) return;
 
@@ -728,11 +753,15 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         throw new Error(`Failed to delete document: ${response.status}`);
       }
 
+      const documentNames =
+        documentNamesByThreadRef.current.get(targetThreadId);
+      documentNames?.delete(filename);
+      const hasOwnerScopedDocuments = (documentNames?.size ?? 0) > 0;
       const { hasDocuments } = await recordDeleteSuccess(
         filename,
         targetThreadId
       );
-      if ((hasDocuments ?? hasRemainingDocuments) === false) {
+      if ((hasDocuments ?? hasOwnerScopedDocuments) === false) {
         pendingDocFoldersRef.current.delete(targetThreadId);
       }
     } catch (error) {

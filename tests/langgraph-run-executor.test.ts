@@ -152,12 +152,14 @@ test("global no-run lifecycle callbacks cannot consume queued B", async () => {
   assert.deepEqual(accepted, ["B"]);
 });
 
-test("keeps queued B bound to its committed stream after a later C stream commits", async () => {
+test("shared manager keeps dormant B queued until B commits again", async () => {
   const a = deferred<void>();
   const b = deferred<void>();
   const aSubmissions: unknown[] = [];
-  const bSubmissions: Array<{ values: unknown; options: unknown }> = [];
+  const staleBSubmissions: unknown[] = [];
+  const latestBSubmissions: Array<{ values: unknown; options: unknown }> = [];
   const cSubmissions: unknown[] = [];
+  let cStops = 0;
   const aStream = {
     submit(values?: unknown) {
       aSubmissions.push(values);
@@ -165,9 +167,16 @@ test("keeps queued B bound to its committed stream after a later C stream commit
     },
     stop() {},
   };
-  const bStream = {
+  const staleBStream = {
+    submit(values?: unknown) {
+      staleBSubmissions.push(values);
+      return b.promise;
+    },
+    stop() {},
+  };
+  const latestBStream = {
     submit(values?: unknown, options?: unknown) {
-      bSubmissions.push({ values, options });
+      latestBSubmissions.push({ values, options });
       return b.promise;
     },
     stop() {},
@@ -176,13 +185,16 @@ test("keeps queued B bound to its committed stream after a later C stream commit
     submit(values?: unknown) {
       cSubmissions.push(values);
     },
-    stop() {},
+    stop() {
+      cStops += 1;
+    },
   };
-  const executor = new LangGraphRunExecutor(aStream);
+  const executor = new LangGraphRunExecutor();
   const accepted: string[] = [];
 
+  executor.setStream(aStream, "A");
   executor.submit({ messages: ["A"] });
-  executor.setStream(bStream);
+  executor.setStream(staleBStream, "B");
   executor.submit(
     {
       messages: ["B"],
@@ -194,13 +206,20 @@ test("keeps queued B bound to its committed stream after a later C stream commit
       onAccepted: () => accepted.push("B"),
     }
   );
-  executor.setStream(cStream);
+  executor.setStream(cStream, "C");
+  executor.stop();
+  assert.equal(cStops, 0);
   a.resolve();
   await a.promise;
   await Promise.resolve();
 
   assert.deepEqual(aSubmissions, [{ messages: ["A"] }]);
-  assert.deepEqual(bSubmissions, [
+  assert.deepEqual(staleBSubmissions, []);
+  assert.deepEqual(latestBSubmissions, []);
+  assert.deepEqual(cSubmissions, []);
+
+  executor.setStream(latestBStream, "B");
+  assert.deepEqual(latestBSubmissions, [
     {
       values: {
         messages: ["B"],
@@ -252,7 +271,7 @@ test("accepted A terminal callbacks cannot retire queued B", async () => {
   assert.deepEqual(accepted, ["A", "B"]);
 });
 
-test("stop targets the in-flight stream while queued work retains its own stream", async () => {
+test("stop is a no-op when current controls own another thread", async () => {
   const a = deferred<void>();
   const b = deferred<void>();
   let aStops = 0;
@@ -277,13 +296,14 @@ test("stop targets the in-flight stream while queued work retains its own stream
       bStops += 1;
     },
   };
-  const executor = new LangGraphRunExecutor(aStream);
+  const executor = new LangGraphRunExecutor();
 
+  executor.setStream(aStream, "A");
   executor.submit();
-  executor.setStream(bStream);
+  executor.setStream(bStream, "B");
   executor.submit();
   executor.stop();
-  assert.equal(aStops, 1);
+  assert.equal(aStops, 0);
   assert.equal(bStops, 0);
   assert.equal(aSubmits, 1);
   assert.equal(bSubmits, 0);
@@ -296,7 +316,7 @@ test("stop targets the in-flight stream while queued work retains its own stream
   await b.promise;
 });
 
-test("keeps queued work on its captured handle across a same-thread rerender", async () => {
+test("starts queued work through the latest same-thread handle", async () => {
   const a = deferred<void>();
   const b = deferred<void>();
   let firstBSubmits = 0;
@@ -322,17 +342,15 @@ test("keeps queued work on its captured handle across a same-thread rerender", a
   };
 
   executor.submit({ messages: ["A"] });
-  executor.setStream(firstBStream);
+  executor.setStream(firstBStream, "B");
   executor.submit({ messages: ["B"] });
-  executor.setStream(refreshedBStream);
+  executor.setStream(refreshedBStream, "B");
   a.resolve();
   await a.promise;
   await Promise.resolve();
 
-  assert.equal(firstBSubmits, 1);
-  assert.equal(refreshedBSubmits, 0);
-  b.resolve();
-  await b.promise;
+  assert.equal(firstBSubmits, 0);
+  assert.equal(refreshedBSubmits, 1);
 });
 
 test("bounds remembered created run IDs while retaining terminal duplicate protection", async () => {

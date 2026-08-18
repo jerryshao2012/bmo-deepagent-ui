@@ -9,8 +9,15 @@ interface SubmissionLifecycle {
   onAccepted?: () => void;
 }
 
+type StreamOwnerKey = string | null;
+
+interface ActiveStream {
+  ownerKey: StreamOwnerKey;
+  commands: LangGraphStreamCommands;
+}
+
 interface PendingSubmission {
-  stream: LangGraphStreamCommands;
+  ownerKey: StreamOwnerKey;
   values: unknown;
   options: Record<string, unknown>;
   onAccepted?: () => void;
@@ -19,17 +26,22 @@ interface PendingSubmission {
 
 export class LangGraphRunExecutor implements RunExecutor {
   private static readonly MAX_REMEMBERED_CREATED_RUN_IDS = 128;
-  private stream: LangGraphStreamCommands;
+  private static readonly MAX_QUEUED_SUBMISSIONS = 128;
+  private currentStream: ActiveStream | null;
   private readonly queuedSubmissions: PendingSubmission[] = [];
   private inFlightSubmission: PendingSubmission | null = null;
   private readonly createdRunIds = new Map<string, undefined>();
 
-  constructor(stream: LangGraphStreamCommands) {
-    this.stream = stream;
+  constructor(
+    stream?: LangGraphStreamCommands,
+    ownerKey: StreamOwnerKey = "default"
+  ) {
+    this.currentStream = stream ? { ownerKey, commands: stream } : null;
   }
 
-  setStream(stream: LangGraphStreamCommands): void {
-    this.stream = stream;
+  setStream(stream: LangGraphStreamCommands, ownerKey: StreamOwnerKey): void {
+    this.currentStream = { ownerKey, commands: stream };
+    this.startNextSubmission();
   }
 
   submit(
@@ -41,10 +53,21 @@ export class LangGraphRunExecutor implements RunExecutor {
       options && typeof options === "object"
         ? { ...(options as Record<string, unknown>) }
         : {};
+    const currentStream = this.currentStream;
+    if (!currentStream) {
+      throw new Error("Cannot submit before a stream owner is committed");
+    }
+    if (
+      this.queuedSubmissions.length >=
+      LangGraphRunExecutor.MAX_QUEUED_SUBMISSIONS
+    ) {
+      throw new Error("Too many queued stream submissions");
+    }
+
     const pendingSubmission: PendingSubmission = {
-      // Capture committed stream when caller submits. A later thread render
-      // must not redirect this queued request to another thread's stream.
-      stream: this.stream,
+      // Preserve thread ownership but resolve its stream handle only when
+      // that owner is committed again. Render-specific handles are stale.
+      ownerKey: currentStream.ownerKey,
       values,
       options: streamOptions,
       onAccepted: lifecycle?.onAccepted,
@@ -80,13 +103,29 @@ export class LangGraphRunExecutor implements RunExecutor {
   }
 
   stop(): void {
-    (this.inFlightSubmission?.stream ?? this.stream).stop();
+    if (
+      this.inFlightSubmission &&
+      this.currentStream &&
+      this.inFlightSubmission.ownerKey === this.currentStream.ownerKey
+    ) {
+      this.currentStream.commands.stop();
+    }
   }
 
   private startNextSubmission(): void {
     if (this.inFlightSubmission) return;
 
-    const pendingSubmission = this.queuedSubmissions.shift();
+    const currentStream = this.currentStream;
+    if (!currentStream) return;
+
+    // FIFO is preserved per owner. Work for inactive owners stays dormant
+    // instead of invoking an old handle from a different committed thread.
+    const pendingIndex = this.queuedSubmissions.findIndex(
+      (pendingSubmission) =>
+        pendingSubmission.ownerKey === currentStream.ownerKey
+    );
+    if (pendingIndex === -1) return;
+    const pendingSubmission = this.queuedSubmissions.splice(pendingIndex, 1)[0];
     if (!pendingSubmission) return;
 
     this.inFlightSubmission = pendingSubmission;
@@ -94,7 +133,7 @@ export class LangGraphRunExecutor implements RunExecutor {
       // The SDK invokes onCreated before its submit Promise settles. Legacy
       // void handles must likewise create synchronously before returning.
       void Promise.resolve(
-        pendingSubmission.stream.submit(
+        currentStream.commands.submit(
           pendingSubmission.values,
           pendingSubmission.options
         )

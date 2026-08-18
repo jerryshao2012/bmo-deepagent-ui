@@ -210,12 +210,12 @@ export function useChat({
     filterSubagentMessages: boolean;
   }) as unknown as UseStream<StateType>;
   if (runExecutorRef.current === null) {
-    runExecutorRef.current = new LangGraphRunExecutor(stream);
+    runExecutorRef.current = new LangGraphRunExecutor();
   }
   const runExecutor = runExecutorRef.current;
   useLayoutEffect(() => {
-    runExecutor.setStream(stream);
-  }, [runExecutor, stream]);
+    runExecutor.setStream(stream, threadId);
+  }, [runExecutor, stream, threadId]);
   const streamSnapshotRef = useRef({
     isLoading: stream.isLoading,
     messageCount: stream.messages.length,

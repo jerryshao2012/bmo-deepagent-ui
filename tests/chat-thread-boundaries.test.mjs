@@ -32,7 +32,7 @@ test("chat hook refreshes its stream executor only after React commits", async (
   assert.match(source, /useLayoutEffect/);
   assert.match(
     source,
-    /useLayoutEffect\(\(\) => \{\s*runExecutor\.setStream\(stream\);\s*\}, \[runExecutor, stream\]\);/
+    /useLayoutEffect\(\(\) => \{\s*runExecutor\.setStream\(stream, threadId\);\s*\}, \[runExecutor, stream, threadId\]\);/
   );
   assert.doesNotMatch(
     source,

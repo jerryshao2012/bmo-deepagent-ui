@@ -13,15 +13,14 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-test("adds subgraph streaming to every submission without changing caller options", () => {
+test("adds subgraph streaming to every serialized submission without changing caller options", async () => {
   const submissions: Array<{ values: unknown; options: unknown }> = [];
-  const stream = {
+  const executor = new LangGraphRunExecutor({
     submit(values?: unknown, options?: unknown) {
       submissions.push({ values, options });
     },
     stop() {},
-  };
-  const executor = new LangGraphRunExecutor(stream);
+  });
   const checkpoint = { checkpoint_id: "checkpoint-1" };
   const optimisticValues = { messages: [{ type: "human", content: "hello" }] };
 
@@ -36,6 +35,7 @@ test("adds subgraph streaming to every submission without changing caller option
     }
   );
   executor.submit(undefined);
+  await Promise.resolve();
 
   assert.deepEqual(submissions, [
     {
@@ -56,13 +56,15 @@ test("adds subgraph streaming to every submission without changing caller option
   ]);
 });
 
-test("resolved submit without onCreated retires A before B is created", async () => {
+test("serializes resolved A before starting and accepting B", async () => {
   const a = deferred<void>();
   const b = deferred<void>();
-  const submissions = [a, b];
+  const streamResults = [a, b];
+  const started: string[] = [];
   const executor = new LangGraphRunExecutor({
     submit() {
-      return submissions.shift()?.promise;
+      started.push(started.length === 0 ? "A" : "B");
+      return streamResults.shift()?.promise;
     },
     stop() {},
   });
@@ -71,26 +73,31 @@ test("resolved submit without onCreated retires A before B is created", async ()
   executor.submit(undefined, undefined, {
     onAccepted: () => accepted.push("A"),
   });
+  executor.submit(undefined, undefined, {
+    onAccepted: () => accepted.push("B"),
+  });
+  assert.deepEqual(started, ["A"]);
+
   a.resolve();
   await a.promise;
-  executor.submit(undefined, undefined, {
-    onAccepted: () => accepted.push("B"),
-  });
-  executor.onRunCreated("run-b");
+  await Promise.resolve();
+  assert.deepEqual(started, ["A", "B"]);
 
+  executor.onRunCreated("run-b");
   b.resolve();
   await b.promise;
-
   assert.deepEqual(accepted, ["B"]);
 });
 
-test("rejected submit without onCreated retires A before B is created", async () => {
+test("serializes rejected A before starting and accepting B", async () => {
   const a = deferred<void>();
   const b = deferred<void>();
-  const submissions = [a, b];
+  const streamResults = [a, b];
+  const started: string[] = [];
   const executor = new LangGraphRunExecutor({
     submit() {
-      return submissions.shift()?.promise;
+      started.push(started.length === 0 ? "A" : "B");
+      return streamResults.shift()?.promise;
     },
     stop() {},
   });
@@ -99,21 +106,32 @@ test("rejected submit without onCreated retires A before B is created", async ()
   executor.submit(undefined, undefined, {
     onAccepted: () => accepted.push("A"),
   });
-  a.reject(new Error("run creation rejected"));
-  await a.promise.catch(() => {});
   executor.submit(undefined, undefined, {
     onAccepted: () => accepted.push("B"),
   });
-  executor.onRunCreated("run-b");
+  assert.deepEqual(started, ["A"]);
 
+  a.reject(new Error("run creation rejected"));
+  await a.promise.catch(() => {});
+  await Promise.resolve();
+  assert.deepEqual(started, ["A", "B"]);
+
+  executor.onRunCreated("run-b");
   b.resolve();
   await b.promise;
-
   assert.deepEqual(accepted, ["B"]);
 });
 
-test("uses a no-run terminal signal to retire A before B is created", () => {
-  const executor = new LangGraphRunExecutor({ submit() {}, stop() {} });
+test("global no-run lifecycle callbacks cannot consume queued B", async () => {
+  const a = deferred<void>();
+  const b = deferred<void>();
+  const streamResults = [a, b];
+  const executor = new LangGraphRunExecutor({
+    submit() {
+      return streamResults.shift()?.promise;
+    },
+    stop() {},
+  });
   const accepted: string[] = [];
 
   executor.submit(undefined, undefined, {
@@ -123,39 +141,33 @@ test("uses a no-run terminal signal to retire A before B is created", () => {
     onAccepted: () => accepted.push("B"),
   });
   executor.onRunError();
-  executor.onRunCreated("run-b");
-
-  assert.deepEqual(accepted, ["B"]);
-});
-
-test("uses a no-run finish to retire a submission that never created a run", () => {
-  const executor = new LangGraphRunExecutor({ submit() {}, stop() {} });
-  const accepted: string[] = [];
-
-  executor.submit(undefined, undefined, {
-    onAccepted: () => accepted.push("A"),
-  });
-  executor.submit(undefined, undefined, {
-    onAccepted: () => accepted.push("B"),
-  });
   executor.onRunFinished();
+  a.resolve();
+  await a.promise;
+  await Promise.resolve();
   executor.onRunCreated("run-b");
+  b.resolve();
+  await b.promise;
 
   assert.deepEqual(accepted, ["B"]);
 });
 
-test("keeps queued acceptance across a fresh stream handle", () => {
+test("uses refreshed stream handle when starting queued B", async () => {
+  const a = deferred<void>();
+  const b = deferred<void>();
   const firstHandleSubmissions: unknown[] = [];
   const secondHandleSubmissions: unknown[] = [];
   const firstHandle = {
     submit(_values?: unknown, options?: unknown) {
       firstHandleSubmissions.push(options);
+      return a.promise;
     },
     stop() {},
   };
   const secondHandle = {
     submit(_values?: unknown, options?: unknown) {
       secondHandleSubmissions.push(options);
+      return b.promise;
     },
     stop() {},
   };
@@ -165,20 +177,32 @@ test("keeps queued acceptance across a fresh stream handle", () => {
   executor.submit(undefined, undefined, {
     onAccepted: () => accepted.push("A"),
   });
-  executor.setStream(secondHandle);
-  executor.onRunCreated("run-a");
   executor.submit(undefined, undefined, {
     onAccepted: () => accepted.push("B"),
   });
+  executor.setStream(secondHandle);
+  a.resolve();
+  await a.promise;
+  await Promise.resolve();
   executor.onRunCreated("run-b");
+  b.resolve();
+  await b.promise;
 
   assert.equal(firstHandleSubmissions.length, 1);
   assert.equal(secondHandleSubmissions.length, 1);
-  assert.deepEqual(accepted, ["A", "B"]);
+  assert.deepEqual(accepted, ["B"]);
 });
 
-test("accepted A terminal callbacks cannot retire queued B", () => {
-  const executor = new LangGraphRunExecutor({ submit() {}, stop() {} });
+test("accepted A terminal callbacks cannot retire queued B", async () => {
+  const a = deferred<void>();
+  const b = deferred<void>();
+  const streamResults = [a, b];
+  const executor = new LangGraphRunExecutor({
+    submit() {
+      return streamResults.shift()?.promise;
+    },
+    stop() {},
+  });
   const accepted: string[] = [];
 
   executor.submit(undefined, undefined, {
@@ -190,9 +214,44 @@ test("accepted A terminal callbacks cannot retire queued B", () => {
   executor.onRunCreated("run-a");
   executor.onRunFinished("run-a");
   executor.onRunError("run-a");
+  a.resolve();
+  await a.promise;
+  await Promise.resolve();
   executor.onRunCreated("run-b");
+  b.resolve();
+  await b.promise;
 
   assert.deepEqual(accepted, ["A", "B"]);
+});
+
+test("stop delegates to current stream while preserving queued work", async () => {
+  const a = deferred<void>();
+  const b = deferred<void>();
+  const streamResults = [a, b];
+  let stopCalls = 0;
+  let submitCalls = 0;
+  const executor = new LangGraphRunExecutor({
+    submit() {
+      submitCalls += 1;
+      return streamResults.shift()?.promise;
+    },
+    stop() {
+      stopCalls += 1;
+    },
+  });
+
+  executor.submit();
+  executor.submit();
+  executor.stop();
+  assert.equal(stopCalls, 1);
+  assert.equal(submitCalls, 1);
+
+  a.resolve();
+  await a.promise;
+  await Promise.resolve();
+  assert.equal(submitCalls, 2);
+  b.resolve();
+  await b.promise;
 });
 
 test("isolates acceptance callback exceptions from SDK lifecycle", () => {

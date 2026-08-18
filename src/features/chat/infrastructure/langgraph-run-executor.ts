@@ -10,12 +10,16 @@ interface SubmissionLifecycle {
 }
 
 interface PendingSubmission {
+  values: unknown;
+  options: Record<string, unknown>;
   onAccepted?: () => void;
+  accepted: boolean;
 }
 
 export class LangGraphRunExecutor implements RunExecutor {
   private stream: LangGraphStreamCommands;
-  private readonly pendingSubmissions: PendingSubmission[] = [];
+  private readonly queuedSubmissions: PendingSubmission[] = [];
+  private inFlightSubmission: PendingSubmission | null = null;
   private readonly createdRunIds = new Set<string>();
 
   constructor(stream: LangGraphStreamCommands) {
@@ -36,32 +40,24 @@ export class LangGraphRunExecutor implements RunExecutor {
         ? { ...(options as Record<string, unknown>) }
         : {};
     const pendingSubmission: PendingSubmission = {
+      values,
+      options: streamOptions,
       onAccepted: lifecycle?.onAccepted,
+      accepted: false,
     };
-    this.pendingSubmissions.push(pendingSubmission);
     streamOptions.streamSubgraphs = true;
-
-    try {
-      // The SDK invokes onCreated before its submit Promise settles. Legacy
-      // void handles must likewise create synchronously before returning.
-      void Promise.resolve(this.stream.submit(values, streamOptions))
-        .finally(() => {
-          this.retireSubmission(pendingSubmission);
-        })
-        .catch(() => {});
-    } catch (error) {
-      this.retireSubmission(pendingSubmission);
-      throw error;
-    }
+    this.queuedSubmissions.push(pendingSubmission);
+    this.startNextSubmission();
   }
 
   onRunCreated(runId?: string): void {
     if (runId && this.createdRunIds.has(runId)) return;
     if (runId) this.createdRunIds.add(runId);
 
-    const pendingSubmission = this.pendingSubmissions.shift();
-    if (!pendingSubmission) return;
+    const pendingSubmission = this.inFlightSubmission;
+    if (!pendingSubmission || pendingSubmission.accepted) return;
 
+    pendingSubmission.accepted = true;
     try {
       pendingSubmission.onAccepted?.();
     } catch (error) {
@@ -70,27 +66,45 @@ export class LangGraphRunExecutor implements RunExecutor {
   }
 
   onRunError(runId?: string): void {
-    if (runId) return;
-    this.retireFirstUncreatedSubmission();
+    // Completion owns queue advancement so terminal callbacks cannot consume
+    // a later request that has not reached the SDK yet.
   }
 
   onRunFinished(runId?: string): void {
-    if (runId) return;
-    this.retireFirstUncreatedSubmission();
+    // Completion owns queue advancement so terminal callbacks cannot consume
+    // a later request that has not reached the SDK yet.
   }
 
   stop(): void {
     this.stream.stop();
   }
 
-  private retireSubmission(pendingSubmission: PendingSubmission): void {
-    const pendingIndex = this.pendingSubmissions.indexOf(pendingSubmission);
-    if (pendingIndex !== -1) {
-      this.pendingSubmissions.splice(pendingIndex, 1);
+  private startNextSubmission(): void {
+    if (this.inFlightSubmission) return;
+
+    const pendingSubmission = this.queuedSubmissions.shift();
+    if (!pendingSubmission) return;
+
+    this.inFlightSubmission = pendingSubmission;
+    try {
+      // The SDK invokes onCreated before its submit Promise settles. Legacy
+      // void handles must likewise create synchronously before returning.
+      void Promise.resolve(
+        this.stream.submit(pendingSubmission.values, pendingSubmission.options)
+      )
+        .finally(() => {
+          this.completeSubmission(pendingSubmission);
+        })
+        .catch(() => {});
+    } catch (error) {
+      this.completeSubmission(pendingSubmission);
+      throw error;
     }
   }
 
-  private retireFirstUncreatedSubmission(): void {
-    this.pendingSubmissions.shift();
+  private completeSubmission(pendingSubmission: PendingSubmission): void {
+    if (this.inFlightSubmission !== pendingSubmission) return;
+    this.inFlightSubmission = null;
+    this.startNextSubmission();
   }
 }

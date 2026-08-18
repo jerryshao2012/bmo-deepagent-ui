@@ -1042,12 +1042,17 @@ test("executor-backed A completion cannot consume B acceptance", async () => {
   const firstSubmission = deferred<void>();
   const secondSubmission = deferred<void>();
   const streamSubmissions = [firstSubmission, secondSubmission];
+  let streamSubmitCount = 0;
+  const executorRef: { current?: LangGraphRunExecutor } = {};
   const executor = new LangGraphRunExecutor({
     submit() {
+      streamSubmitCount += 1;
+      if (streamSubmitCount === 2) executorRef.current?.onRunCreated("run-b");
       return streamSubmissions.shift()?.promise;
     },
     stop() {},
   });
+  executorRef.current = executor;
   let aLists = 0;
   let bLists = 0;
   const restoreFetch = installFetch({
@@ -1089,15 +1094,14 @@ test("executor-backed A completion cannot consume B acceptance", async () => {
     await waitForComposer();
 
     submitMessage("Research A no created run");
-    await act(async () => {
-      firstSubmission.resolve();
-      await firstSubmission.promise;
-    });
     fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
     await waitFor(() => assert.equal(bLists, 2));
     await waitForComposer();
     submitMessage("Research B created");
-    executor.onRunCreated("run-b");
+    await act(async () => {
+      firstSubmission.resolve();
+      await firstSubmission.promise;
+    });
     fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
     await waitFor(() => assert.equal(aLists, 3));
     await waitForComposer();

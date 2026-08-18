@@ -129,7 +129,7 @@ function Harness({
   canSwitch?: boolean;
   canToggleLoading?: boolean;
 }) {
-  const [, setThreadId] = useQueryState("threadId");
+  const [threadId, setThreadId] = useQueryState("threadId");
   const [isLoading, setIsLoading] = React.useState(false);
   return (
     <ClientContext.Provider value={{ client }}>
@@ -138,6 +138,7 @@ function Harness({
       >
         {canSwitch && (
           <>
+            <output data-testid="active-thread">{threadId}</output>
             <button
               type="button"
               onClick={() => setThreadId("A")}
@@ -481,7 +482,13 @@ async function waitForComposer() {
   );
 }
 
-test("retains A upload evidence through B navigation when A refresh later fails", async () => {
+async function waitForActiveThread(threadId: string) {
+  await waitFor(() =>
+    assert.equal(screen.getByTestId("active-thread").textContent, threadId)
+  );
+}
+
+test("retains A upload evidence through later A confirmation and failed refresh", async () => {
   configure();
   const writes: StateWrite[] = [];
   const sent: Array<[string, Record<string, unknown>]> = [];
@@ -494,11 +501,15 @@ test("retains A upload evidence through B navigation when A refresh later fails"
     onList: async (threadId) => {
       if (threadId === "A") {
         aLists += 1;
-        return aLists === 1
-          ? documentsResponse([
-              { name: "confirmed-a.pdf", size: 4, type: "file" },
-            ])
-          : failedARefresh.promise;
+        if (aLists === 1) {
+          return documentsResponse([]);
+        }
+        if (aLists === 2) {
+          return documentsResponse([
+            { name: "confirmed-a.pdf", size: 4, type: "file" },
+          ]);
+        }
+        return failedARefresh.promise;
       }
       bLists += 1;
       return documentsResponse([]);
@@ -521,6 +532,15 @@ test("retains A upload evidence through B navigation when A refresh later fails"
     await waitFor(() => assert.equal(bLists, 1));
     fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
     await waitFor(() => assert.equal(aLists, 2));
+    await act(async () => {});
+    await screen.findByRole("button", { name: /^Docs/ });
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForComposer();
+    await waitFor(() => assert.equal(bLists, 2));
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitForComposer();
+    await waitFor(() => assert.equal(aLists, 3));
     await act(async () => {
       failedARefresh.resolve(new Response(null, { status: 500 }));
       await failedARefresh.promise;
@@ -530,6 +550,76 @@ test("retains A upload evidence through B navigation when A refresh later fails"
     assert.deepEqual(sent, [
       [
         "Research A",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
+      ],
+    ]);
+    assert.deepEqual(writes, []);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("confirmed A list evidence re-seeds A after accepted upload evidence is cleared", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const sent: Array<[string, Record<string, unknown>]> = [];
+  const uploadFolders: string[] = [];
+  let aLists = 0;
+  let bLists = 0;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    onList: async (threadId) => {
+      if (threadId === "A") {
+        aLists += 1;
+        if (aLists === 1 || aLists === 3) {
+          return new Response(null, { status: 500 });
+        }
+        return documentsResponse([
+          { name: "confirmed-a.pdf", size: 4, type: "file" },
+        ]);
+      }
+      bLists += 1;
+      return documentsResponse([]);
+    },
+  });
+
+  try {
+    const view = renderChat({
+      client: makeClient(writes),
+      chat: baseChat((message, values) => sent.push([message, values])),
+      canSwitch: true,
+    });
+    await waitForComposer();
+    await dropFile(view.container, "a.pdf");
+    await waitFor(() => assert.deepEqual(uploadFolders, ["threads/A"]));
+    await act(async () => {});
+    submitMessage("Research A with upload evidence");
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForActiveThread("B");
+    await waitFor(() => assert.equal(bLists, 1));
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitForActiveThread("A");
+    await waitFor(() => assert.equal(aLists, 2));
+    await act(async () => {});
+    await screen.findByRole("button", { name: /^Docs/ });
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForActiveThread("B");
+    await waitFor(() => assert.equal(bLists, 2));
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitForActiveThread("A");
+    await waitFor(() => assert.equal(aLists, 3));
+    await act(async () => {});
+    submitMessage("Research A with re-seeded evidence");
+
+    assert.deepEqual(sent, [
+      [
+        "Research A with upload evidence",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
+      ],
+      [
+        "Research A with re-seeded evidence",
         { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
       ],
     ]);

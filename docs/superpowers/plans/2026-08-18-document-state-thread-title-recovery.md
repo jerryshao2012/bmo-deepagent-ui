@@ -4,7 +4,13 @@
 
 **Goal:** Remove ambiguous passive LangGraph state writes while preserving document context at send time, and recover useful titles for completed threads from checkpoint state.
 
-**Architecture:** Treat document availability as local evidence plus a per-thread unsent-positive map; only run submission writes document fields into graph input. Make thread search request state values explicitly and use `getState` only for nonbusy threads missing both manual and message-derived titles, with a stable ID fallback.
+**Architecture:** Treat document availability as thread-owned local evidence plus
+a per-thread unsent-positive map; only run submission writes document fields
+into graph input. Every availability event carries its owning thread ID so a
+stale render during navigation cannot mutate another thread's evidence. Make
+thread search request state values explicitly and use `getState` only for
+nonbusy threads missing both manual and message-derived titles, with a stable
+ID fallback on every result page.
 
 **Tech Stack:** TypeScript 5.9, React 19, Next.js 16, `@langchain/langgraph-sdk` 1.9, Node test runner, Testing Library, ESLint, Prettier.
 
@@ -12,7 +18,7 @@
 
 ## File map
 
-- Modify `src/app/hooks/useThreadDocumentAvailability.ts`: local availability only; remove graph-state persistence queue/status coupling.
+- Modify `src/app/hooks/useThreadDocumentAvailability.ts`: thread-owned local availability only; remove graph-state persistence queue/status coupling.
 - Modify `src/app/components/ChatInterface.tsx`: per-thread positive-evidence map; remove document `updateState` call.
 - Modify `src/app/utils/submit-research-message.ts`: exact four-row document payload contract, including false/null clearing.
 - Modify `src/features/threads/infrastructure/langgraph-thread-repository.ts`: explicit values selection, checkpoint fallback, and stable title.
@@ -109,7 +115,7 @@ git add src/app/utils/submit-research-message.ts \
 git commit -m "fix: clear stale document folder on submit"
 ```
 
-### Task 2: Remove passive document `updateState` writes
+### Task 2: Remove passive document `updateState` writes without breaking callers
 
 **Files:**
 - Modify: `tests/thread-document-availability.test.tsx`
@@ -120,16 +126,22 @@ git commit -m "fix: clear stale document folder on submit"
 
 Keep tests for 404, empty/nonempty list, network/server/malformed responses,
 upload, cumulative deletion, stale same/cross-thread responses, navigation,
-unmount, and StrictMode. Remove tests whose only behavior is queue ordering, busy
-deferral, or 409 retry. In every remaining list/upload/delete test, pass a spy
-that would fail if called and assert zero calls to graph-state persistence.
+unmount, and StrictMode. Remove tests whose only behavior is queue ordering,
+busy deferral, or 409 retry. Since `updateThreadState` is removed from the hook
+API, do not retain an impossible hook-level persistence spy. Instead, add a
+ChatInterface boundary assertion with a fake LangGraph client and prove
+`client.threads.updateState` receives zero calls through refresh, upload, and
+delete flows.
 
 Add explicit API expectations:
 
 ```ts
 assert.equal(result.current.availability, true);
+assert.deepEqual(result.current.availabilityEvidence, {
+  threadId: "thread-a",
+  available: true,
+});
 assert.deepEqual(result.current.documents, uploadedDocuments);
-assert.equal(updateThreadStateCalls, 0);
 ```
 
 - [ ] **Step 2: Run focused hook test and verify RED**
@@ -153,23 +165,47 @@ Remove from options and implementation:
 - persistence success booleans
 
 `refreshThread`, `recordUploadSuccess`, and `recordDeleteSuccess` update only
-epoch-protected local documents/availability. Keep current race guards and exact
-thread ownership. Return `void`/`Promise<void>` from success recorders.
+epoch-protected local documents/availability. Keep current race guards and
+exact thread ownership. Return both display state and a tagged signal:
+
+```ts
+interface ThreadDocumentAvailabilityEvidence {
+  threadId: string;
+  available: boolean;
+}
+```
+
+`availabilityEvidence` changes only when evidence for its named thread is
+confirmed. It may remain tagged A for the render before a thread-switch effect
+resets display state; consumers must compare the owner before applying it.
+Return `Promise<void>` from upload. Preserve delete's caller-needed
+`{ hasDocuments: boolean | null }` result while removing only its `persisted`
+field.
 
 - [ ] **Step 4: Remove ChatInterface state-write adapter**
 
 Delete `useThreadStatus` use that exists solely for persistence, delete
-`updateThreadDocumentState`, and stop passing removed hook options. Do not add
-`asNode`.
+`updateThreadDocumentState`, and stop passing removed hook options. Update all
+current consumers in the same task so the tree remains type-correct:
+
+- after upload, await `recordUploadSuccess` and unconditionally store the
+  thread-owned folder in the existing pending ref;
+- after delete, consume only `deleteResult.hasDocuments`;
+- never branch on a persistence boolean.
+
+Do not add `asNode`.
 
 - [ ] **Step 5: Run focused tests and verify GREEN**
 
 ```bash
 yarn node --import tsx --test --test-isolation=none \
-  tests/thread-document-availability.test.tsx
+  tests/thread-document-availability.test.tsx \
+  tests/chat-interface-document-state.test.tsx
+yarn build
 ```
 
-Expected: local-state/race suite passes with zero graph writes.
+Expected: local-state/race and component suites pass, fake client observes zero
+graph writes, and production TypeScript compilation succeeds before commit.
 
 - [ ] **Step 6: Commit Task 2**
 
@@ -180,7 +216,7 @@ git add src/app/hooks/useThreadDocumentAvailability.ts \
 git commit -m "fix: keep document availability out of graph checkpoints"
 ```
 
-### Task 3: Preserve unsent positive evidence across navigation
+### Task 3: Preserve thread-owned unsent positive evidence across navigation
 
 **Files:**
 - Modify: `tests/chat-interface-document-state.test.tsx`
@@ -195,6 +231,10 @@ Cover these exact sequences:
 2. upload on A -> upload on B -> submit each thread uses only its own folder;
 3. confirmed empty/delete-to-empty removes only that thread's entry;
 4. accepted positive submit clears only that thread's entry.
+5. confirmed positive A -> navigate B -> B refresh remains pending/fails ->
+   submit B omits both document fields (A evidence cannot leak into B);
+6. confirmed empty A -> navigate B with unsent positive evidence -> the stale A
+   render/effect cannot clear B, and B submit still carries B's folder.
 
 Assert no `client.threads.updateState` call occurs anywhere in these sequences.
 
@@ -219,8 +259,11 @@ const pendingDocFoldersRef = useRef(new Map<string, string>());
 Rules:
 
 - successful upload: `set(activeThreadId, docFolder)` unconditionally;
-- confirmed `documentAvailability === true`: set current canonical folder;
-- confirmed false: delete current entry;
+- confirmed `availabilityEvidence.available === true`: set the canonical folder
+  for `availabilityEvidence.threadId` only when that owner equals the active
+  thread at the consumer boundary;
+- confirmed false: delete only the evidence owner's entry, again only after
+  owner/active-thread match;
 - unknown: leave map unchanged;
 - submit: pass current entry as `pendingDocument`; after accepted positive send,
   delete current entry only;
@@ -258,7 +301,8 @@ Cover:
 
 - search options select `thread_id`, `created_at`, `updated_at`, `status`,
   `metadata`, and `values`;
-- selected values already contain first human -> no `getState` call;
+- selected values already contain first human -> no `getState` call, including
+  a later page (`pageIndex: 1`);
 - custom title -> no `getState` call and manual title wins;
 - idle/interrupted/error without both title sources -> `getState` supplies first
   human title;
@@ -266,8 +310,11 @@ Cover:
 - fallback lookup failure/no human -> stable ID title;
 - array content block and string content keep existing truncation behavior.
 
-Inject a structurally typed fake `Client` through an optional constructor
-parameter rather than patching SDK internals.
+Inject a structurally typed fake client through an optional constructor
+parameter rather than patching SDK internals. Define a narrow internal client
+interface covering only `threads.search`, `threads.getState`, `threads.get`,
+`threads.delete`, and `threads.update`; do not require tests to emulate the SDK
+`Client` class.
 
 - [ ] **Step 2: Run test and verify RED**
 
@@ -280,13 +327,13 @@ exist and search does not request `values` explicitly.
 
 - [ ] **Step 3: Add client injection and preview signal**
 
-Extend the internal preview result with `hasHumanTitle`. Add optional `Client`
-constructor injection while preserving production construction:
+Extend the internal preview result with `hasHumanTitle`. Add optional narrow
+client injection while preserving production construction:
 
 ```ts
 constructor(
   private readonly options: LangGraphThreadRepositoryOptions,
-  client?: Client
+  client?: LangGraphThreadClient
 ) {
   this.client =
     client ??
@@ -302,8 +349,9 @@ Use `Thread ${thread.thread_id.slice(0, 8)}` when neither source exists.
 
 - [ ] **Step 4: Request values and add bounded fallback lookup**
 
-Add the exact `select` list to `threads.search`. Before producing `ThreadItem`,
-call `getState` only when:
+Add the exact `select` list to `threads.search`. Remove the existing
+`pageIndex > 0` early return so the same bounded fallback policy applies on
+every page. Before producing `ThreadItem`, call `getState` only when:
 
 ```ts
 thread.status !== "busy" &&

@@ -44,6 +44,20 @@ export class LangGraphRunExecutor implements RunExecutor {
     this.startNextSubmission();
   }
 
+  promoteNewThreadOwner(threadId: string): void {
+    if (this.currentStream?.ownerKey === null) {
+      this.currentStream = { ...this.currentStream, ownerKey: threadId };
+    }
+    if (this.inFlightSubmission?.ownerKey === null) {
+      this.inFlightSubmission.ownerKey = threadId;
+    }
+    for (const pendingSubmission of this.queuedSubmissions) {
+      if (pendingSubmission.ownerKey === null) {
+        pendingSubmission.ownerKey = threadId;
+      }
+    }
+  }
+
   submit(
     values?: unknown,
     options?: unknown,

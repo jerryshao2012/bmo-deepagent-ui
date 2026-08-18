@@ -353,6 +353,68 @@ test("starts queued work through the latest same-thread handle", async () => {
   assert.equal(refreshedBSubmits, 1);
 });
 
+test("promotes only new-thread null work after SDK assigns its thread ID", async () => {
+  const firstRun = deferred<void>();
+  const queuedRun = deferred<void>();
+  let assignedStops = 0;
+  let assignedSubmits = 0;
+  let unrelatedNullSubmits = 0;
+  let existingOwnerSubmits = 0;
+  const executor = new LangGraphRunExecutor();
+  const nullStream = {
+    submit() {
+      return firstRun.promise;
+    },
+    stop() {},
+  };
+  const existingOwnerStream = {
+    submit() {
+      existingOwnerSubmits += 1;
+    },
+    stop() {},
+  };
+  const assignedStream = {
+    submit() {
+      assignedSubmits += 1;
+      return queuedRun.promise;
+    },
+    stop() {
+      assignedStops += 1;
+    },
+  };
+  const unrelatedNullStream = {
+    submit() {
+      unrelatedNullSubmits += 1;
+    },
+    stop() {},
+  };
+
+  executor.setStream(nullStream, null);
+  executor.submit({ messages: ["first new-thread message"] });
+  executor.setStream(existingOwnerStream, "existing-thread");
+  executor.submit({ messages: ["existing owner message"] });
+  executor.setStream(nullStream, null);
+  executor.submit({ messages: ["queued new-thread message"] });
+
+  executor.promoteNewThreadOwner("thread-1");
+  executor.promoteNewThreadOwner("thread-1");
+  executor.setStream(assignedStream, "thread-1");
+  executor.stop();
+  assert.equal(assignedStops, 1);
+
+  executor.setStream(unrelatedNullStream, null);
+  firstRun.resolve();
+  await firstRun.promise;
+  await Promise.resolve();
+  assert.equal(unrelatedNullSubmits, 0);
+  assert.equal(existingOwnerSubmits, 0);
+
+  executor.setStream(assignedStream, "thread-1");
+  assert.equal(assignedSubmits, 1);
+  queuedRun.resolve();
+  await queuedRun.promise;
+});
+
 test("bounds remembered created run IDs while retaining terminal duplicate protection", async () => {
   const a = deferred<void>();
   const b = deferred<void>();

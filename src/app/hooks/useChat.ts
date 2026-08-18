@@ -177,6 +177,13 @@ export function useChat({
     hasStartedLoading: boolean;
     baselineMessageCount: number;
   } | null>(null);
+  const handleThreadId = useCallback(
+    (nextThreadId: string) => {
+      runExecutorRef.current?.promoteNewThreadOwner(nextThreadId);
+      void setThreadId(nextThreadId);
+    },
+    [setThreadId]
+  );
 
   // Python graphs cannot expose the SDK's TypeScript DeepAgent brand, but the
   // server still emits the same subgraph events and runtime stream interface.
@@ -187,7 +194,7 @@ export function useChat({
     // checkpoint history that attempts to restore backend-only subgraphs.
     ...CHAT_STREAM_OPTIONS,
     threadId: threadId ?? null,
-    onThreadId: setThreadId,
+    onThreadId: handleThreadId,
     defaultHeaders: { "x-auth-scheme": "langsmith" },
     // Revalidate thread list when stream finishes, errors, or creates new thread
     onFinish: (_state, run) => {

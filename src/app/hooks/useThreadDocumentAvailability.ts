@@ -160,7 +160,7 @@ export function useThreadDocumentAvailability({
   const recordUploadSuccess = useCallback(
     async ({ activeThreadId, documents: uploadedDocuments }: UploadSuccess) => {
       const targetThreadId = activeThreadId ?? threadIdRef.current;
-      if (!targetThreadId) return false;
+      if (!targetThreadId) return;
 
       const allowUnrendered = activeThreadId !== undefined;
       const currentThreadId = threadIdRef.current;
@@ -168,7 +168,7 @@ export function useThreadDocumentAvailability({
         currentThreadId !== targetThreadId &&
         !(allowUnrendered && currentThreadId === null)
       ) {
-        return false;
+        return;
       }
 
       const epoch = beginOperation();

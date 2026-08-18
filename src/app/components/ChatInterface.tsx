@@ -324,7 +324,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       setMetaOpen(null);
     }
   }, [hasCurrentWikiDocuments, metaOpen]);
-  // Tracks a pending doc_folder to include in the first sendMessage call.
+  // Retains local evidence from an upload until its owning thread sends a message.
   const pendingDocFolderRef = useRef<PendingDocumentFolder | null>(null);
 
   useEffect(() => {
@@ -721,7 +721,12 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         filename,
         currentThreadId
       );
-      if (hasDocuments === null) return;
+      if (
+        hasDocuments === false &&
+        pendingDocFolderRef.current?.threadId === currentThreadId
+      ) {
+        pendingDocFolderRef.current = null;
+      }
     } catch (error) {
       console.error("Failed to delete document:", error);
       alert(
@@ -869,9 +874,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
       }
       const messageText = input;
       if (!messageText.trim() || composerLocked) return;
-      // Include pending doc_folder from a prior file upload that couldn't
-      // set thread state because no graph_id had been assigned yet.
-      // Only apply if it belongs to the current thread.
+      // Include unsent local upload evidence only for its owning thread.
       const pending = pendingDocFolderRef.current;
       submitResearchMessage({
         message: messageText,

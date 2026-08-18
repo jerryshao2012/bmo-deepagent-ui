@@ -486,6 +486,7 @@ test("retains A upload evidence through B navigation when A refresh later fails"
   const writes: StateWrite[] = [];
   const sent: Array<[string, Record<string, unknown>]> = [];
   const uploadFolders: string[] = [];
+  const failedARefresh = deferred<Response>();
   let aLists = 0;
   let bLists = 0;
   const restoreFetch = installFetch({
@@ -494,8 +495,10 @@ test("retains A upload evidence through B navigation when A refresh later fails"
       if (threadId === "A") {
         aLists += 1;
         return aLists === 1
-          ? documentsResponse([])
-          : new Response(null, { status: 500 });
+          ? documentsResponse([
+              { name: "confirmed-a.pdf", size: 4, type: "file" },
+            ])
+          : failedARefresh.promise;
       }
       bLists += 1;
       return documentsResponse([]);
@@ -518,7 +521,10 @@ test("retains A upload evidence through B navigation when A refresh later fails"
     await waitFor(() => assert.equal(bLists, 1));
     fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
     await waitFor(() => assert.equal(aLists, 2));
-    await act(async () => {});
+    await act(async () => {
+      failedARefresh.resolve(new Response(null, { status: 500 }));
+      await failedARefresh.promise;
+    });
 
     submitMessage("Research A");
     assert.deepEqual(sent, [
@@ -661,7 +667,7 @@ test("delete-to-empty removes only deleted thread's unsent positive evidence", a
   }
 });
 
-test("accepted A submission clears only A evidence and preserves B evidence", async () => {
+test("accepted A submission clears A evidence while preserving B evidence", async () => {
   configure();
   const writes: StateWrite[] = [];
   const sent: Array<[string, Record<string, unknown>]> = [];
@@ -702,6 +708,15 @@ test("accepted A submission clears only A evidence and preserves B evidence", as
     await waitForComposer();
     await waitFor(() => assert.equal(listCalls.B, 2));
     await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitForComposer();
+    await waitFor(() => assert.equal(listCalls.A, 3));
+    await act(async () => {});
+    submitMessage("Research A after accepted send");
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForComposer();
+    await waitFor(() => assert.equal(listCalls.B, 3));
+    await act(async () => {});
     submitMessage("Research B");
 
     assert.deepEqual(sent, [
@@ -709,9 +724,80 @@ test("accepted A submission clears only A evidence and preserves B evidence", as
         "Research A",
         { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
       ],
+      ["Research A after accepted send", { no_web: false }],
       [
         "Research B",
         { no_web: false, has_documents: true, doc_folder: "docs/threads/B" },
+      ],
+    ]);
+    assert.deepEqual(writes, []);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("synchronous A send failure retains A evidence for an unknown retry", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const sent: Array<[string, Record<string, unknown>]> = [];
+  const uploadFolders: string[] = [];
+  let aLists = 0;
+  let bLists = 0;
+  let throwNextSend = true;
+  const restoreFetch = installFetch({
+    uploadFolders,
+    onList: async (threadId) => {
+      if (threadId === "A") {
+        aLists += 1;
+        return aLists === 1
+          ? documentsResponse([])
+          : new Response(null, { status: 500 });
+      }
+      bLists += 1;
+      return documentsResponse([]);
+    },
+  });
+
+  try {
+    const view = renderChat({
+      client: makeClient(writes),
+      chat: baseChat((message, values) => {
+        sent.push([message, values]);
+        if (throwNextSend) {
+          throwNextSend = false;
+          throw new Error("synchronous send failure");
+        }
+      }),
+      canSwitch: true,
+    });
+    await waitForComposer();
+    await dropFile(view.container, "a.pdf");
+    await waitFor(() => assert.deepEqual(uploadFolders, ["threads/A"]));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitForComposer();
+    await waitFor(() => assert.equal(bLists, 1));
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitFor(() => assert.equal(aLists, 2));
+    await act(async () => {});
+
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      submitMessage("Research A failing send");
+    } finally {
+      console.error = originalConsoleError;
+    }
+    submitMessage("Research A retry");
+
+    assert.deepEqual(sent, [
+      [
+        "Research A failing send",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
+      ],
+      [
+        "Research A retry",
+        { no_web: false, has_documents: true, doc_folder: "docs/threads/A" },
       ],
     ]);
     assert.deepEqual(writes, []);
@@ -758,16 +844,25 @@ test("A confirmation never leaks document state into B when B refresh fails", as
   }
 });
 
-test("stale A empty availability cannot clear B unsent positive evidence", async () => {
+test("stale A empty evidence cannot clear B positive evidence during B refresh", async () => {
   configure();
   const writes: StateWrite[] = [];
   const sent: Array<[string, Record<string, unknown>]> = [];
   const uploadFolders: string[] = [];
-  const aList = deferred<Response>();
+  const aConfirmedEmpty = deferred<Response>();
+  const bRefresh = deferred<Response>();
+  let aLists = 0;
+  let bLists = 0;
   const restoreFetch = installFetch({
     uploadFolders,
-    onList: async (threadId) =>
-      threadId === "A" ? aList.promise : documentsResponse([]),
+    onList: async (threadId) => {
+      if (threadId === "A") {
+        aLists += 1;
+        return aLists === 1 ? documentsResponse([]) : aConfirmedEmpty.promise;
+      }
+      bLists += 1;
+      return bLists === 1 ? documentsResponse([]) : bRefresh.promise;
+    },
   });
 
   try {
@@ -781,10 +876,16 @@ test("stale A empty availability cannot clear B unsent positive evidence", async
     await dropFile(view.container, "b.pdf");
     await waitFor(() => assert.deepEqual(uploadFolders, ["threads/B"]));
 
+    fireEvent.click(screen.getByRole("button", { name: "Switch to A" }));
+    await waitForComposer();
+    await waitFor(() => assert.equal(aLists, 2));
     await act(async () => {
-      aList.resolve(documentsResponse([]));
-      await aList.promise;
+      aConfirmedEmpty.resolve(documentsResponse([]));
+      await aConfirmedEmpty.promise;
     });
+    fireEvent.click(screen.getByRole("button", { name: "Switch to B" }));
+    await waitFor(() => assert.equal(bLists, 2));
+    await waitForComposer();
     submitMessage("Research B");
 
     assert.deepEqual(sent, [
@@ -795,6 +896,7 @@ test("stale A empty availability cannot clear B unsent positive evidence", async
     ]);
     assert.deepEqual(writes, []);
   } finally {
+    bRefresh.resolve(new Response(null, { status: 500 }));
     restoreFetch();
   }
 });

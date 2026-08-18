@@ -316,6 +316,37 @@ test("stop is a no-op when current controls own another thread", async () => {
   await b.promise;
 });
 
+test("stop delegates a rejoined current stream but never crosses an in-flight owner", () => {
+  const inFlight = deferred<void>();
+  let aStops = 0;
+  let bStops = 0;
+  const aStream = {
+    submit() {
+      return inFlight.promise;
+    },
+    stop() {
+      aStops += 1;
+    },
+  };
+  const bStream = {
+    submit() {},
+    stop() {
+      bStops += 1;
+    },
+  };
+  const executor = new LangGraphRunExecutor();
+
+  executor.setStream(aStream, "A");
+  executor.stop();
+  assert.equal(aStops, 1);
+
+  executor.submit();
+  executor.setStream(bStream, "B");
+  executor.stop();
+  assert.equal(aStops, 1);
+  assert.equal(bStops, 0);
+});
+
 test("starts queued work through the latest same-thread handle", async () => {
   const a = deferred<void>();
   const b = deferred<void>();

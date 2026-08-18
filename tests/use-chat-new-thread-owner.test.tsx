@@ -5,6 +5,7 @@ import { afterEach, test } from "node:test";
 import React, { type ReactNode } from "react";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { NuqsTestingAdapter } from "nuqs/adapters/testing";
+import { useQueryState } from "nuqs";
 
 import { useChat } from "../src/app/hooks/useChat";
 import { ClientContext } from "../src/providers/ClientContext";
@@ -12,6 +13,7 @@ import { ClientContext } from "../src/providers/ClientContext";
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  window.sessionStorage.clear();
 });
 
 function deferred<T>() {
@@ -99,4 +101,110 @@ test("installed SDK promotes queued new-thread work after thread-1 assignment", 
   await waitFor(() =>
     assert.deepEqual(streamedThreadIds, ["thread-1", "thread-1"])
   );
+});
+
+test("installed SDK stop cancels a rejoined server run without an executor submission", async () => {
+  const rejoinedRunFinished = deferred<void>();
+  const cancelCalls: Array<[string, string]> = [];
+  let localSignal: AbortSignal | undefined;
+  let rejoinedSignal: AbortSignal | undefined;
+  let joinCalls = 0;
+  const client = {
+    threads: {
+      getState: async () => ({
+        values: { messages: [], todos: [], files: {} },
+      }),
+    },
+    runs: {
+      stream(
+        threadId: string,
+        _assistantId: string,
+        options: {
+          onRunCreated?: (run: { run_id: string; thread_id: string }) => void;
+          signal?: AbortSignal;
+        }
+      ) {
+        assert.equal(threadId, "A");
+        localSignal = options.signal;
+        options.onRunCreated?.({ run_id: "run-A", thread_id: "A" });
+        const localAbort = new Promise<never>((_resolve, reject) => {
+          options.signal?.addEventListener(
+            "abort",
+            () => {
+              const error = new Error("local stream aborted");
+              error.name = "AbortError";
+              reject(error);
+            },
+            { once: true }
+          );
+        });
+        return {
+          async next() {
+            return localAbort;
+          },
+          [Symbol.asyncIterator]() {
+            return this;
+          },
+        };
+      },
+      joinStream(
+        threadId: string,
+        runId: string,
+        options: { signal?: AbortSignal }
+      ) {
+        assert.equal(threadId, "A");
+        assert.equal(runId, "run-A");
+        joinCalls += 1;
+        rejoinedSignal = options.signal;
+        options.signal?.addEventListener("abort", () =>
+          rejoinedRunFinished.resolve()
+        );
+        return {
+          async next() {
+            await rejoinedRunFinished.promise;
+            return { done: true, value: undefined };
+          },
+          [Symbol.asyncIterator]() {
+            return this;
+          },
+        };
+      },
+      cancel: async (threadId: string, runId: string) => {
+        cancelCalls.push([threadId, runId]);
+      },
+    },
+  } as never;
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <NuqsTestingAdapter searchParams={{ threadId: "A" }}>
+      <ClientContext.Provider value={{ client }}>
+        {children}
+      </ClientContext.Provider>
+    </NuqsTestingAdapter>
+  );
+  const { result } = renderHook(
+    () => {
+      const chat = useChat({ activeAssistant: null });
+      const [threadId, setThreadId] = useQueryState("threadId");
+      return { chat, threadId, setThreadId };
+    },
+    { wrapper }
+  );
+
+  act(() => result.current.chat.sendMessage("start A run"));
+  await waitFor(() => assert.equal(localSignal?.aborted, false));
+  await waitFor(() =>
+    assert.equal(window.sessionStorage.getItem("lg:stream:A"), "run-A")
+  );
+  await act(async () => {
+    await result.current.setThreadId("B");
+  });
+  await waitFor(() => assert.equal(localSignal?.aborted, true));
+  await act(async () => {
+    await result.current.setThreadId("A");
+  });
+  await waitFor(() => assert.equal(joinCalls, 1));
+
+  act(() => result.current.chat.stopStream());
+  await waitFor(() => assert.equal(rejoinedSignal?.aborted, true));
+  await waitFor(() => assert.deepEqual(cancelCalls, [["A", "run-A"]]));
 });

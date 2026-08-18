@@ -117,13 +117,14 @@ export class LangGraphRunExecutor implements RunExecutor {
   }
 
   stop(): void {
+    if (!this.currentStream) return;
     if (
       this.inFlightSubmission &&
-      this.currentStream &&
-      this.inFlightSubmission.ownerKey === this.currentStream.ownerKey
+      this.inFlightSubmission.ownerKey !== this.currentStream.ownerKey
     ) {
-      this.currentStream.commands.stop();
+      return;
     }
+    this.currentStream.commands.stop();
   }
 
   private startNextSubmission(): void {

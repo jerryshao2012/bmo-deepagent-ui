@@ -439,6 +439,48 @@ test("maps keyboard directions, Home and End while clamping slide navigation", (
   assert.equal(window.location.hash, "#launch");
 });
 
+test("repeated Home replaces hero history while revealing the current slide", () => {
+  setupSlides();
+  const { result } = renderPresentation();
+  const history = observeHistory();
+  const scrollCount = scrollCalls.length;
+
+  act(() => keydown("Home"));
+  act(() => keydown("Home"));
+
+  assert.deepEqual(history.calls, ["replace", "replace"]);
+  assert.equal(result.current.activeSlideId, "hero");
+  assert.equal(scrollCalls.length, scrollCount + 2);
+});
+
+test("repeated End replaces launch history while revealing the current slide", () => {
+  setupSlides();
+  const { result } = renderPresentation();
+  const history = observeHistory();
+  act(() => keydown("End"));
+  history.reset();
+  const scrollCount = scrollCalls.length;
+
+  act(() => keydown("End"));
+
+  assert.deepEqual(history.calls, ["replace"]);
+  assert.equal(result.current.activeSlideId, "launch");
+  assert.equal(scrollCalls.length, scrollCount + 1);
+});
+
+test("explicit same-slide push replaces history while revealing the current slide", () => {
+  setupSlides();
+  const { result } = renderPresentation();
+  const history = observeHistory();
+  const scrollCount = scrollCalls.length;
+
+  act(() => result.current.goToSlide("hero", "push"));
+
+  assert.deepEqual(history.calls, ["replace"]);
+  assert.equal(result.current.activeSlideId, "hero");
+  assert.equal(scrollCalls.length, scrollCount + 1);
+});
+
 test("endpoint keyboard, wheel, and touch controls do not mutate history", () => {
   setupSlides();
   const { result } = renderPresentation();

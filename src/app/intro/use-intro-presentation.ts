@@ -103,7 +103,12 @@ export function useIntroPresentation({
 
   const goToSlide = useCallback(
     (id: IntroSlideId, historyMode: "push" | "replace" = "replace") => {
-      navigateToSlide(id, historyMode);
+      navigateToSlide(
+        id,
+        historyMode === "push" && id === activeSlideIdRef.current
+          ? "replace"
+          : historyMode
+      );
     },
     [navigateToSlide]
   );
@@ -232,13 +237,13 @@ export function useIntroPresentation({
 
       if (event.key === "Home") {
         event.preventDefault();
-        navigateToSlide(INTRO_SLIDES[0].id, "push");
+        goToSlide(INTRO_SLIDES[0].id, "push");
         return;
       }
 
       if (event.key === "End") {
         event.preventDefault();
-        navigateToSlide(INTRO_SLIDES[INTRO_SLIDES.length - 1].id, "push");
+        goToSlide(INTRO_SLIDES[INTRO_SLIDES.length - 1].id, "push");
         return;
       }
 
@@ -379,7 +384,7 @@ export function useIntroPresentation({
       slides.forEach((slide) => slide.classList.remove("is-active"));
       document.documentElement.classList.remove("intro-presentation-ready");
     };
-  }, [activateSlide, navigateToSlide, toggleFullscreen]);
+  }, [activateSlide, goToSlide, navigateToSlide, toggleFullscreen]);
 
   const activeSlideIndex = useMemo(
     () => INTRO_SLIDES.findIndex((slide) => slide.id === activeSlideId),

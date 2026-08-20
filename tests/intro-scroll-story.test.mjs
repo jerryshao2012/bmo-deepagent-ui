@@ -102,6 +102,61 @@ test("intro page integrates suspended presentation control and chrome", async ()
   assert.ok(inlineStyleEnd < chromeStart && chromeStart < headerStart);
 });
 
+test("controlled Radix dialog isolates the Markdown preview", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const dialogStart = source.indexOf("<DialogPrimitive.Root");
+  const dialog = source.slice(dialogStart);
+
+  assert.match(
+    source,
+    /import \* as DialogPrimitive from "@radix-ui\/react-dialog";/
+  );
+  assert.notEqual(dialogStart, -1);
+  assert.match(dialog, /open=\{isDialogOpen\}/);
+  assert.match(
+    dialog,
+    /onOpenChange=\{\(open\) => \{[\s\S]{0,100}if \(!open\) closeMarkdownPreview\(\);[\s\S]{0,40}\}\}/
+  );
+  assert.match(dialog, /<DialogPrimitive\.Portal>/);
+  assert.match(
+    dialog,
+    /<DialogPrimitive\.Overlay[\s\S]{0,180}z-\[100\][\s\S]{0,120}bg-black\/75[\s\S]{0,120}backdrop-blur-md/
+  );
+  assert.match(
+    dialog,
+    /<DialogPrimitive\.Content[\s\S]{0,260}onPointerDownOutside=\{\(event\) => event\.preventDefault\(\)\}[\s\S]{0,600}z-\[101\]/
+  );
+  assert.match(
+    dialog,
+    /<DialogPrimitive\.Title asChild>[\s\S]{0,160}<h3[\s\S]{0,160}Markdown Online Preview[\s\S]{0,80}<\/h3>[\s\S]{0,40}<\/DialogPrimitive\.Title>/
+  );
+  assert.doesNotMatch(source, /\{isDialogOpen && \(\s*<div/);
+});
+
+test("presentation slides use one labelled main and active phase link semantics", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const mainStart = source.indexOf(
+    '<main aria-label="Applied AI Deep Agent presentation">'
+  );
+  const mainEnd = source.indexOf("</main>", mainStart);
+  const dialogStart = source.indexOf("<DialogPrimitive.Root");
+  const main = source.slice(mainStart, mainEnd);
+
+  assert.notEqual(mainStart, -1);
+  assert.ok(main.includes('id="hero"'));
+  assert.ok(main.includes('id="launch"'));
+  assert.ok(mainEnd < dialogStart);
+  assert.equal(main.match(/\bdata-intro-slide\b/g)?.length, 6);
+  for (const phaseId of ["phase1", "phase2", "phase3"]) {
+    assert.match(
+      source,
+      new RegExp(
+        `aria-current=\\{\\s*presentation\\.activeSlideId === "${phaseId}" \\? "step" : undefined\\s*\\}`
+      )
+    );
+  }
+});
+
 test("intro header retains product actions and follows active presentation slide", async () => {
   const source = await readFile(introPagePath, "utf8");
   const header = source.slice(
@@ -255,7 +310,10 @@ test("phase 2 workflow semantics respect accessibility motion settings", async (
   const source = await readFile(introPagePath, "utf8");
 
   assert.equal(source.match(/role="group"/g)?.length, 4);
-  assert.equal(source.match(/workflow-node w-36 cursor-pointer/g)?.length, 4);
+  assert.equal(
+    source.match(/workflow-node w-full max-w-36 cursor-pointer/g)?.length,
+    4
+  );
   for (const label of [
     "Source Material",
     "Living Wiki",
@@ -277,6 +335,30 @@ test("phase 2 workflow semantics respect accessibility motion settings", async (
     source,
     /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.workflow-route\s*\{\s*transition:\s*none;\s*\}[\s\S]*?\.workflow-node\s*\{\s*transition:\s*none;\s*transform:\s*none;\s*\}[\s\S]*?\.workflow-particle\s*\{\s*display:\s*none;\s*\}/
   );
+});
+
+test("phase 2 workflow stacks safely below sm and keeps diagram layout above it", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const phase2Start = source.indexOf('id="phase2"');
+  const phase2End = source.indexOf("</section>", phase2Start);
+  const phase2 = source.slice(phase2Start, phase2End);
+
+  assert.match(
+    phase2,
+    /<svg[\s\S]{0,180}className="[^"]*hidden[^"]*sm:block[^"]*"/
+  );
+  assert.match(phase2, /className="[^"]*grid-cols-1[^"]*sm:grid-cols-3[^"]*"/);
+  assert.match(phase2, /gap-4[^"]*sm:gap-x-20[^"]*sm:gap-y-12/);
+  assert.equal(
+    phase2.match(/workflow-node w-full max-w-36 cursor-pointer/g)?.length,
+    4
+  );
+  assert.doesNotMatch(phase2, /workflow-node w-36 cursor-pointer/);
+  assert.match(
+    phase2,
+    /Dynamic status helper[\s\S]{0,180}className="[^"]*relative[^"]*sm:absolute[^"]*"/
+  );
+  assert.match(phase2, /chapter-visual[^"]*flex-col[^"]*p-4[^"]*sm:p-8/);
 });
 
 test("launch slide keeps its content wrapper without sticky-tail layout", async () => {

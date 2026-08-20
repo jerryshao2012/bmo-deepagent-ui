@@ -73,7 +73,7 @@ export function PresentationChrome({
         })}
       </nav>
 
-      <div className="pointer-events-auto fixed bottom-5 left-5 hidden items-center gap-4 text-sm font-medium text-[#001928] md:flex">
+      <div className="pointer-events-none fixed bottom-5 left-5 hidden items-center gap-4 text-sm font-medium text-[#001928] md:flex">
         <span>{`${String(currentSlide).padStart(2, "0")} / ${String(
           slideCount
         ).padStart(2, "0")}`}</span>

@@ -93,8 +93,13 @@ test("toggles fullscreen and updates its accessible label", () => {
 test("shows keyboard hint with arrow keys and F", () => {
   renderChrome();
 
-  assert.match(document.body.textContent || "", /Arrow/);
-  assert.match(document.body.textContent || "", /F/);
+  const hint = screen.getByText(/Arrow keys to navigate/);
+  const hintContainer = hint.parentElement;
+
+  assert.ok(hintContainer);
+  assert.equal(hintContainer.classList.contains("pointer-events-none"), true);
+  assert.match(hintContainer.textContent || "", /Arrow/);
+  assert.match(hintContainer.textContent || "", /F/);
 });
 
 test("announces current slide and fullscreen status after rerender", () => {

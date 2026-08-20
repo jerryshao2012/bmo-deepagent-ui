@@ -15,6 +15,10 @@ export function adjacentIntroSlide(
   direction: PresentationDirection
 ): IntroSlideId {
   const currentIndex = INTRO_SLIDES.findIndex((slide) => slide.id === current);
+  if (currentIndex < 0) {
+    return INTRO_SLIDES[0].id;
+  }
+
   const nextIndex = Math.max(
     0,
     Math.min(INTRO_SLIDES.length - 1, currentIndex + direction)
@@ -27,7 +31,7 @@ export function directionForPresentationKey(
   key: string,
   shiftKey: boolean
 ): PresentationDirection | null {
-  if (key === "Space") {
+  if (key === " ") {
     return shiftKey ? -1 : 1;
   }
 
@@ -67,8 +71,12 @@ export interface PresentationInputTarget {
 }
 
 export function isPresentationEditableTarget(
-  target: PresentationInputTarget
+  target: PresentationInputTarget | null
 ): boolean {
+  if (!target) {
+    return false;
+  }
+
   const tagName = target.tagName?.toUpperCase();
   return (
     tagName === "INPUT" ||
@@ -79,8 +87,12 @@ export function isPresentationEditableTarget(
 }
 
 export function isPresentationInteractiveTarget(
-  target: PresentationInputTarget
+  target: PresentationInputTarget | null
 ): boolean {
+  if (!target) {
+    return false;
+  }
+
   const tagName = target.tagName?.toUpperCase();
   return (
     isPresentationEditableTarget(target) || tagName === "BUTTON" || tagName === "A"

@@ -8,6 +8,7 @@ import {
   isPresentationEditableTarget,
   isPresentationInteractiveTarget,
   shouldLeaveOverflowingSlide,
+  type IntroSlideId,
 } from "../src/app/intro/presentation-navigation";
 
 test("defines the six intro presentation slides in order and clamps adjacency", () => {
@@ -25,16 +26,21 @@ test("defines the six intro presentation slides in order and clamps adjacency", 
   assert.equal(adjacentIntroSlide("phase2", -1), "phase1");
   assert.equal(adjacentIntroSlide("phase2", 1), "phase3");
   assert.equal(adjacentIntroSlide("launch", 1), "launch");
+  assert.equal(
+    adjacentIntroSlide("missing" as IntroSlideId, 1),
+    "hero",
+    "invalid runtime IDs fall back to the first slide"
+  );
 });
 
 test("maps presentation keys to forward, backward, or no direction", () => {
-  for (const key of ["ArrowRight", "ArrowDown", "PageDown", "Space"]) {
+  for (const key of ["ArrowRight", "ArrowDown", "PageDown", " "]) {
     assert.equal(directionForPresentationKey(key, false), 1, key);
   }
   for (const key of ["ArrowLeft", "ArrowUp", "PageUp"]) {
     assert.equal(directionForPresentationKey(key, false), -1, key);
   }
-  assert.equal(directionForPresentationKey("Space", true), -1);
+  assert.equal(directionForPresentationKey(" ", true), -1);
   assert.equal(directionForPresentationKey("ArrowRight", true), 1);
   assert.equal(directionForPresentationKey("Enter", false), null);
 });
@@ -42,21 +48,21 @@ test("maps presentation keys to forward, backward, or no direction", () => {
 test("leaves an overflowing slide only at the direction boundary", () => {
   assert.equal(
     shouldLeaveOverflowingSlide(
-      { top: 120, bottom: 798, viewportHeight: 800 },
+      { top: 120, bottom: 802, viewportHeight: 800 },
       1
     ),
     true
   );
   assert.equal(
     shouldLeaveOverflowingSlide(
-      { top: 120, bottom: 810, viewportHeight: 800 },
+      { top: 120, bottom: 803, viewportHeight: 800 },
       1
     ),
     false
   );
   assert.equal(
     shouldLeaveOverflowingSlide(
-      { top: 72, bottom: 700, viewportHeight: 800 },
+      { top: 70, bottom: 700, viewportHeight: 800 },
       -1,
       72
     ),
@@ -64,7 +70,7 @@ test("leaves an overflowing slide only at the direction boundary", () => {
   );
   assert.equal(
     shouldLeaveOverflowingSlide(
-      { top: 68, bottom: 700, viewportHeight: 800 },
+      { top: 69, bottom: 700, viewportHeight: 800 },
       -1,
       72
     ),
@@ -81,11 +87,12 @@ test("leaves an overflowing slide only at the direction boundary", () => {
 });
 
 test("classifies editable presentation targets", () => {
-  for (const tagName of ["INPUT", "TEXTAREA", "SELECT"]) {
+  for (const tagName of ["INPUT", "TEXTAREA", "SELECT", "input", "tExTaReA"]) {
     assert.equal(isPresentationEditableTarget({ tagName }), true, tagName);
   }
   assert.equal(isPresentationEditableTarget({ isContentEditable: true }), true);
   assert.equal(isPresentationEditableTarget({ tagName: "BUTTON" }), false);
+  assert.equal(isPresentationEditableTarget(null), false);
 });
 
 test("classifies interactive presentation targets", () => {
@@ -96,8 +103,11 @@ test("classifies interactive presentation targets", () => {
     { isContentEditable: true },
     { tagName: "BUTTON" },
     { tagName: "A" },
+    { tagName: "bUtToN" },
+    { tagName: "a" },
   ]) {
     assert.equal(isPresentationInteractiveTarget(target), true);
   }
   assert.equal(isPresentationInteractiveTarget({ tagName: "DIV" }), false);
+  assert.equal(isPresentationInteractiveTarget(null), false);
 });

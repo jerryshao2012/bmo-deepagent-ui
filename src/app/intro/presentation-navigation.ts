@@ -58,7 +58,7 @@ export function shouldLeaveOverflowingSlide(
     return bottom <= viewportHeight + epsilon;
   }
 
-  return top <= headerOffset + epsilon;
+  return top >= headerOffset - epsilon;
 }
 
 export interface PresentationInputTarget {

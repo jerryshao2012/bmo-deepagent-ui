@@ -64,11 +64,19 @@ test("leaves an overflowing slide only at the direction boundary", () => {
   );
   assert.equal(
     shouldLeaveOverflowingSlide(
-      { top: 100, bottom: 700, viewportHeight: 800 },
+      { top: 68, bottom: 700, viewportHeight: 800 },
       -1,
       72
     ),
     false
+  );
+  assert.equal(
+    shouldLeaveOverflowingSlide(
+      { top: 100, bottom: 700, viewportHeight: 800 },
+      -1,
+      72
+    ),
+    true
   );
 });
 

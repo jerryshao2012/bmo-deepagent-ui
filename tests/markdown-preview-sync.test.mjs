@@ -151,28 +151,28 @@ test("new local markdown wins over stale asynchronous sync responses", async () 
     /pendingEditCoordinatorRef\.current\.pendingForThread\(threadId\) !==\s*null\s*\|\|\s*requestVersion !== contentVersionRef\.current/
   );
   const cacheLoadStart = introPage.indexOf(
-    "// Load initial content from localStorage once threadId resolves",
+    "// Load initial content from localStorage once threadId resolves"
   );
   const cacheLoadEnd = introPage.indexOf(
     "// ── Cross-deployment sync",
-    cacheLoadStart,
+    cacheLoadStart
   );
   const cacheLoadBlock = introPage.slice(cacheLoadStart, cacheLoadEnd);
   assert.match(
     cacheLoadBlock,
-    /pendingEditCoordinatorRef\.current\s*\.readCurrent\([\s\S]*browserMarkdownStore\.load\(threadId\)/,
+    /pendingEditCoordinatorRef\.current\s*\.readCurrent\([\s\S]*browserMarkdownStore\.load\(threadId\)/
   );
   assert.match(cacheLoadBlock, /cachedRead\.current/);
 
   const backendPollStart = introPage.indexOf("const pollBackendOnce");
   const backendPollEnd = introPage.indexOf(
     "const startCrossDeployPolling",
-    backendPollStart,
+    backendPollStart
   );
   const backendPollBlock = introPage.slice(backendPollStart, backendPollEnd);
   assert.match(
     backendPollBlock,
-    /pendingEditCoordinatorRef\.current\.readCurrent\([\s\S]*backendStore\.load\(threadId\)/,
+    /pendingEditCoordinatorRef\.current\.readCurrent\([\s\S]*backendStore\.load\(threadId\)/
   );
   assert.match(backendPollBlock, /if \(!backendRead\.current\) return/);
 });
@@ -223,25 +223,22 @@ test("WebSocket initial sync resends a newer pending edit before becoming ready"
   const resendStart = introPage.indexOf('resolution.action === "resend"');
   const resendEnd = introPage.indexOf(
     'if (resolution.action !== "apply")',
-    resendStart,
+    resendStart
   );
   assert.notEqual(resendStart, -1);
   assert.notEqual(resendEnd, -1);
   const resendBlock = introPage.slice(resendStart, resendEnd);
   assert.match(resendBlock, /pendingEdit !== null/);
   assert.match(resendBlock, /data\.initial === true/);
-  assert.match(
-    resendBlock,
-    /type: "update",\s*content: pendingEdit\.content/,
-  );
+  assert.match(resendBlock, /type: "update",\s*content: pendingEdit\.content/);
   assert.match(resendBlock, /lifecycleRef\.current\?\.initialSyncReady\(\)/);
   assert.match(introPage, /if \(resolution\.action !== "apply"\) return/);
   const resolverStart = introPage.indexOf(
-    "const resolution = resolveMarkdownWebSocketSync",
+    "const resolution = resolveMarkdownWebSocketSync"
   );
   const resolverEnd = introPage.indexOf(
     "applyContent(incomingContent)",
-    resolverStart,
+    resolverStart
   );
   assert.notEqual(resolverStart, -1);
   assert.notEqual(resolverEnd, -1);
@@ -268,10 +265,7 @@ test("WebSocket operation metadata is validated and echoed as scalar fields", as
     server,
     /clientId:\s*metadata\.clientId,\s*operationId:\s*metadata\.operationId/
   );
-  assert.match(
-    server,
-    /__sseNotify\([\s\S]{0,180}operationMetadata/
-  );
+  assert.match(server, /__sseNotify\([\s\S]{0,180}operationMetadata/);
 });
 
 test("fallback initial sync preserves and accepts pending WebSocket content before readiness", async () => {
@@ -311,10 +305,7 @@ test("fallback callbacks and async polls reject stale EventSource generations", 
     introPage,
     /await fetch\([\s\S]{0,300}eventSourceRef\.current !== eventSource[\s\S]{0,300}await res\.json\(\)[\s\S]{0,300}eventSourceRef\.current !== eventSource/
   );
-  assert.match(
-    introPage,
-    /activeThreadIdRef\.current !== threadId/
-  );
+  assert.match(introPage, /activeThreadIdRef\.current !== threadId/);
 });
 
 test("intro transport lifecycle hibernates and resumes with page eligibility", async () => {
@@ -328,7 +319,10 @@ test("intro transport lifecycle hibernates and resumes with page eligibility", a
   assert.match(introPage, /removeEventListener\(["']pagehide["']/);
   assert.match(introPage, /removeEventListener\(["']pageshow["']/);
   assert.match(introPage, /lifecycle\.dispose\(\)/);
-  assert.match(introPage, /lifecycleRef\.current\?\.setDialogOpen\(isDialogOpen\)/);
+  assert.match(
+    introPage,
+    /lifecycleRef\.current\?\.setDialogOpen\(isDialogOpen\)/
+  );
   assert.match(introPage, /lifecycleRef\.current\?\.reconnectNow\(\)/);
 });
 
@@ -420,11 +414,7 @@ test("markdown lifecycle effects reject stale controllers and clean up owned cou
     lifecycleSection,
     /requestAutoClose:\s*\(\) => \{?\s*(?:return )?closeMarkdownPreview\(lifecycle\)/
   );
-  const cleanup = sourceSection(
-    lifecycleSection,
-    "return () => {",
-    "  }, ["
-  );
+  const cleanup = sourceSection(lifecycleSection, "return () => {", "  }, [");
   const dispose = cleanup.indexOf("lifecycle.dispose()");
   const clearRef = cleanup.indexOf("lifecycleRef.current = null");
   assert.ok(dispose !== -1 && dispose < clearRef);
@@ -506,25 +496,26 @@ test("markdown preview panel records local activity without backdrop or mousemov
 
   assert.match(
     introPage,
-    /const noteMarkdownActivity = useCallback\([\s\S]{0,220}shouldRecordMarkdownActivity\(event\?\.target \?\? null\)[\s\S]{0,120}lifecycleRef\.current\?\.recordActivity\(\)/,
+    /const noteMarkdownActivity = useCallback\([\s\S]{0,220}shouldRecordMarkdownActivity\(event\?\.target \?\? null\)[\s\S]{0,120}lifecycleRef\.current\?\.recordActivity\(\)/
   );
-  const backdropStart = introPage.indexOf(
-    'className={cn(\n            "fixed inset-0',
-  );
-  const panelStart = introPage.indexOf(
-    'className={cn(\n              "markdown-preview-dialog-selection',
-    backdropStart,
-  );
+  const overlayStart = introPage.indexOf("<DialogPrimitive.Overlay");
+  const overlayEnd = introPage.indexOf("/>", overlayStart);
+  const panelStart = introPage.indexOf("<DialogPrimitive.Content", overlayEnd);
   const headerStart = introPage.indexOf("{/* Modal Header */}", panelStart);
-  assert.notEqual(backdropStart, -1);
-  assert.notEqual(panelStart, -1);
-  assert.notEqual(headerStart, -1);
+  assert.notEqual(overlayStart, -1, "dialog overlay exists");
+  assert.notEqual(overlayEnd, -1, "dialog overlay closes");
+  assert.notEqual(panelStart, -1, "dialog content follows overlay");
+  assert.notEqual(headerStart, -1, "dialog header follows content opening");
+  assert.ok(
+    overlayStart < overlayEnd &&
+      overlayEnd < panelStart &&
+      panelStart < headerStart,
+    "dialog overlay and content boundaries are ordered"
+  );
 
-  const backdropTagStart = introPage.lastIndexOf("<div", backdropStart);
-  const panelTagStart = introPage.lastIndexOf("<div", panelStart);
-  const backdropOpening = introPage.slice(backdropTagStart, panelTagStart);
-  const panelOpening = introPage.slice(panelTagStart, headerStart);
-  assert.doesNotMatch(backdropOpening, /noteMarkdownActivity|onMouseMove/);
+  const overlayOpening = introPage.slice(overlayStart, overlayEnd + 2);
+  const panelOpening = introPage.slice(panelStart, headerStart);
+  assert.doesNotMatch(overlayOpening, /noteMarkdownActivity|onMouseMove/);
   assert.match(panelOpening, /onPointerDownCapture=\{noteMarkdownActivity\}/);
   assert.match(panelOpening, /onKeyDownCapture=\{noteMarkdownActivity\}/);
   assert.match(panelOpening, /onScrollCapture=\{noteMarkdownActivity\}/);
@@ -533,7 +524,7 @@ test("markdown preview panel records local activity without backdrop or mousemov
   assert.doesNotMatch(panelOpening, /onMouseMove/);
   assert.match(
     introPage,
-    /<button\s+data-markdown-preview-close[\s\S]{0,160}onClick=\{\(\) => closeMarkdownPreview\(\)\}/,
+    /<button\s+data-markdown-preview-close[\s\S]{0,160}onClick=\{\(\) => closeMarkdownPreview\(\)\}/
   );
 });
 
@@ -558,7 +549,7 @@ test("markdown mutation handlers wake transport before changing content", async 
     assert.match(
       block,
       /(?:=>\s*\{|async\s*\(\)\s*=>\s*\{)\s*noteMarkdownActivity\(\)/,
-      `${name} records activity first`,
+      `${name} records activity first`
     );
   }
 });
@@ -569,20 +560,20 @@ test("markdown transport badge uses presentation actions for wake and reconnect"
   assert.match(introPage, /markdownConnectionPresentation\(wsStatus\)/);
   assert.match(
     introPage,
-    /connectionPresentation\.action === "wake"[\s\S]{0,120}noteMarkdownActivity\(\)/,
+    /connectionPresentation\.action === "wake"[\s\S]{0,120}noteMarkdownActivity\(\)/
   );
   assert.match(
     introPage,
-    /connectionPresentation\.action === "reconnect"[\s\S]{0,300}lifecycleRef\.current\?\.reconnectNow\(\)/,
+    /connectionPresentation\.action === "reconnect"[\s\S]{0,300}lifecycleRef\.current\?\.reconnectNow\(\)/
   );
   assert.match(introPage, /connectionPresentation\.label/);
   assert.match(introPage, /title=\{connectionPresentation\.title\}/);
   assert.match(
     introPage,
-    /disabled=\{connectionPresentation\.action === "none"\}/,
+    /disabled=\{connectionPresentation\.action === "none"\}/
   );
   const badgeStart = introPage.indexOf(
-    "if (connectionPresentation.action === \"wake\")",
+    'if (connectionPresentation.action === "wake")'
   );
   const liveStatusStart = introPage.indexOf('role="status"', badgeStart);
   const badgeEnd = introPage.lastIndexOf("</button>", liveStatusStart);
@@ -604,7 +595,10 @@ test("intro transport stop helpers own all timers and use safe intentional close
   assert.match(introPage, /const stopCrossDeployPolling = useCallback/);
   assert.match(introPage, /const stopAllTransports = useCallback/);
   assert.match(introPage, /closeWebSocket\(1000,\s*["']hibernate["']/);
-  assert.match(introPage, /closeWebSocket\(4000,\s*["']attempt timeout["'],\s*attemptId\)/);
+  assert.match(
+    introPage,
+    /closeWebSocket\(4000,\s*["']attempt timeout["'],\s*attemptId\)/
+  );
   assert.match(introPage, /intentional:\s*true/);
   assert.match(introPage, /stopFallback\(\);[\s\S]*stopCrossDeployPolling\(\)/);
 });
@@ -621,7 +615,10 @@ test("cross-deployment polls discard stopped generations and serialize each acti
     introPage,
     /stopCrossDeployPolling[\s\S]*crossDeployPollGenerationRef\.current \+= 1/
   );
-  assert.match(introPage, /pollBackendOnce = useCallback\(async \(generation: number\)/);
+  assert.match(
+    introPage,
+    /pollBackendOnce = useCallback\(\s*async\s*\(\s*generation:\s*number\s*\)/
+  );
   assert.match(
     introPage,
     /crossDeployPollInFlightGenerationRef\.current === generation\) return/
@@ -663,7 +660,7 @@ test("cross-machine markdown updates converge every local transport", async () =
   const remotePollStart = introPage.indexOf("const pollBackendOnce");
   const remotePollEnd = introPage.indexOf(
     "const startCrossDeployPolling",
-    remotePollStart,
+    remotePollStart
   );
   assert.notEqual(remotePollStart, -1);
   assert.notEqual(remotePollEnd, -1);
@@ -671,21 +668,21 @@ test("cross-machine markdown updates converge every local transport", async () =
   assert.doesNotMatch(remotePollBlock, /lifecycleRef\.current/);
   assert.match(
     remotePollBlock,
-    /const remoteContent = backendRead\.value;[\s\S]*shouldApplyRemoteMarkdown\(\s*remoteContent,\s*localContent,\s*lastBackendSyncRef\.current\s*\)/,
+    /const remoteContent = backendRead\.value;[\s\S]*shouldApplyRemoteMarkdown\(\s*remoteContent,\s*localContent,\s*lastBackendSyncRef\.current\s*\)/
   );
   assert.doesNotMatch(remotePollBlock, /backendRead\.value\s*\?\?/);
   const backendRelayStart = remotePollBlock.indexOf(
-    "if (activeSocket?.readyState === WebSocket.OPEN)",
+    "if (activeSocket?.readyState === WebSocket.OPEN)"
   );
   const backendRelayEnd = remotePollBlock.indexOf(
     "applyContent(remoteContent)",
-    backendRelayStart,
+    backendRelayStart
   );
   assert.notEqual(backendRelayStart, -1);
   assert.notEqual(backendRelayEnd, -1);
   const backendRelayBlock = remotePollBlock.slice(
     backendRelayStart,
-    backendRelayEnd,
+    backendRelayEnd
   );
   assert.doesNotMatch(backendRelayBlock, /clientId|operationId/);
   assert.doesNotMatch(introPage, /pendingWebSocketContentRef/);

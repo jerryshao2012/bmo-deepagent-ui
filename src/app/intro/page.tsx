@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { navigateToIntroPhase, type IntroPhaseId } from "./phase-navigation";
+import { PresentationChrome } from "./presentation-chrome";
+import { useIntroPresentation } from "./use-intro-presentation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MarkdownContent } from "@/app/components/MarkdownContent";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -64,13 +66,13 @@ function createMarkdownClientId(): string {
 function IntroPageContent() {
   const searchParams = useSearchParams();
   const [threadId, setThreadId] = useState<string>("");
-  const [scrollY, setScrollY] = useState(0);
 
   const [, setSocket] = useState<WebSocket | null>(null);
   const [wsStatus, setWsStatus] =
     useState<MarkdownConnectionStatus>("disconnected");
   const [sharedText, setSharedText] = useState<string>("");
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
+  const presentation = useIntroPresentation({ suspended: isDialogOpen });
   const [autoCloseSeconds, setAutoCloseSeconds] = useState<number | null>(null);
   const [isTelemetryFullscreen, setIsTelemetryFullscreen] =
     useState<boolean>(false);
@@ -1371,66 +1373,6 @@ function IntroPageContent() {
     }
   }, [searchParams]);
 
-  // Track scroll state and expose normalized progress to the CSS-first story.
-  useEffect(() => {
-    let animationFrame = 0;
-
-    const updateScrollStory = () => {
-      animationFrame = 0;
-      setScrollY(window.scrollY);
-
-      const reducedMotion = window.matchMedia(
-        "(prefers-reduced-motion: reduce)"
-      ).matches;
-
-      document
-        .querySelectorAll<HTMLElement>("[data-scroll-chapter]")
-        .forEach((chapter) => {
-          const rect = chapter.getBoundingClientRect();
-          const entryLine = window.innerHeight * 0.86;
-          const exitLine = window.innerHeight * 0.14;
-          const travel = rect.height + entryLine - exitLine;
-          const progress = reducedMotion
-            ? 1
-            : Math.min(1, Math.max(0, (entryLine - rect.top) / travel));
-
-          chapter.style.setProperty("--chapter-progress", progress.toFixed(4));
-        });
-
-      document
-        .querySelectorAll<HTMLElement>("[data-scroll-reveal]")
-        .forEach((element) => {
-          const rect = element.getBoundingClientRect();
-          const progress = reducedMotion
-            ? 1
-            : Math.min(
-                1,
-                Math.max(
-                  0,
-                  (window.innerHeight * 0.88 - rect.top) /
-                    (window.innerHeight * 0.42)
-                )
-              );
-          element.style.setProperty("--reveal-progress", progress.toFixed(4));
-        });
-    };
-
-    const handleScroll = () => {
-      if (animationFrame) return;
-      animationFrame = window.requestAnimationFrame(updateScrollStory);
-    };
-
-    updateScrollStory();
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    window.addEventListener("resize", handleScroll);
-
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-      window.removeEventListener("resize", handleScroll);
-      if (animationFrame) window.cancelAnimationFrame(animationFrame);
-    };
-  }, []);
-
   // Handle mouse move for interactive card 3D tilt
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!stackRef.current) return;
@@ -1458,37 +1400,12 @@ function IntroPageContent() {
     activeNode !== null && ["A", "B", "C"].includes(activeNode);
   const lowerRouteActive =
     activeNode !== null && ["A", "B", "D"].includes(activeNode);
-  const [activePhase, setActivePhase] = useState<number>(1);
   const handlePhaseNavigation = (
     event: React.MouseEvent<HTMLAnchorElement>,
     phaseId: IntroPhaseId
   ) => {
     navigateToIntroPhase(event, phaseId);
   };
-
-  // Intersection observer to track the active phase as user scrolls
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            if (entry.target.id === "phase1") setActivePhase(1);
-            if (entry.target.id === "phase2") setActivePhase(2);
-            if (entry.target.id === "phase3") setActivePhase(3);
-          }
-        });
-      },
-      { threshold: 0.3 }
-    );
-
-    const phases = ["phase1", "phase2", "phase3"];
-    phases.forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) observer.observe(el);
-    });
-
-    return () => observer.disconnect();
-  }, []);
 
   const connectionPresentation = markdownConnectionPresentation(wsStatus);
 
@@ -1527,83 +1444,8 @@ function IntroPageContent() {
           transform: translateY(0);
         }
 
-        /* CSS-first Apple-lite scroll story */
-        .hero-copy {
-          opacity: clamp(0, calc(1 - var(--hero-progress) * 1.35), 1);
-          transform: translate3d(0, calc(var(--hero-progress) * -52px), 0);
-          transition: opacity 80ms linear, transform 80ms linear;
-          will-change: opacity, transform;
-        }
-
-        .hero-preview {
-          opacity: clamp(0.72, calc(0.72 + var(--hero-progress) * 0.28), 1);
-          transform: translate3d(0, calc((1 - var(--hero-progress)) * 28px), 0)
-            scale(calc(0.95 + var(--hero-progress) * 0.05));
-          transform-origin: center top;
-          transition: opacity 80ms linear, transform 80ms linear;
-          will-change: opacity, transform;
-        }
-
-        .scroll-chapter {
-          --chapter-progress: 0;
-          min-height: 145vh;
-          position: relative;
-          scroll-margin-top: 4.5rem;
-        }
-
-        .chapter-sticky {
-          align-content: center;
-          min-height: calc(100vh - 5rem);
-          position: sticky;
-          top: 4.5rem;
-        }
-
-        .chapter-copy {
-          opacity: clamp(0, calc(var(--chapter-progress) * 5), 1);
-          transform: translate3d(
-            0,
-            calc((1 - var(--chapter-progress)) * 28px),
-            0
-          );
-          will-change: opacity, transform;
-        }
-
-        .chapter-visual {
-          opacity: clamp(0, calc(var(--chapter-progress) * 4), 1);
-          transform: translate3d(
-              0,
-              calc((1 - var(--chapter-progress)) * 36px),
-              0
-            )
-            scale(calc(0.96 + var(--chapter-progress) * 0.04));
-          transform-origin: center center;
-          will-change: opacity, transform;
-        }
-
-        .chapter-reveal {
-          --reveal-start: 0.12;
-          opacity: clamp(
-            0,
-            calc((var(--chapter-progress) - var(--reveal-start)) * 7),
-            1
-          );
-          transform: translate3d(
-            0,
-            calc(
-              (1 - clamp(0, calc((var(--chapter-progress) - var(--reveal-start)) * 7), 1)) *
-                18px
-            ),
-            0
-          );
-          will-change: opacity, transform;
-        }
-
-        .chapter-reveal[data-reveal="2"] {
-          --reveal-start: 0.22;
-        }
-
-        .chapter-reveal[data-reveal="3"] {
-          --reveal-start: 0.32;
+        .intro-slide {
+          scroll-margin-top: 4rem;
         }
 
         .workflow-route {
@@ -1616,61 +1458,7 @@ function IntroPageContent() {
           pointer-events: none;
         }
 
-        .scroll-reveal {
-          --reveal-progress: 0;
-          opacity: var(--reveal-progress);
-          transform: translate3d(
-              0,
-              calc((1 - var(--reveal-progress)) * 28px),
-              0
-            )
-            scale(calc(0.98 + var(--reveal-progress) * 0.02));
-          will-change: opacity, transform;
-        }
-
-        @media (max-width: 1023px) {
-          .hero-copy,
-          .hero-preview,
-          .chapter-copy,
-          .chapter-visual,
-          .chapter-reveal,
-          .scroll-reveal {
-            opacity: 1;
-            transform: none;
-          }
-
-          .scroll-chapter {
-            min-height: auto;
-          }
-
-          .chapter-sticky {
-            min-height: auto;
-            position: static;
-          }
-
-        }
-
         @media (prefers-reduced-motion: reduce) {
-          .hero-copy,
-          .hero-preview,
-          .chapter-copy,
-          .chapter-visual,
-          .chapter-reveal,
-          .scroll-reveal {
-            opacity: 1;
-            transform: none;
-            transition: none;
-          }
-
-          .scroll-chapter {
-            min-height: auto;
-          }
-
-          .chapter-sticky {
-            min-height: auto;
-            position: static;
-          }
-
           .workflow-route {
             transition: none;
           }
@@ -1786,14 +1574,16 @@ function IntroPageContent() {
         }}
       />
 
+      <PresentationChrome
+        activeSlideId={presentation.activeSlideId}
+        isFullscreen={presentation.isFullscreen}
+        fullscreenStatus={presentation.fullscreenStatus}
+        onNavigate={(id) => presentation.goToSlide(id, "push")}
+        onToggleFullscreen={() => void presentation.toggleFullscreen()}
+      />
+
       {/* Navigation Header (Klarity Style) */}
-      <header
-        className={`fixed left-0 right-0 top-0 z-50 flex h-16 items-center justify-between border-b px-6 transition-all duration-300 ${
-          scrollY > 40
-            ? "bg-[var(--color-background)]/90 border-border shadow-sm backdrop-blur-xl"
-            : "border-transparent bg-transparent"
-        }`}
-      >
+      <header className="fixed left-0 right-0 top-0 z-50 flex h-16 items-center justify-between border-b border-[#D6E2EA] bg-white/95 px-6 shadow-sm backdrop-blur-xl transition-all duration-300">
         <div className="flex items-center gap-6">
           <a
             href="#"
@@ -1822,7 +1612,7 @@ function IntroPageContent() {
               onClick={(event) => handlePhaseNavigation(event, "phase1")}
               className={cn(
                 "transition hover:text-foreground",
-                activePhase === 1 && "text-[#FF8A42]"
+                presentation.activeSlideId === "phase1" && "text-[#0075BE]"
               )}
             >
               Phase 1: Ground
@@ -1832,7 +1622,7 @@ function IntroPageContent() {
               onClick={(event) => handlePhaseNavigation(event, "phase2")}
               className={cn(
                 "transition hover:text-foreground",
-                activePhase === 2 && "text-[#FF8A42]"
+                presentation.activeSlideId === "phase2" && "text-[#0075BE]"
               )}
             >
               Phase 2: Research
@@ -1842,7 +1632,7 @@ function IntroPageContent() {
               onClick={(event) => handlePhaseNavigation(event, "phase3")}
               className={cn(
                 "transition hover:text-foreground",
-                activePhase === 3 && "text-[#FF8A42]"
+                presentation.activeSlideId === "phase3" && "text-[#0075BE]"
               )}
             >
               Phase 3: Review
@@ -1895,12 +1685,8 @@ function IntroPageContent() {
       {/* 1. HERO SECTION */}
       <section
         id="hero"
-        className="relative flex min-h-[92vh] flex-col items-center justify-center px-6 pb-12 pt-28 text-center"
-        style={
-          {
-            "--hero-progress": Math.min(1, scrollY / 720),
-          } as React.CSSProperties
-        }
+        data-intro-slide
+        className="intro-slide relative flex min-h-[100dvh] flex-col items-center justify-center px-6 pb-12 pt-28 text-center"
       >
         <div className="apple-fade visible w-full max-w-4xl">
           <div className="hero-copy flex min-h-[calc(100svh-11rem)] flex-col items-center justify-center">
@@ -1929,7 +1715,16 @@ function IntroPageContent() {
               </a>
             </div>
           </div>
+        </div>
+      </section>
 
+      <section
+        id="preview"
+        data-intro-slide
+        aria-label="Workspace preview"
+        className="intro-slide relative flex min-h-[100dvh] items-center justify-center px-6 pb-16 pt-24"
+      >
+        <div className="apple-fade visible w-full max-w-4xl">
           {/* Interactive Screen Preview */}
           <div className="hero-preview mt-16 flex justify-center">
             <div
@@ -2042,521 +1837,511 @@ function IntroPageContent() {
       </section>
 
       {/* 2. THE THREE PHASES (Klarity Scroll Flow) */}
-      <section className="border-t border-stone-200/40 bg-white">
-        <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
-          {/* Phase 1: Discover */}
-          <div
-            id="phase1"
-            data-scroll-chapter
-            className="scroll-chapter"
-          >
-            <div className="chapter-sticky grid gap-12 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
-              <div className="chapter-copy">
-                <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
-                    1
-                  </span>
-                  Phase 1: Ground
-                </div>
-                <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
-                  Turn source material into a living research workspace.
-                </h2>
-                <p className="text-md mt-6 leading-relaxed text-muted-foreground">
-                  Upload reports, policies, research, and presentations into an
-                  isolated thread. Deep Agent tracks ingestion progress and
-                  organizes source material into reusable wiki knowledge.
-                </p>
+      {/* Phase 1: Discover */}
+      <section
+        id="phase1"
+        data-intro-slide
+        className="intro-slide scroll-chapter min-h-[100dvh] border-t border-stone-200/40 bg-white px-6 pt-16 lg:px-8"
+      >
+        <div className="mx-auto grid min-h-[calc(100dvh-4rem)] max-w-7xl gap-12 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
+          <div className="chapter-copy">
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
+                1
+              </span>
+              Phase 1: Ground
+            </div>
+            <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
+              Turn source material into a living research workspace.
+            </h2>
+            <p className="text-md mt-6 leading-relaxed text-muted-foreground">
+              Upload reports, policies, research, and presentations into an
+              isolated thread. Deep Agent tracks ingestion progress and
+              organizes source material into reusable wiki knowledge.
+            </p>
 
-                <div className="mt-8 space-y-4">
-                  <div
-                    className="chapter-reveal flex items-start gap-4"
-                    data-reveal="1"
-                  >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
-                      <Activity className="h-4.5 w-4.5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-foreground">
-                        Observable Ingestion
-                      </h4>
-                      <p className="mt-1 text-xs text-stone-500">
-                        Follow each source through analysis, review, indexing,
-                        and a clear ready state.
-                      </p>
-                    </div>
-                  </div>
-                  <div
-                    className="chapter-reveal flex items-start gap-4"
-                    data-reveal="2"
-                  >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
-                      <MessageSquare className="h-4.5 w-4.5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-foreground">
-                        Thread-Scoped Knowledge
-                      </h4>
-                      <p className="mt-1 text-xs text-stone-500">
-                        Browse synthesized pages as a wiki tree or knowledge
-                        graph without losing the original sources.
-                      </p>
-                    </div>
-                  </div>
+            <div className="mt-8 space-y-4">
+              <div
+                className="chapter-reveal flex items-start gap-4"
+                data-reveal="1"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
+                  <Activity className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-foreground">
+                    Observable Ingestion
+                  </h4>
+                  <p className="mt-1 text-xs text-stone-500">
+                    Follow each source through analysis, review, indexing, and a
+                    clear ready state.
+                  </p>
                 </div>
               </div>
-
-              {/* Interactive Mock of Phase 1 */}
-              <div className="chapter-visual rounded-3xl border border-stone-200/80 bg-stone-50 p-6 shadow-sm">
-                <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
-                  <div className="mb-4 flex items-center justify-between border-b border-stone-100 pb-3">
-                    <span className="text-xs font-bold uppercase tracking-wider text-stone-800">
-                      Document Knowledge Ingestion
-                    </span>
-                    <span className="node-pulse h-2 w-2 rounded-full bg-emerald-500" />
-                  </div>
-                  <div className="space-y-3 font-mono text-xs text-muted-foreground">
-                    <div className="rounded-lg border border-stone-200/50 bg-stone-50 p-3">
-                      <p className="font-semibold text-[#FF8A42]">
-                        # Source set added:
-                      </p>
-                      <p className="mt-1">
-                        "Annual report, policy guide, and market research deck."
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-between rounded-lg border border-stone-200/50 bg-stone-50 px-3 py-2">
-                      <span>Building thread wiki...</span>
-                      <span className="font-semibold text-emerald-500">
-                        Ready
-                      </span>
-                    </div>
-                    <div className="relative rounded-lg border border-stone-200 bg-stone-900 p-3 text-white">
-                      <div className="text-[10px] text-white/50">
-                        // Research purpose
-                      </div>
-                      <p className="mt-2 text-stone-200">
-                        "Compare strategic priorities, risks, and supporting
-                        evidence across the uploaded sources."
-                      </p>
-                    </div>
-                  </div>
+              <div
+                className="chapter-reveal flex items-start gap-4"
+                data-reveal="2"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
+                  <MessageSquare className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-foreground">
+                    Thread-Scoped Knowledge
+                  </h4>
+                  <p className="mt-1 text-xs text-stone-500">
+                    Browse synthesized pages as a wiki tree or knowledge graph
+                    without losing the original sources.
+                  </p>
                 </div>
               </div>
             </div>
           </div>
 
-          <hr className="my-10 border-stone-100" />
+          {/* Interactive Mock of Phase 1 */}
+          <div className="chapter-visual rounded-3xl border border-stone-200/80 bg-stone-50 p-6 shadow-sm">
+            <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center justify-between border-b border-stone-100 pb-3">
+                <span className="text-xs font-bold uppercase tracking-wider text-stone-800">
+                  Document Knowledge Ingestion
+                </span>
+                <span className="node-pulse h-2 w-2 rounded-full bg-emerald-500" />
+              </div>
+              <div className="space-y-3 font-mono text-xs text-muted-foreground">
+                <div className="rounded-lg border border-stone-200/50 bg-stone-50 p-3">
+                  <p className="font-semibold text-[#FF8A42]">
+                    # Source set added:
+                  </p>
+                  <p className="mt-1">
+                    "Annual report, policy guide, and market research deck."
+                  </p>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-stone-200/50 bg-stone-50 px-3 py-2">
+                  <span>Building thread wiki...</span>
+                  <span className="font-semibold text-emerald-500">Ready</span>
+                </div>
+                <div className="relative rounded-lg border border-stone-200 bg-stone-900 p-3 text-white">
+                  <div className="text-[10px] text-white/50">
+                    // Research purpose
+                  </div>
+                  <p className="mt-2 text-stone-200">
+                    "Compare strategic priorities, risks, and supporting
+                    evidence across the uploaded sources."
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-          {/* Phase 2: Structure */}
-          <div
-            id="phase2"
-            data-scroll-chapter
-            className="scroll-chapter"
-          >
-            <div className="chapter-sticky grid gap-12 py-16 lg:grid-cols-[1.25fr_0.75fr] lg:items-center">
-              {/* Node Tree Visualizer */}
-              <div className="chapter-visual relative flex min-h-[400px] items-center justify-center overflow-hidden rounded-3xl border border-stone-200 bg-[#FAF7F0] p-8">
-                <svg
-                  className="pointer-events-none absolute inset-0 h-full w-full"
-                  xmlns="http://www.w3.org/2000/svg"
+      <hr className="border-stone-100" />
+
+      {/* Phase 2: Structure */}
+      <section
+        id="phase2"
+        data-intro-slide
+        className="intro-slide scroll-chapter min-h-[100dvh] border-t border-stone-200/40 bg-white px-6 pt-16 lg:px-8"
+      >
+        <div className="mx-auto grid min-h-[calc(100dvh-4rem)] max-w-7xl gap-12 py-16 lg:grid-cols-[1.25fr_0.75fr] lg:items-center">
+          {/* Node Tree Visualizer */}
+          <div className="chapter-visual relative flex min-h-[400px] items-center justify-center overflow-hidden rounded-3xl border border-stone-200 bg-[#FAF7F0] p-8">
+            <svg
+              className="pointer-events-none absolute inset-0 h-full w-full"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <g
+                data-connector-track
+                aria-hidden="true"
+                fill="none"
+                stroke="#e2e8f0"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+              >
+                <path d="M 120 180 Q 220 180 320 120" />
+                <path d="M 120 180 Q 220 180 320 240" />
+                <path d="M 320 120 Q 420 120 520 180" />
+                <path d="M 320 240 Q 420 240 520 180" />
+              </g>
+
+              {/* Contextual route highlights */}
+              <path
+                data-workflow-route="upper"
+                d="M 120 180 Q 220 180 320 120"
+                stroke={upperRouteActive ? "#ff8a42" : "transparent"}
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                fill="none"
+                className="workflow-route"
+              />
+              <path
+                data-workflow-route="lower"
+                d="M 120 180 Q 220 180 320 240"
+                stroke={lowerRouteActive ? "#ff8a42" : "transparent"}
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                fill="none"
+                className="workflow-route"
+              />
+              <path
+                data-workflow-route="upper"
+                d="M 320 120 Q 420 120 520 180"
+                stroke={upperRouteActive ? "#ff8a42" : "transparent"}
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                fill="none"
+                className="workflow-route"
+              />
+              <path
+                data-workflow-route="lower"
+                d="M 320 240 Q 420 240 520 180"
+                stroke={lowerRouteActive ? "#ff8a42" : "transparent"}
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                fill="none"
+                className="workflow-route"
+              />
+              {upperRouteActive && (
+                <circle
+                  className="workflow-particle"
+                  r="4.5"
                   aria-hidden="true"
-                  focusable="false"
                 >
-                  <g
-                    data-connector-track
-                    aria-hidden="true"
-                    fill="none"
-                    stroke="#e2e8f0"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  >
-                    <path d="M 120 180 Q 220 180 320 120" />
-                    <path d="M 120 180 Q 220 180 320 240" />
-                    <path d="M 320 120 Q 420 120 520 180" />
-                    <path d="M 320 240 Q 420 240 520 180" />
-                  </g>
+                  <animateMotion
+                    dur="1.6s"
+                    repeatCount="indefinite"
+                    path="M 120 180 Q 220 180 320 120 Q 420 120 520 180"
+                  />
+                </circle>
+              )}
+              {lowerRouteActive && (
+                <circle
+                  className="workflow-particle"
+                  r="4.5"
+                  aria-hidden="true"
+                >
+                  <animateMotion
+                    begin={upperRouteActive ? "0.18s" : "0s"}
+                    dur="1.6s"
+                    repeatCount="indefinite"
+                    path="M 120 180 Q 220 180 320 240 Q 420 240 520 180"
+                  />
+                </circle>
+              )}
+            </svg>
 
-                  {/* Contextual route highlights */}
-                  <path
-                    data-workflow-route="upper"
-                    d="M 120 180 Q 220 180 320 120"
-                    stroke={upperRouteActive ? "#ff8a42" : "transparent"}
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    fill="none"
-                    className="workflow-route"
-                  />
-                  <path
-                    data-workflow-route="lower"
-                    d="M 120 180 Q 220 180 320 240"
-                    stroke={lowerRouteActive ? "#ff8a42" : "transparent"}
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    fill="none"
-                    className="workflow-route"
-                  />
-                  <path
-                    data-workflow-route="upper"
-                    d="M 320 120 Q 420 120 520 180"
-                    stroke={upperRouteActive ? "#ff8a42" : "transparent"}
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    fill="none"
-                    className="workflow-route"
-                  />
-                  <path
-                    data-workflow-route="lower"
-                    d="M 320 240 Q 420 240 520 180"
-                    stroke={lowerRouteActive ? "#ff8a42" : "transparent"}
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    fill="none"
-                    className="workflow-route"
-                  />
-                  {upperRouteActive && (
-                    <circle
-                      className="workflow-particle"
-                      r="4.5"
-                      aria-hidden="true"
-                    >
-                      <animateMotion
-                        dur="1.6s"
-                        repeatCount="indefinite"
-                        path="M 120 180 Q 220 180 320 120 Q 420 120 520 180"
-                      />
-                    </circle>
+            <div className="relative z-10 grid w-full max-w-xl grid-cols-3 gap-x-20 gap-y-12">
+              {/* Col 1 */}
+              <div className="flex items-center justify-center">
+                <div
+                  role="group"
+                  tabIndex={0}
+                  onMouseEnter={() => setHoveredNode("A")}
+                  onMouseLeave={() => setHoveredNode(null)}
+                  onFocus={() => setFocusedNode("A")}
+                  onBlur={() => setFocusedNode(null)}
+                  aria-label="Source Material"
+                  className={cn(
+                    "workflow-node w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                    activeNode === "A"
+                      ? "scale-105 border-[#FF8A42] shadow-md"
+                      : "border-stone-200"
                   )}
-                  {lowerRouteActive && (
-                    <circle
-                      className="workflow-particle"
-                      r="4.5"
-                      aria-hidden="true"
-                    >
-                      <animateMotion
-                        begin={upperRouteActive ? "0.18s" : "0s"}
-                        dur="1.6s"
-                        repeatCount="indefinite"
-                        path="M 120 180 Q 220 180 320 240 Q 420 240 520 180"
-                      />
-                    </circle>
-                  )}
-                </svg>
-
-                <div className="relative z-10 grid w-full max-w-xl grid-cols-3 gap-x-20 gap-y-12">
-                  {/* Col 1 */}
-                  <div className="flex items-center justify-center">
-                    <div
-                      role="group"
-                      tabIndex={0}
-                      onMouseEnter={() => setHoveredNode("A")}
-                      onMouseLeave={() => setHoveredNode(null)}
-                      onFocus={() => setFocusedNode("A")}
-                      onBlur={() => setFocusedNode(null)}
-                      aria-label="Source Material"
-                      className={cn(
-                        "workflow-node w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
-                        activeNode === "A"
-                          ? "scale-105 border-[#FF8A42] shadow-md"
-                          : "border-stone-200"
-                      )}
-                    >
-                      <FolderTree className="mx-auto h-5 w-5 text-[#FF8A42]" />
-                      <h5 className="mt-2 text-xs font-bold text-stone-800">
-                        Source Material
-                      </h5>
-                      <p className="mt-1 text-[10px] text-stone-400">
-                        Reports &amp; Policies
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Col 2 */}
-                  <div className="flex flex-col justify-center gap-8">
-                    <div
-                      role="group"
-                      tabIndex={0}
-                      onMouseEnter={() => setHoveredNode("C")}
-                      onMouseLeave={() => setHoveredNode(null)}
-                      onFocus={() => setFocusedNode("C")}
-                      onBlur={() => setFocusedNode(null)}
-                      aria-label="Living Wiki"
-                      className={cn(
-                        "workflow-node w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
-                        activeNode === "C"
-                          ? "scale-105 border-[#FF8A42] shadow-md"
-                          : "border-stone-200"
-                      )}
-                    >
-                      <Terminal className="mx-auto h-5 w-5 text-sky-500" />
-                      <h5 className="mt-2 text-xs font-bold text-stone-800">
-                        Living Wiki
-                      </h5>
-                      <p className="mt-1 text-[10px] text-stone-400">
-                        Structured Pages
-                      </p>
-                    </div>
-                    <div
-                      role="group"
-                      tabIndex={0}
-                      onMouseEnter={() => setHoveredNode("D")}
-                      onMouseLeave={() => setHoveredNode(null)}
-                      onFocus={() => setFocusedNode("D")}
-                      onBlur={() => setFocusedNode(null)}
-                      aria-label="Research Plan"
-                      className={cn(
-                        "workflow-node w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
-                        activeNode === "D"
-                          ? "scale-105 border-[#FF8A42] shadow-md"
-                          : "border-stone-200"
-                      )}
-                    >
-                      <Shield className="mx-auto h-5 w-5 text-emerald-500" />
-                      <h5 className="mt-2 text-xs font-bold text-stone-800">
-                        Research Plan
-                      </h5>
-                      <p className="mt-1 text-[10px] text-stone-400">
-                        Bounded Tasks
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Col 3 */}
-                  <div className="flex items-center justify-center">
-                    <div
-                      role="group"
-                      tabIndex={0}
-                      onMouseEnter={() => setHoveredNode("B")}
-                      onMouseLeave={() => setHoveredNode(null)}
-                      onFocus={() => setFocusedNode("B")}
-                      onBlur={() => setFocusedNode(null)}
-                      aria-label="Source-Linked Report"
-                      className={cn(
-                        "workflow-node w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
-                        activeNode === "B"
-                          ? "scale-105 border-[#FF8A42] shadow-md"
-                          : "border-stone-200"
-                      )}
-                    >
-                      <CheckCircle className="mx-auto h-5 w-5 text-amber-500" />
-                      <h5 className="mt-2 text-xs font-bold text-stone-800">
-                        Source-Linked Report
-                      </h5>
-                      <p className="mt-1 text-[10px] text-stone-400">
-                        Reviewable Output
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Dynamic status helper */}
-                <div className="absolute bottom-4 left-4 right-4 text-center">
-                  <span className="rounded-full border border-stone-200/50 bg-white/80 px-3 py-1 font-mono text-[10px] text-stone-400 shadow-sm">
-                    {activeNode === "A" &&
-                      "Source: Uploaded reports, policies, research, and presentations."}
-                    {activeNode === "C" &&
-                      "Knowledge: Synthesizes sources into reusable wiki pages."}
-                    {activeNode === "D" &&
-                      "Research: Plans document queries and bounded web evidence gathering."}
-                    {activeNode === "B" &&
-                      "Output: Produces a source-linked report for human review."}
-                    {!activeNode &&
-                      "Hover or focus nodes to preview the active process tree connections."}
-                  </span>
+                >
+                  <FolderTree className="mx-auto h-5 w-5 text-[#FF8A42]" />
+                  <h5 className="mt-2 text-xs font-bold text-stone-800">
+                    Source Material
+                  </h5>
+                  <p className="mt-1 text-[10px] text-stone-400">
+                    Reports &amp; Policies
+                  </p>
                 </div>
               </div>
 
-              <div className="chapter-copy">
-                <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
-                    2
-                  </span>
-                  Phase 2: Research
+              {/* Col 2 */}
+              <div className="flex flex-col justify-center gap-8">
+                <div
+                  role="group"
+                  tabIndex={0}
+                  onMouseEnter={() => setHoveredNode("C")}
+                  onMouseLeave={() => setHoveredNode(null)}
+                  onFocus={() => setFocusedNode("C")}
+                  onBlur={() => setFocusedNode(null)}
+                  aria-label="Living Wiki"
+                  className={cn(
+                    "workflow-node w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                    activeNode === "C"
+                      ? "scale-105 border-[#FF8A42] shadow-md"
+                      : "border-stone-200"
+                  )}
+                >
+                  <Terminal className="mx-auto h-5 w-5 text-sky-500" />
+                  <h5 className="mt-2 text-xs font-bold text-stone-800">
+                    Living Wiki
+                  </h5>
+                  <p className="mt-1 text-[10px] text-stone-400">
+                    Structured Pages
+                  </p>
                 </div>
-                <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
-                  Plan bounded research across documents and the web.
-                </h2>
-                <p className="text-md mt-6 leading-relaxed text-muted-foreground">
-                  Deep Agent queries thread knowledge first, delegates targeted
-                  web research for remaining gaps, and synthesizes the evidence
-                  into a report with visible tasks and state files.
-                </p>
+                <div
+                  role="group"
+                  tabIndex={0}
+                  onMouseEnter={() => setHoveredNode("D")}
+                  onMouseLeave={() => setHoveredNode(null)}
+                  onFocus={() => setFocusedNode("D")}
+                  onBlur={() => setFocusedNode(null)}
+                  aria-label="Research Plan"
+                  className={cn(
+                    "workflow-node w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                    activeNode === "D"
+                      ? "scale-105 border-[#FF8A42] shadow-md"
+                      : "border-stone-200"
+                  )}
+                >
+                  <Shield className="mx-auto h-5 w-5 text-emerald-500" />
+                  <h5 className="mt-2 text-xs font-bold text-stone-800">
+                    Research Plan
+                  </h5>
+                  <p className="mt-1 text-[10px] text-stone-400">
+                    Bounded Tasks
+                  </p>
+                </div>
+              </div>
 
-                <div className="mt-8 space-y-4">
-                  <div
-                    className="chapter-reveal flex items-center gap-3"
-                    data-reveal="1"
-                  >
-                    <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
-                    <span className="text-sm font-semibold text-stone-800">
-                      Thread knowledge used before web search
-                    </span>
-                  </div>
-                  <div
-                    className="chapter-reveal flex items-center gap-3"
-                    data-reveal="2"
-                  >
-                    <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
-                    <span className="text-sm font-semibold text-stone-800">
-                      Configurable concurrency and iteration limits
-                    </span>
-                  </div>
-                  <div
-                    className="chapter-reveal flex items-center gap-3"
-                    data-reveal="3"
-                  >
-                    <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
-                    <span className="text-sm font-semibold text-stone-800">
-                      Visible tasks, research passes, and state files
-                    </span>
-                  </div>
+              {/* Col 3 */}
+              <div className="flex items-center justify-center">
+                <div
+                  role="group"
+                  tabIndex={0}
+                  onMouseEnter={() => setHoveredNode("B")}
+                  onMouseLeave={() => setHoveredNode(null)}
+                  onFocus={() => setFocusedNode("B")}
+                  onBlur={() => setFocusedNode(null)}
+                  aria-label="Source-Linked Report"
+                  className={cn(
+                    "workflow-node w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                    activeNode === "B"
+                      ? "scale-105 border-[#FF8A42] shadow-md"
+                      : "border-stone-200"
+                  )}
+                >
+                  <CheckCircle className="mx-auto h-5 w-5 text-amber-500" />
+                  <h5 className="mt-2 text-xs font-bold text-stone-800">
+                    Source-Linked Report
+                  </h5>
+                  <p className="mt-1 text-[10px] text-stone-400">
+                    Reviewable Output
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Dynamic status helper */}
+            <div className="absolute bottom-4 left-4 right-4 text-center">
+              <span className="rounded-full border border-stone-200/50 bg-white/80 px-3 py-1 font-mono text-[10px] text-stone-400 shadow-sm">
+                {activeNode === "A" &&
+                  "Source: Uploaded reports, policies, research, and presentations."}
+                {activeNode === "C" &&
+                  "Knowledge: Synthesizes sources into reusable wiki pages."}
+                {activeNode === "D" &&
+                  "Research: Plans document queries and bounded web evidence gathering."}
+                {activeNode === "B" &&
+                  "Output: Produces a source-linked report for human review."}
+                {!activeNode &&
+                  "Hover or focus nodes to preview the active process tree connections."}
+              </span>
+            </div>
+          </div>
+
+          <div className="chapter-copy">
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
+                2
+              </span>
+              Phase 2: Research
+            </div>
+            <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
+              Plan bounded research across documents and the web.
+            </h2>
+            <p className="text-md mt-6 leading-relaxed text-muted-foreground">
+              Deep Agent queries thread knowledge first, delegates targeted web
+              research for remaining gaps, and synthesizes the evidence into a
+              report with visible tasks and state files.
+            </p>
+
+            <div className="mt-8 space-y-4">
+              <div
+                className="chapter-reveal flex items-center gap-3"
+                data-reveal="1"
+              >
+                <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
+                <span className="text-sm font-semibold text-stone-800">
+                  Thread knowledge used before web search
+                </span>
+              </div>
+              <div
+                className="chapter-reveal flex items-center gap-3"
+                data-reveal="2"
+              >
+                <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
+                <span className="text-sm font-semibold text-stone-800">
+                  Configurable concurrency and iteration limits
+                </span>
+              </div>
+              <div
+                className="chapter-reveal flex items-center gap-3"
+                data-reveal="3"
+              >
+                <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
+                <span className="text-sm font-semibold text-stone-800">
+                  Visible tasks, research passes, and state files
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <hr className="border-stone-100" />
+
+      {/* Phase 3: Verify */}
+      <section
+        id="phase3"
+        data-intro-slide
+        className="intro-slide scroll-chapter min-h-[100dvh] border-t border-stone-200/40 bg-white px-6 pt-16 lg:px-8"
+      >
+        <div className="mx-auto grid min-h-[calc(100dvh-4rem)] max-w-7xl gap-12 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
+          <div className="chapter-copy">
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
+                3
+              </span>
+              Phase 3: Review
+            </div>
+            <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
+              Inspect evidence before you use the result.
+            </h2>
+            <p className="text-md mt-6 leading-relaxed text-muted-foreground">
+              Post-generation review checks citation reachability, report
+              coverage, and missing perspectives. Weak reports can be revised
+              through visible verification rounds before final delivery.
+            </p>
+
+            <div className="mt-8 space-y-4">
+              <div
+                className="chapter-reveal flex items-start gap-4"
+                data-reveal="1"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
+                  <Shield className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-foreground">
+                    Source-Linked Evidence
+                  </h4>
+                  <p className="mt-1 text-xs text-stone-500">
+                    Open document citations at the referenced page and inspect
+                    the surrounding evidence in the workspace.
+                  </p>
+                </div>
+              </div>
+              <div
+                className="chapter-reveal flex items-start gap-4"
+                data-reveal="2"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
+                  <Lock className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-foreground">
+                    Human-Reviewed Skills
+                  </h4>
+                  <p className="mt-1 text-xs text-stone-500">
+                    Selecting a research skill creates an editable instruction
+                    grounded in the current thread before it is sent.
+                  </p>
                 </div>
               </div>
             </div>
           </div>
 
-          <hr className="my-10 border-stone-100" />
-
-          {/* Phase 3: Verify */}
-          <div
-            id="phase3"
-            data-scroll-chapter
-            className="scroll-chapter"
-          >
-            <div className="chapter-sticky grid gap-12 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
-              <div className="chapter-copy">
-                <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
-                    3
-                  </span>
-                  Phase 3: Review
+          {/* Comparison specs grid */}
+          <div className="chapter-visual rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
+            <h4 className="font-serif-header mb-4 text-center text-lg font-bold text-stone-800">
+              Applied AI Deep Agent vs. a Bare Model
+            </h4>
+            <div className="divide-y divide-stone-200 overflow-hidden rounded-2xl border border-stone-200 bg-stone-50">
+              <div className="grid grid-cols-2 bg-stone-100/70 p-4 text-xs font-semibold text-stone-700">
+                <span>RESEARCH WORKSPACE</span>
+                <span>ONE-OFF MODEL RESPONSE</span>
+              </div>
+              <div
+                className="chapter-reveal grid grid-cols-2 p-4 text-xs"
+                data-reveal="1"
+              >
+                <div>
+                  <h5 className="font-bold text-foreground">
+                    Persistent Research Context
+                  </h5>
+                  <p className="mt-1 text-stone-500">
+                    Thread wiki, uploaded sources, tasks, and state files remain
+                    available for follow-up research.
+                  </p>
                 </div>
-                <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
-                  Inspect evidence before you use the result.
-                </h2>
-                <p className="text-md mt-6 leading-relaxed text-muted-foreground">
-                  Post-generation review checks citation reachability, report
-                  coverage, and missing perspectives. Weak reports can be
-                  revised through visible verification rounds before final
-                  delivery.
-                </p>
-
-                <div className="mt-8 space-y-4">
-                  <div
-                    className="chapter-reveal flex items-start gap-4"
-                    data-reveal="1"
-                  >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
-                      <Shield className="h-4.5 w-4.5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-foreground">
-                        Source-Linked Evidence
-                      </h4>
-                      <p className="mt-1 text-xs text-stone-500">
-                        Open document citations at the referenced page and
-                        inspect the surrounding evidence in the workspace.
-                      </p>
-                    </div>
-                  </div>
-                  <div
-                    className="chapter-reveal flex items-start gap-4"
-                    data-reveal="2"
-                  >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
-                      <Lock className="h-4.5 w-4.5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-foreground">
-                        Human-Reviewed Skills
-                      </h4>
-                      <p className="mt-1 text-xs text-stone-500">
-                        Selecting a research skill creates an editable
-                        instruction grounded in the current thread before it is
-                        sent.
-                      </p>
-                    </div>
-                  </div>
+                <div className="border-l border-stone-200 pl-4 text-stone-500">
+                  <h5 className="font-bold text-stone-400">
+                    Single Context Window
+                  </h5>
+                  <p className="mt-1">
+                    Source material and prior findings must be supplied again
+                    when context is lost.
+                  </p>
                 </div>
               </div>
-
-              {/* Comparison specs grid */}
-              <div className="chapter-visual rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
-                <h4 className="font-serif-header mb-4 text-center text-lg font-bold text-stone-800">
-                  Applied AI Deep Agent vs. a Bare Model
-                </h4>
-                <div className="divide-y divide-stone-200 overflow-hidden rounded-2xl border border-stone-200 bg-stone-50">
-                  <div className="grid grid-cols-2 bg-stone-100/70 p-4 text-xs font-semibold text-stone-700">
-                    <span>RESEARCH WORKSPACE</span>
-                    <span>ONE-OFF MODEL RESPONSE</span>
-                  </div>
-                  <div
-                    className="chapter-reveal grid grid-cols-2 p-4 text-xs"
-                    data-reveal="1"
-                  >
-                    <div>
-                      <h5 className="font-bold text-foreground">
-                        Persistent Research Context
-                      </h5>
-                      <p className="mt-1 text-stone-500">
-                        Thread wiki, uploaded sources, tasks, and state files
-                        remain available for follow-up research.
-                      </p>
-                    </div>
-                    <div className="border-l border-stone-200 pl-4 text-stone-500">
-                      <h5 className="font-bold text-stone-400">
-                        Single Context Window
-                      </h5>
-                      <p className="mt-1">
-                        Source material and prior findings must be supplied
-                        again when context is lost.
-                      </p>
-                    </div>
-                  </div>
-                  <div
-                    className="chapter-reveal grid grid-cols-2 p-4 text-xs"
-                    data-reveal="2"
-                  >
-                    <div>
-                      <h5 className="font-bold text-foreground">
-                        Source Traceability
-                      </h5>
-                      <p className="mt-1 text-stone-500">
-                        Document citations open the original file at the
-                        referenced page for direct inspection.
-                      </p>
-                    </div>
-                    <div className="border-l border-stone-200 pl-4 text-stone-500">
-                      <h5 className="font-bold text-stone-400">
-                        Unlinked Answers
-                      </h5>
-                      <p className="mt-1">
-                        Claims can be difficult to connect back to their
-                        supporting evidence.
-                      </p>
-                    </div>
-                  </div>
-                  <div
-                    className="chapter-reveal grid grid-cols-2 p-4 text-xs"
-                    data-reveal="3"
-                  >
-                    <div>
-                      <h5 className="font-bold text-foreground">
-                        Reusable Research Skills
-                      </h5>
-                      <p className="mt-1 text-stone-500">
-                        Apply repeatable workflows for datasets, study slides,
-                        interview material, and organization-specific outputs.
-                      </p>
-                    </div>
-                    <div className="border-l border-stone-200 pl-4 text-stone-500">
-                      <h5 className="font-bold text-stone-400">
-                        One-Off Prompting
-                      </h5>
-                      <p className="mt-1">
-                        Output format and quality instructions must be recreated
-                        for each new request.
-                      </p>
-                    </div>
-                  </div>
+              <div
+                className="chapter-reveal grid grid-cols-2 p-4 text-xs"
+                data-reveal="2"
+              >
+                <div>
+                  <h5 className="font-bold text-foreground">
+                    Source Traceability
+                  </h5>
+                  <p className="mt-1 text-stone-500">
+                    Document citations open the original file at the referenced
+                    page for direct inspection.
+                  </p>
+                </div>
+                <div className="border-l border-stone-200 pl-4 text-stone-500">
+                  <h5 className="font-bold text-stone-400">Unlinked Answers</h5>
+                  <p className="mt-1">
+                    Claims can be difficult to connect back to their supporting
+                    evidence.
+                  </p>
+                </div>
+              </div>
+              <div
+                className="chapter-reveal grid grid-cols-2 p-4 text-xs"
+                data-reveal="3"
+              >
+                <div>
+                  <h5 className="font-bold text-foreground">
+                    Reusable Research Skills
+                  </h5>
+                  <p className="mt-1 text-stone-500">
+                    Apply repeatable workflows for datasets, study slides,
+                    interview material, and organization-specific outputs.
+                  </p>
+                </div>
+                <div className="border-l border-stone-200 pl-4 text-stone-500">
+                  <h5 className="font-bold text-stone-400">
+                    One-Off Prompting
+                  </h5>
+                  <p className="mt-1">
+                    Output format and quality instructions must be recreated for
+                    each new request.
+                  </p>
                 </div>
               </div>
             </div>
@@ -2566,11 +2351,12 @@ function IntroPageContent() {
 
       {/* 3. CTA & FOOTER */}
       <section
-        data-scroll-reveal
-        className="scroll-reveal relative flex min-h-[60vh] flex-col items-center justify-center bg-stone-950 px-6 py-24 text-center text-white lg:-mt-[calc(40vh-3rem)] lg:min-h-[calc(100vh-3rem)]"
+        id="launch"
+        data-intro-slide
+        className="intro-slide scroll-reveal relative flex min-h-[100dvh] flex-col items-center justify-center bg-stone-950 px-6 py-24 text-center text-white"
       >
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,138,66,0.06)_0%,transparent_70%)]" />
-        <div className="relative z-10 max-w-3xl">
+        <div className="launch-content relative z-10 max-w-3xl">
           <p className="mb-3 font-mono text-xs uppercase tracking-widest text-[#FF8A42]">
             Designed for Human Oversight
           </p>

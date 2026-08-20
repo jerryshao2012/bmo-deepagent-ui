@@ -4,24 +4,37 @@ import test from "node:test";
 
 const introPagePath = new URL("../src/app/intro/page.tsx", import.meta.url);
 
-test("intro phases form three progressive sticky scroll chapters", async () => {
+test("intro page renders exactly six ordered semantic presentation slides", async () => {
   const source = await readFile(introPagePath, "utf8");
+  const slideSections = [...source.matchAll(/<section\b[\s\S]*?>/g)]
+    .map(([openingTag]) => openingTag)
+    .filter((openingTag) => openingTag.includes("data-intro-slide"));
 
-  assert.equal(source.match(/^\s*data-scroll-chapter\s*$/gm)?.length, 3);
-  assert.match(source, /requestAnimationFrame/);
-  assert.match(source, /--chapter-progress/);
-  assert.match(source, /className="chapter-sticky/);
-  assert.match(source, /chapter-copy/);
-  assert.match(source, /chapter-visual/);
-  assert.match(source, /chapter-reveal/);
+  assert.equal(source.match(/\bdata-intro-slide\b/g)?.length, 6);
+  assert.deepEqual(
+    slideSections.map((openingTag) => openingTag.match(/id="([^"]+)"/)?.[1]),
+    ["hero", "preview", "phase1", "phase2", "phase3", "launch"]
+  );
+  for (const openingTag of slideSections) {
+    assert.match(openingTag, /className="[^"]*\bintro-slide\b[^"]*"/);
+    assert.match(openingTag, /min-h-\[100dvh\]/);
+  }
+  assert.doesNotMatch(
+    source,
+    /<section className="border-t border-stone-200\/40 bg-white">/
+  );
 });
 
-test("intro scroll story keeps accessible motion fallbacks", async () => {
+test("intro page removes obsolete sticky story and negative launch tail", async () => {
   const source = await readFile(introPagePath, "utf8");
 
   assert.match(source, /prefers-reduced-motion: reduce/);
-  assert.match(source, /@media \(max-width: 1023px\)/);
   assert.match(source, /scroll-margin-top/);
+  assert.doesNotMatch(source, /min-height:\s*145vh/);
+  assert.doesNotMatch(source, /lg:-mt-\[calc\(40vh-3rem\)\]/);
+  assert.doesNotMatch(source, /lg:min-h-\[calc\(100vh-3rem\)\]/);
+  assert.doesNotMatch(source, /data-scroll-chapter/);
+  assert.doesNotMatch(source, /data-scroll-reveal/);
 });
 
 test("intro page keeps document as the only vertical scroll container", async () => {
@@ -31,13 +44,93 @@ test("intro page keeps document as the only vertical scroll container", async ()
   assert.doesNotMatch(source, /min-h-screen overflow-x-hidden/);
 });
 
-test("hero preview begins after the first viewport", async () => {
+test("hero and workspace preview are separate sibling slides", async () => {
   const source = await readFile(introPagePath, "utf8");
+  const heroStart = source.indexOf('id="hero"');
+  const heroEnd = source.indexOf("</section>", heroStart);
+  const previewStart = source.indexOf('id="preview"', heroEnd);
+  const previewEnd = source.indexOf("</section>", previewStart);
+
+  assert.notEqual(heroStart, -1);
+  assert.notEqual(heroEnd, -1);
+  assert.ok(previewStart > heroEnd);
+  assert.ok(previewEnd > previewStart);
+  assert.match(source.slice(heroStart, heroEnd), /hero-copy/);
+  assert.doesNotMatch(source.slice(heroStart, heroEnd), /hero-preview/);
+  assert.match(source.slice(previewStart, previewEnd), /hero-preview/);
+  assert.match(
+    source.slice(previewStart, previewEnd),
+    /aria-label="Workspace preview"/
+  );
+  assert.match(source.slice(previewStart, previewEnd), /ref=\{stackRef\}/);
+  assert.match(
+    source.slice(previewStart, previewEnd),
+    /Active Thread: #\{threadId\}/
+  );
+});
+
+test("intro page integrates suspended presentation control and chrome", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const chromeStart = source.indexOf("<PresentationChrome");
+  const inlineStyleEnd = source.indexOf("/>", source.indexOf("<style"));
+  const headerStart = source.indexOf("<header", inlineStyleEnd);
 
   assert.match(
     source,
-    /hero-copy[^\n]*min-h-\[calc\(100svh-11rem\)\][^\n]*justify-center/
+    /import \{ PresentationChrome \} from "\.\/presentation-chrome";/
   );
+  assert.match(
+    source,
+    /import \{ useIntroPresentation \} from "\.\/use-intro-presentation";/
+  );
+  assert.equal(
+    source.match(/useIntroPresentation\(\{ suspended: isDialogOpen \}\)/g)
+      ?.length,
+    1
+  );
+  assert.match(source, /activeSlideId=\{presentation\.activeSlideId\}/);
+  assert.match(source, /isFullscreen=\{presentation\.isFullscreen\}/);
+  assert.match(source, /fullscreenStatus=\{presentation\.fullscreenStatus\}/);
+  assert.match(
+    source,
+    /onNavigate=\{\(id\) => presentation\.goToSlide\(id, "push"\)\}/
+  );
+  assert.match(
+    source,
+    /onToggleFullscreen=\{\(\) => void presentation\.toggleFullscreen\(\)\}/
+  );
+  assert.ok(inlineStyleEnd < chromeStart && chromeStart < headerStart);
+});
+
+test("intro header retains product actions and follows active presentation slide", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const header = source.slice(
+    source.indexOf("<header"),
+    source.indexOf("</header>")
+  );
+
+  assert.doesNotMatch(source, /\bscrollY\b/);
+  for (const stableHeaderClass of [
+    "border-[#D6E2EA]",
+    "bg-white/95",
+    "shadow-sm",
+    "backdrop-blur-xl",
+  ]) {
+    assert.ok(header.includes(stableHeaderClass));
+  }
+  assert.match(header, /Applied AI Deep Agent/);
+  assert.match(header, /ref=\{markdownPreviewTriggerRef\}/);
+  assert.match(header, /Collab Thread/);
+  assert.match(header, /: #\{threadId\}/);
+  assert.match(header, /Launch Workspace/);
+  for (const phaseId of ["phase1", "phase2", "phase3"]) {
+    assert.match(
+      header,
+      new RegExp(
+        `presentation\\.activeSlideId === "${phaseId}" && "text-\\[#0075BE\\]"`
+      )
+    );
+  }
 });
 
 test("phase 2 keeps complete connector tracks beneath animated paths", async () => {
@@ -186,14 +279,20 @@ test("phase 2 workflow semantics respect accessibility motion settings", async (
   );
 });
 
-test("closing section replaces the empty tail and centers its content", async () => {
+test("launch slide keeps its content wrapper without sticky-tail layout", async () => {
   const source = await readFile(introPagePath, "utf8");
+  const launchStart = source.indexOf('id="launch"');
+  const launchEnd = source.indexOf("</section>", launchStart);
+  const launch = source.slice(launchStart, launchEnd);
 
-  assert.match(
-    source,
-    /data-scroll-reveal[\s\S]{0,220}lg:-mt-\[calc\(40vh-3rem\)\][\s\S]{0,100}lg:min-h-\[calc\(100vh-3rem\)\]/
+  assert.notEqual(launchStart, -1);
+  assert.match(launch, /className="launch-content relative z-10 max-w-3xl"/);
+  assert.match(launch, /Designed for Human Oversight/);
+  assert.equal(
+    launch.match(/https:\/\/medium\.com\/@jerry\.shao\//g)?.length,
+    2
   );
-  assert.doesNotMatch(source, /-top-\[30vh\][\s\S]{0,80}h-\[30vh\]/);
+  assert.doesNotMatch(launch, /sticky|lg:-mt-|data-scroll-reveal/);
 });
 
 test("phase navigation keeps semantic anchors and uses scoped scrolling", async () => {

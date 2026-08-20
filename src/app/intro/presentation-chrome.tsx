@@ -18,12 +18,14 @@ export function PresentationChrome({
   fullscreenStatus,
   onNavigate,
   onToggleFullscreen,
-}: PresentationChromeProps): JSX.Element {
-  const activeSlideIndex = Math.max(
-    0,
-    INTRO_SLIDES.findIndex((slide) => slide.id === activeSlideId)
+}: PresentationChromeProps) {
+  const requestedActiveSlideIndex = INTRO_SLIDES.findIndex(
+    (slide) => slide.id === activeSlideId
   );
+  const activeSlideIndex =
+    requestedActiveSlideIndex >= 0 ? requestedActiveSlideIndex : 0;
   const activeSlide = INTRO_SLIDES[activeSlideIndex];
+  const effectiveActiveSlideId = activeSlide.id;
   const progress = (activeSlideIndex + 1) / INTRO_SLIDES.length;
   const currentSlide = activeSlideIndex + 1;
   const slideCount = INTRO_SLIDES.length;
@@ -37,6 +39,7 @@ export function PresentationChrome({
     <div
       className="pointer-events-none fixed inset-0 z-[90]"
       aria-label="Presentation controls"
+      role="group"
     >
       <div
         aria-label="Slide progress"
@@ -57,7 +60,7 @@ export function PresentationChrome({
         className="pointer-events-auto fixed right-5 top-1/2 hidden -translate-y-1/2 flex-col gap-3 sm:flex"
       >
         {INTRO_SLIDES.map((slide, index) => {
-          const isActive = slide.id === activeSlideId;
+          const isActive = slide.id === effectiveActiveSlideId;
           return (
             <button
               aria-current={isActive ? "step" : undefined}

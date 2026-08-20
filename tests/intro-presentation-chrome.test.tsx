@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import React from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { PresentationChrome } from "../src/app/intro/presentation-chrome";
 import {
@@ -38,7 +39,28 @@ test("renders progress and counter for active phase 1", () => {
   assert.equal(progress.getAttribute("aria-valuemax"), "6");
   assert.equal(progress.getAttribute("aria-valuenow"), "3");
   assert.match(progress.getAttribute("aria-label") || "", /Slide progress/);
+  assert.equal(progress.firstElementChild?.style.transform, "scaleX(0.5)");
   assert.ok(screen.getByText("03 / 06"));
+});
+
+test("uses hero consistently for an invalid runtime slide ID", () => {
+  renderChrome({ activeSlideId: "missing" as IntroSlideId });
+
+  assert.equal(
+    screen.getByRole("progressbar").getAttribute("aria-valuenow"),
+    "1"
+  );
+  assert.ok(screen.getByText("01 / 06"));
+  assert.equal(
+    screen.getByRole("status").textContent,
+    "Slide 1 of 6: Overview"
+  );
+  assert.equal(
+    screen
+      .getByRole("button", { name: "Go to slide 1: Overview" })
+      .getAttribute("aria-current"),
+    "step"
+  );
 });
 
 test("renders one accessible dot per navigation slide and marks active slide", () => {
@@ -100,6 +122,40 @@ test("shows keyboard hint with arrow keys and F", () => {
   assert.equal(hintContainer.classList.contains("pointer-events-none"), true);
   assert.match(hintContainer.textContent || "", /Arrow/);
   assert.match(hintContainer.textContent || "", /F/);
+});
+
+test("keeps overlay pointer-transparent while controls intercept input", () => {
+  renderChrome();
+
+  const overlay = screen.getByRole("group", { name: "Presentation controls" });
+  const navigation = screen.getByRole("navigation", {
+    name: "Presentation slides",
+  });
+  const fullscreen = screen.getByRole("button", { name: "Enter fullscreen" });
+
+  assert.equal(overlay.classList.contains("pointer-events-none"), true);
+  assert.equal(navigation.classList.contains("pointer-events-auto"), true);
+  assert.equal(fullscreen.classList.contains("pointer-events-auto"), true);
+});
+
+test("activates dots and fullscreen controls from the keyboard", async () => {
+  const user = userEvent.setup();
+  const navigated: IntroSlideId[] = [];
+  let fullscreenToggles = 0;
+  renderChrome({
+    onNavigate: (id) => navigated.push(id),
+    onToggleFullscreen: () => fullscreenToggles++,
+  });
+
+  const launch = screen.getByRole("button", { name: "Go to slide 6: Launch" });
+  launch.focus();
+  await user.keyboard("{Enter}");
+  assert.deepEqual(navigated, ["launch"]);
+
+  const fullscreen = screen.getByRole("button", { name: "Enter fullscreen" });
+  fullscreen.focus();
+  await user.keyboard("{Enter}");
+  assert.equal(fullscreenToggles, 1);
 });
 
 test("announces current slide and fullscreen status after rerender", () => {

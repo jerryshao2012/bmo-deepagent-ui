@@ -346,13 +346,33 @@ test("maps keyboard directions, Home and End while clamping slide navigation", (
   assert.equal(window.location.hash, "#launch");
 });
 
-test("suspension reads latest props and blocks presentation input", () => {
+test("suspension blocks every presentation input and re-enables controls on close", () => {
   setupSlides();
   const { result, rerender } = renderPresentation(true);
+  const initialHash = window.location.hash;
+  const initialScrollCount = scrollCalls.length;
 
-  const blocked = keydown("ArrowRight");
-  assert.equal(blocked.defaultPrevented, false);
+  for (const [key, options] of [
+    ["ArrowRight", {}],
+    ["ArrowLeft", {}],
+    ["PageDown", {}],
+    ["PageUp", {}],
+    [" ", {}],
+    [" ", { shiftKey: true }],
+    ["Home", {}],
+    ["End", {}],
+    ["f", {}],
+  ] as const) {
+    assert.equal(keydown(key, document, options).defaultPrevented, false, key);
+  }
+
+  assert.equal(wheel(80).defaultPrevented, false);
+  assert.equal(touch("touchstart", 400).defaultPrevented, false);
+  assert.equal(touch("touchend", 300).defaultPrevented, false);
   assert.equal(result.current.activeSlideId, "hero");
+  assert.equal(window.location.hash, initialHash);
+  assert.equal(scrollCalls.length, initialScrollCount);
+  assert.equal(requestFullscreenCalls, 0);
 
   rerender({ suspended: false });
   let enabled!: KeyboardEvent;
@@ -361,11 +381,8 @@ test("suspension reads latest props and blocks presentation input", () => {
   });
   assert.equal(enabled.defaultPrevented, true);
   assert.equal(result.current.activeSlideId, "preview");
-
-  rerender({ suspended: true });
-  const pausedAgain = wheel(80);
-  assert.equal(pausedAgain.defaultPrevented, false);
-  assert.equal(result.current.activeSlideId, "preview");
+  assert.equal(window.location.hash, "#preview");
+  assert.equal(scrollCalls.length, initialScrollCount + 1);
 });
 
 test("preserves editable targets and button Space while allowing button F fullscreen", async () => {

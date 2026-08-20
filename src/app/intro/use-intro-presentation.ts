@@ -19,6 +19,7 @@ const FULLSCREEN_UNAVAILABLE =
 const WHEEL_THRESHOLD = 24;
 const WHEEL_COOLDOWN_MS = 620;
 const TOUCH_THRESHOLD = 48;
+const HEADER_OFFSET = 64;
 
 type FullscreenDocument = Document & {
   webkitExitFullscreen?: () => Promise<void> | void;
@@ -101,7 +102,7 @@ export function useIntroPresentation({
   );
 
   const goToSlide = useCallback(
-    (id: IntroSlideId, historyMode: "push" | "replace" = "push") => {
+    (id: IntroSlideId, historyMode: "push" | "replace" = "replace") => {
       navigateToSlide(id, historyMode);
     },
     [navigateToSlide]
@@ -137,13 +138,34 @@ export function useIntroPresentation({
     );
     const observer = new IntersectionObserver(
       (entries) => {
+        const viewportCenter = window.innerHeight / 2;
+        let candidate:
+          | { id: IntroSlideId; distance: number; documentOrder: number }
+          | undefined;
+
         entries.forEach((entry) => {
-          const id = entry.target.id;
+          const target = entry.target as HTMLElement;
+          const id = target.id;
           if (!entry.isIntersecting || !isIntroSlideId(id)) return;
 
-          window.history.replaceState(null, "", `#${id}`);
-          activateSlide(id);
+          const rect = target.getBoundingClientRect();
+          const distance = Math.abs(
+            (rect.top + rect.bottom) / 2 - viewportCenter
+          );
+          const documentOrder = slides.indexOf(target);
+          if (
+            !candidate ||
+            distance < candidate.distance ||
+            (distance === candidate.distance &&
+              documentOrder < candidate.documentOrder)
+          ) {
+            candidate = { id, distance, documentOrder };
+          }
         });
+
+        if (!candidate) return;
+        window.history.replaceState(null, "", `#${candidate.id}`);
+        activateSlide(candidate.id);
       },
       { rootMargin: "-49% 0px -49% 0px", threshold: 0 }
     );
@@ -157,22 +179,29 @@ export function useIntroPresentation({
       navigateToSlide("hero", "replace");
     }
 
-    const atSlideBoundary = (direction: PresentationDirection) => {
-      const activeSlide = document.getElementById(activeSlideIdRef.current);
+    const atSlideBoundary = (
+      direction: PresentationDirection,
+      slideId = activeSlideIdRef.current
+    ) => {
+      const activeSlide = document.getElementById(slideId);
       if (!activeSlide) return false;
 
       const { top, bottom } = activeSlide.getBoundingClientRect();
       return shouldLeaveOverflowingSlide(
         { top, bottom, viewportHeight: window.innerHeight },
-        direction
+        direction,
+        direction === -1 ? HEADER_OFFSET : 0
       );
     };
 
-    const navigateAdjacent = (direction: PresentationDirection) =>
-      navigateToSlide(
-        adjacentIntroSlide(activeSlideIdRef.current, direction),
-        "push"
-      );
+    const navigateAdjacent = (
+      direction: PresentationDirection,
+      slideId = activeSlideIdRef.current
+    ) => {
+      const adjacentId = adjacentIntroSlide(slideId, direction);
+      if (adjacentId === slideId) return false;
+      return navigateToSlide(adjacentId, "push");
+    };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
@@ -242,27 +271,79 @@ export function useIntroPresentation({
       }
     };
 
-    let touchStartY: number | null = null;
+    let touchGesture:
+      | {
+          startY: number;
+          slideId: IntroSlideId;
+          direction: PresentationDirection | null;
+          claimed: boolean;
+        }
+      | undefined;
     const handleTouchStart = (event: TouchEvent) => {
-      if (suspendedRef.current) return;
-      touchStartY = event.touches[0]?.clientY ?? null;
+      if (suspendedRef.current || event.touches.length !== 1) {
+        touchGesture = undefined;
+        return;
+      }
+
+      const startY = event.touches[0]?.clientY;
+      if (startY === undefined) return;
+      touchGesture = {
+        startY,
+        slideId: activeSlideIdRef.current,
+        direction: null,
+        claimed: false,
+      };
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      const gesture = touchGesture;
+      if (suspendedRef.current || !gesture) return;
+      if (event.touches.length !== 1) {
+        touchGesture = undefined;
+        return;
+      }
+
+      const currentY = event.touches[0]?.clientY;
+      if (currentY === undefined) return;
+      const deltaY = gesture.startY - currentY;
+      if (Math.abs(deltaY) < TOUCH_THRESHOLD) return;
+
+      const direction: PresentationDirection = deltaY > 0 ? 1 : -1;
+      if (!atSlideBoundary(direction, gesture.slideId)) return;
+
+      gesture.direction = direction;
+      gesture.claimed = true;
+      event.preventDefault();
     };
     const handleTouchEnd = (event: TouchEvent) => {
-      const startY = touchStartY;
-      touchStartY = null;
-      if (suspendedRef.current || startY === null) return;
+      const gesture = touchGesture;
+      touchGesture = undefined;
+      if (
+        suspendedRef.current ||
+        !gesture ||
+        event.changedTouches.length !== 1
+      ) {
+        return;
+      }
 
       const endY = event.changedTouches[0]?.clientY;
       if (endY === undefined) return;
 
-      const deltaY = startY - endY;
+      const deltaY = gesture.startY - endY;
       if (Math.abs(deltaY) < TOUCH_THRESHOLD) return;
 
       const direction: PresentationDirection = deltaY > 0 ? 1 : -1;
-      if (!atSlideBoundary(direction)) return;
+      if (
+        (!gesture.claimed && !atSlideBoundary(direction, gesture.slideId)) ||
+        (gesture.direction !== null && gesture.direction !== direction)
+      ) {
+        return;
+      }
 
       event.preventDefault();
-      navigateAdjacent(direction);
+      navigateAdjacent(direction, gesture.slideId);
+    };
+    const handleTouchCancel = () => {
+      touchGesture = undefined;
     };
 
     const syncFullscreen = () => {
@@ -277,7 +358,9 @@ export function useIntroPresentation({
     document.addEventListener("touchstart", handleTouchStart, {
       passive: true,
     });
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
     document.addEventListener("touchend", handleTouchEnd, { passive: false });
+    document.addEventListener("touchcancel", handleTouchCancel);
     document.addEventListener("fullscreenchange", syncFullscreen);
     document.addEventListener("webkitfullscreenchange", syncFullscreen);
 
@@ -286,11 +369,13 @@ export function useIntroPresentation({
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("wheel", handleWheel);
       document.removeEventListener("touchstart", handleTouchStart);
+      document.removeEventListener("touchmove", handleTouchMove);
       document.removeEventListener("touchend", handleTouchEnd);
+      document.removeEventListener("touchcancel", handleTouchCancel);
       document.removeEventListener("fullscreenchange", syncFullscreen);
       document.removeEventListener("webkitfullscreenchange", syncFullscreen);
       if (wheelCooldown !== undefined) window.clearTimeout(wheelCooldown);
-      touchStartY = null;
+      touchGesture = undefined;
       slides.forEach((slide) => slide.classList.remove("is-active"));
       document.documentElement.classList.remove("intro-presentation-ready");
     };

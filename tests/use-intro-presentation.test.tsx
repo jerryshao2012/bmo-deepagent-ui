@@ -11,6 +11,44 @@ import {
 import { useIntroPresentation } from "../src/app/intro/use-intro-presentation";
 
 type SlideElements = Record<IntroSlideId, HTMLElement>;
+type PropertySnapshot = {
+  target: object;
+  property: PropertyKey;
+  descriptor: PropertyDescriptor | undefined;
+};
+
+const originalRootClassName = document.documentElement.className;
+const originalProperties: PropertySnapshot[] = [
+  [window, "innerHeight"],
+  [window, "matchMedia"],
+  [window, "IntersectionObserver"],
+  [globalThis, "IntersectionObserver"],
+  [window, "setTimeout"],
+  [window, "clearTimeout"],
+  [window.history, "pushState"],
+  [window.history, "replaceState"],
+  [HTMLElement.prototype, "scrollIntoView"],
+  [document, "fullscreenElement"],
+  [document, "webkitFullscreenElement"],
+  [document, "exitFullscreen"],
+  [document, "webkitExitFullscreen"],
+  [document.documentElement, "requestFullscreen"],
+  [document.documentElement, "webkitRequestFullscreen"],
+].map(([target, property]) => ({
+  target,
+  property,
+  descriptor: Object.getOwnPropertyDescriptor(target, property),
+}));
+
+function restoreOriginalProperties() {
+  originalProperties.forEach(({ target, property, descriptor }) => {
+    if (descriptor) {
+      Object.defineProperty(target, property, descriptor);
+    } else {
+      Reflect.deleteProperty(target, property);
+    }
+  });
+}
 
 class MockIntersectionObserver {
   static instances: MockIntersectionObserver[] = [];
@@ -43,14 +81,19 @@ class MockIntersectionObserver {
   }
 
   emit(target: Element, isIntersecting = true) {
+    this.emitMany([{ target, isIntersecting }]);
+  }
+
+  emitMany(entries: Array<{ target: Element; isIntersecting?: boolean }>) {
     this.callback(
-      [
-        {
-          target,
-          isIntersecting,
-          intersectionRatio: isIntersecting ? 1 : 0,
-        } as IntersectionObserverEntry,
-      ],
+      entries.map(
+        ({ target, isIntersecting = true }) =>
+          ({
+            target,
+            isIntersecting,
+            intersectionRatio: isIntersecting ? 1 : 0,
+          } as IntersectionObserverEntry)
+      ),
       this as unknown as IntersectionObserver
     );
   }
@@ -108,6 +151,38 @@ function setHash(hash = "") {
   window.history.replaceState(null, "", `/intro${hash}`);
 }
 
+function observeHistory() {
+  const calls: Array<"push" | "replace"> = [];
+  const pushState = window.history.pushState;
+  const replaceState = window.history.replaceState;
+
+  Object.defineProperties(window.history, {
+    pushState: {
+      configurable: true,
+      value: function pushStateSpy(...args: Parameters<History["pushState"]>) {
+        calls.push("push");
+        return pushState.apply(window.history, args);
+      },
+    },
+    replaceState: {
+      configurable: true,
+      value: function replaceStateSpy(
+        ...args: Parameters<History["replaceState"]>
+      ) {
+        calls.push("replace");
+        return replaceState.apply(window.history, args);
+      },
+    },
+  });
+
+  return {
+    calls,
+    reset() {
+      calls.splice(0);
+    },
+  };
+}
+
 function keydown(
   key: string,
   target: EventTarget = document,
@@ -133,16 +208,25 @@ function wheel(deltaY: number) {
   return event;
 }
 
-function touch(type: "touchstart" | "touchend", clientY: number) {
+function touch(
+  type: "touchstart" | "touchmove" | "touchend" | "touchcancel",
+  clientY: number | number[]
+) {
+  const clientYs = Array.isArray(clientY) ? clientY : [clientY];
   const event = new Event(type, { bubbles: true, cancelable: true });
-  Object.defineProperty(
-    event,
-    type === "touchstart" ? "touches" : "changedTouches",
-    {
+  const touches = clientYs.map((value) => ({ clientY: value }));
+  if (type === "touchstart" || type === "touchmove") {
+    Object.defineProperty(event, "touches", {
       configurable: true,
-      value: [{ clientY }],
-    }
-  );
+      value: touches,
+    });
+  }
+  if (type === "touchend") {
+    Object.defineProperty(event, "changedTouches", {
+      configurable: true,
+      value: touches,
+    });
+  }
   document.dispatchEvent(event);
   return event;
 }
@@ -272,11 +356,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   document.body.replaceChildren();
-  document.documentElement.classList.remove("intro-presentation-ready");
-  Object.defineProperties(document.documentElement, {
-    requestFullscreen: { configurable: true, value: undefined },
-    webkitRequestFullscreen: { configurable: true, value: undefined },
-  });
+  document.documentElement.className = originalRootClassName;
+  restoreOriginalProperties();
 });
 
 test("mounts at hero and replaces missing or invalid hashes with hero", () => {
@@ -320,8 +401,19 @@ test("restores a valid hash with reduced-motion scrolling", () => {
   assert.equal(slides.phase2.classList.contains("is-active"), true);
 });
 
-test("maps keyboard directions, Home and End while clamping slide navigation", () => {
+test("goToSlide replaces history by default", () => {
   setupSlides();
+  const { result } = renderPresentation();
+  const history = observeHistory();
+
+  act(() => result.current.goToSlide("phase1"));
+
+  assert.deepEqual(history.calls, ["replace"]);
+  assert.equal(window.location.hash, "#phase1");
+});
+
+test("maps keyboard directions, Home and End while clamping slide navigation", () => {
+  const slides = setupSlides();
   const { result } = renderPresentation();
 
   act(() => keydown("ArrowRight"));
@@ -330,6 +422,7 @@ test("maps keyboard directions, Home and End while clamping slide navigation", (
   assert.equal(result.current.activeSlideId, "phase1");
   act(() => keydown(" "));
   assert.equal(result.current.activeSlideId, "phase2");
+  setRect(slides.phase2, 62, 800);
   act(() => keydown(" ", document, { shiftKey: true }));
   assert.equal(result.current.activeSlideId, "phase1");
   act(() => keydown("Home"));
@@ -346,7 +439,35 @@ test("maps keyboard directions, Home and End while clamping slide navigation", (
   assert.equal(window.location.hash, "#launch");
 });
 
-test("suspension blocks every presentation input and re-enables controls on close", () => {
+test("endpoint keyboard, wheel, and touch controls do not mutate history", () => {
+  setupSlides();
+  const { result } = renderPresentation();
+  const history = observeHistory();
+
+  act(() => keydown("ArrowLeft"));
+  act(() => wheel(-80));
+  touch("touchstart", 400);
+  act(() => {
+    touch("touchmove", 460);
+    touch("touchend", 460);
+  });
+  assert.deepEqual(history.calls, []);
+  assert.equal(result.current.activeSlideId, "hero");
+
+  act(() => result.current.goToSlide("launch", "replace"));
+  history.reset();
+  act(() => keydown("ArrowRight"));
+  act(() => wheel(80));
+  touch("touchstart", 400);
+  act(() => {
+    touch("touchmove", 340);
+    touch("touchend", 340);
+  });
+  assert.deepEqual(history.calls, []);
+  assert.equal(result.current.activeSlideId, "launch");
+});
+
+test("suspension blocks every presentation input and re-enables controls on close", async () => {
   setupSlides();
   const { result, rerender } = renderPresentation(true);
   const initialHash = window.location.hash;
@@ -383,6 +504,26 @@ test("suspension blocks every presentation input and re-enables controls on clos
   assert.equal(result.current.activeSlideId, "preview");
   assert.equal(window.location.hash, "#preview");
   assert.equal(scrollCalls.length, initialScrollCount + 1);
+
+  await act(async () => {
+    keydown("f");
+    await Promise.resolve();
+  });
+  assert.equal(requestFullscreenCalls, 1);
+
+  act(() => wheel(80));
+  assert.equal(result.current.activeSlideId, "phase1");
+
+  touch("touchstart", 400);
+  let touchMove!: Event;
+  let touchEnd!: Event;
+  act(() => {
+    touchMove = touch("touchmove", 340);
+    touchEnd = touch("touchend", 340);
+  });
+  assert.equal(touchMove.defaultPrevented, true);
+  assert.equal(touchEnd.defaultPrevented, true);
+  assert.equal(result.current.activeSlideId, "phase2");
 });
 
 test("preserves editable targets and button Space while allowing button F fullscreen", async () => {
@@ -431,6 +572,25 @@ test("keeps native keyboard reading in overflowing slides until direction bounda
   assert.equal(result.current.activeSlideId, "preview");
 });
 
+test("waits for the fixed header boundary before navigating upward", () => {
+  const slides = setupSlides();
+  const { result } = renderPresentation();
+  act(() => result.current.goToSlide("phase1", "replace"));
+  setRect(slides.phase1, 40, 800);
+
+  const hiddenUnderHeader = keydown("ArrowUp");
+  assert.equal(hiddenUnderHeader.defaultPrevented, false);
+  assert.equal(result.current.activeSlideId, "phase1");
+
+  setRect(slides.phase1, 62, 800);
+  let atHeaderBoundary!: KeyboardEvent;
+  act(() => {
+    atHeaderBoundary = keydown("ArrowUp");
+  });
+  assert.equal(atHeaderBoundary.defaultPrevented, true);
+  assert.equal(result.current.activeSlideId, "preview");
+});
+
 test("wheel navigation honors overflow boundaries and applies one cooldown", () => {
   const slides = setupSlides();
   setRect(slides.hero, 100, 1800);
@@ -454,29 +614,67 @@ test("wheel navigation honors overflow boundaries and applies one cooldown", () 
   assert.equal(scrollCalls.length, beforeNavigation + 1);
 });
 
-test("touch navigation requires threshold and preserves overflowing native reading", () => {
+test("touch navigation claims only boundary swipes after its threshold", () => {
   const slides = setupSlides();
   setRect(slides.hero, 100, 1800);
   const { result } = renderPresentation();
 
   touch("touchstart", 400);
+  const readingMove = touch("touchmove", 300);
   const reading = touch("touchend", 300);
+  assert.equal(readingMove.defaultPrevented, false);
   assert.equal(reading.defaultPrevented, false);
   assert.equal(result.current.activeSlideId, "hero");
 
   setRect(slides.hero, 100, 800);
   touch("touchstart", 400);
+  const tooShortMove = touch("touchmove", 360);
   const tooShort = touch("touchend", 360);
+  assert.equal(tooShortMove.defaultPrevented, false);
   assert.equal(tooShort.defaultPrevented, false);
   assert.equal(result.current.activeSlideId, "hero");
 
   touch("touchstart", 400);
+  let navigationMove!: Event;
   let navigation!: Event;
   act(() => {
+    navigationMove = touch("touchmove", 340);
     navigation = touch("touchend", 340);
   });
+  assert.equal(navigationMove.defaultPrevented, true);
   assert.equal(navigation.defaultPrevented, true);
   assert.equal(result.current.activeSlideId, "preview");
+});
+
+test("touch navigation uses the slide active when the gesture started", () => {
+  const slides = setupSlides();
+  const { result } = renderPresentation();
+  const observer = MockIntersectionObserver.instances[0];
+
+  touch("touchstart", 400);
+  act(() => {
+    touch("touchmove", 340);
+    observer.emit(slides.phase1);
+    touch("touchend", 340);
+  });
+
+  assert.equal(result.current.activeSlideId, "preview");
+  assert.equal(window.location.hash, "#preview");
+});
+
+test("multi-touch and cancelled gestures never navigate slides", () => {
+  setupSlides();
+  const { result } = renderPresentation();
+
+  touch("touchstart", [400, 420]);
+  touch("touchend", 300);
+  assert.equal(result.current.activeSlideId, "hero");
+
+  touch("touchstart", 400);
+  touch("touchcancel", 400);
+  touch("touchend", 300);
+  assert.equal(result.current.activeSlideId, "hero");
+  assert.equal(window.location.hash, "#hero");
 });
 
 test("center-band observer activates tall slides and replaces hash", () => {
@@ -497,6 +695,23 @@ test("center-band observer activates tall slides and replaces hash", () => {
   assert.equal(window.location.hash, "#phase2");
   assert.equal(slides.phase2.classList.contains("is-active"), true);
   assert.equal(slides.hero.classList.contains("is-active"), false);
+});
+
+test("center-band observer chooses the nearest slide regardless of entry order", () => {
+  const slides = setupSlides();
+  setRect(slides.phase2, 350, 450);
+  setRect(slides.preview, 0, 600);
+  const { result } = renderPresentation();
+  const observer = MockIntersectionObserver.instances[0];
+
+  act(() => {
+    observer.emitMany([{ target: slides.phase2 }, { target: slides.preview }]);
+  });
+
+  assert.equal(result.current.activeSlideId, "phase2");
+  assert.equal(window.location.hash, "#phase2");
+  assert.equal(slides.phase2.classList.contains("is-active"), true);
+  assert.equal(slides.preview.classList.contains("is-active"), false);
 });
 
 test("fullscreen changes update state and standard enter and exit APIs", async () => {
@@ -570,7 +785,9 @@ test("cleanup removes controller effects, observer, cooldown, and ready class", 
     "keydown",
     "wheel",
     "touchstart",
+    "touchmove",
     "touchend",
+    "touchcancel",
     "fullscreenchange",
     "webkitfullscreenchange",
   ]);

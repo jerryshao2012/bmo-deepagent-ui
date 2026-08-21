@@ -57,6 +57,7 @@ import { useProcessedMessages } from "@/app/hooks/useProcessedMessages";
 import { selectParallelResearchProgress } from "@/app/utils/parallel-research-progress";
 import { useThreadDocumentAvailability } from "@/app/hooks/useThreadDocumentAvailability";
 import { useThreadStatus } from "@/app/hooks/useThreads";
+import { useChatInputHistory } from "@/app/hooks/useChatInputHistory";
 import {
   availabilityForCurrentThread,
   type PendingDocumentFolder,
@@ -108,8 +109,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const [skillsDrawerOpen, setSkillsDrawerOpen] = useState(false);
   const tasksContainerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-
-  const [input, setInput] = useState("");
+  const {
+    input,
+    setInput,
+    clearInput,
+    recordSubmittedInput,
+    handleHistoryKeyDown,
+    resetHistoryNavigation,
+  } = useChatInputHistory(textareaRef);
   const { scrollRef, contentRef } = useStickToBottom();
 
   const [liveElapsedMs, setLiveElapsedMs] = useState<number>(0);
@@ -135,6 +142,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     resumeInterrupt,
     no_web,
   } = useChatContext();
+
+  useEffect(() => {
+    resetHistoryNavigation();
+  }, [currentThreadId, resetHistoryNavigation]);
 
   const {
     data: selectedThreadStatus,
@@ -200,7 +211,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         textareaRef.current?.focus();
       }, 50);
     },
-    [messages, todos, files, documents]
+    [messages, todos, files, documents, setInput]
   );
 
   // Auto-resize textarea height dynamically as content changes
@@ -951,13 +962,15 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         },
         sendMessage,
       });
-      setInput("");
+      recordSubmittedInput(messageText);
+      clearInput();
     },
     [
       input,
       composerLocked,
       sendMessage,
-      setInput,
+      clearInput,
+      recordSubmittedInput,
       webSearchEnabled,
       currentThreadId,
       documentAvailability,
@@ -975,12 +988,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
         return;
       }
 
+      if (handleHistoryKeyDown(e)) return;
+
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSubmit();
       }
     },
-    [handleSubmit, composerLocked]
+    [handleHistoryKeyDown, handleSubmit, composerLocked]
   );
 
   const processedMessages = useProcessedMessages(messages, interrupt);
@@ -1887,7 +1902,9 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                     </button>
                     <span className="self-center text-xxs italic text-[color:color-mix(in_srgb,var(--color-text-tertiary)_72%,white)]">
                       <b className="text-inherit">Enter</b> to send,{" "}
-                      <b className="text-inherit">Shift+Enter</b> for new line
+                      <b className="text-inherit">Shift+Enter</b> for new line,{" "}
+                      <b className="text-inherit">↑/↓</b> history,{" "}
+                      <b className="text-inherit">Esc</b> to clear
                     </span>
                   </div>
                   <div className="flex justify-end gap-2">
@@ -1902,7 +1919,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                       <button
                         type="button"
                         onClick={() => {
-                          setInput("");
+                          clearInput();
                           setTimeout(() => textareaRef.current?.focus(), 50);
                         }}
                         disabled={composerLocked}

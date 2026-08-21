@@ -493,6 +493,90 @@ async function waitForActiveThread(threadId: string) {
   );
 }
 
+test("composer recalls successful submissions and shows navigation shortcuts", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const sent: string[] = [];
+  const restoreFetch = installFetch({ uploadFolders: [] });
+
+  try {
+    renderChat({
+      client: makeClient(writes),
+      chat: baseChat((message) => sent.push(message)),
+    });
+    await waitForComposer();
+
+    submitMessage("first prompt");
+    const textarea = screen.getByPlaceholderText(
+      "Write your message..."
+    ) as HTMLTextAreaElement;
+    fireEvent.keyDown(textarea, { key: "ArrowUp" });
+
+    assert.deepEqual(sent, ["first prompt"]);
+    assert.equal(textarea.value, "first prompt");
+    assert.match(document.body.textContent ?? "", /↑\/↓ history/);
+    assert.match(document.body.textContent ?? "", /Esc to clear/);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("composer does not record a synchronously failed submission", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const restoreFetch = installFetch({ uploadFolders: [] });
+  const originalConsoleError = console.error;
+  console.error = () => {};
+
+  try {
+    renderChat({
+      client: makeClient(writes),
+      chat: baseChat(() => {
+        throw new Error("send failed");
+      }),
+    });
+    await waitForComposer();
+
+    submitMessage("failed prompt");
+    const textarea = screen.getByPlaceholderText(
+      "Write your message..."
+    ) as HTMLTextAreaElement;
+    fireEvent.keyDown(textarea, { key: "Escape" });
+    fireEvent.keyDown(textarea, { key: "ArrowUp" });
+    assert.equal(textarea.value, "");
+  } finally {
+    console.error = originalConsoleError;
+    restoreFetch();
+  }
+});
+
+test("composer preserves Enter submit and Shift+Enter newline behavior", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const sent: string[] = [];
+  const restoreFetch = installFetch({ uploadFolders: [] });
+
+  try {
+    renderChat({
+      client: makeClient(writes),
+      chat: baseChat((message) => sent.push(message)),
+    });
+    await waitForComposer();
+
+    const textarea = screen.getByPlaceholderText(
+      "Write your message..."
+    ) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "multi-line draft" } });
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
+    assert.deepEqual(sent, []);
+
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    assert.deepEqual(sent, ["multi-line draft"]);
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("retains A upload evidence through later A confirmation and failed refresh", async () => {
   configure();
   const writes: StateWrite[] = [];

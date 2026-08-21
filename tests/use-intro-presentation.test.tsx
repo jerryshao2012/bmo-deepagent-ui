@@ -553,20 +553,28 @@ test("one Down press leaves a fitting slide offset below the fixed header", () =
   assert.equal(result.current.activeSlideId, "preview");
 });
 
-test("aligns fitting destinations centrally and taller destinations at the top", () => {
+for (const height of [801, 802]) {
+  test(`aligns ${height}px destinations centrally within the viewport epsilon`, () => {
+    const slides = setupSlides();
+    setRect(slides.preview, 0, height);
+    const { result } = renderPresentation();
+
+    act(() => result.current.goToSlide("preview"));
+    assert.deepEqual(scrollCalls.at(-1), {
+      element: slides.preview,
+      options: { behavior: "smooth", block: "center" },
+    });
+  });
+}
+
+test("aligns destinations beyond the viewport epsilon at the top", () => {
   const slides = setupSlides();
-  setRect(slides.phase1, 0, 1200);
+  setRect(slides.preview, 0, 803);
   const { result } = renderPresentation();
 
   act(() => result.current.goToSlide("preview"));
   assert.deepEqual(scrollCalls.at(-1), {
     element: slides.preview,
-    options: { behavior: "smooth", block: "center" },
-  });
-
-  act(() => result.current.goToSlide("phase1"));
-  assert.deepEqual(scrollCalls.at(-1), {
-    element: slides.phase1,
     options: { behavior: "smooth", block: "start" },
   });
 });

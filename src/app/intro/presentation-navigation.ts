@@ -9,6 +9,7 @@ export const INTRO_SLIDES = [
 
 export type IntroSlideId = (typeof INTRO_SLIDES)[number]["id"];
 export type PresentationDirection = -1 | 1;
+export const PRESENTATION_VIEWPORT_EPSILON = 2;
 
 export function adjacentIntroSlide(
   current: IntroSlideId,
@@ -52,13 +53,21 @@ export interface PresentationOverflowState {
   viewportHeight: number;
 }
 
+export function fitsPresentationViewport(
+  height: number,
+  viewportHeight: number,
+  epsilon = PRESENTATION_VIEWPORT_EPSILON
+): boolean {
+  return height <= viewportHeight + epsilon;
+}
+
 export function shouldLeaveOverflowingSlide(
   { top, bottom, viewportHeight }: PresentationOverflowState,
   direction: PresentationDirection,
   headerOffset = 0,
-  epsilon = 2
+  epsilon = PRESENTATION_VIEWPORT_EPSILON
 ): boolean {
-  if (bottom - top <= viewportHeight + epsilon) {
+  if (fitsPresentationViewport(bottom - top, viewportHeight, epsilon)) {
     return true;
   }
 

@@ -6,6 +6,7 @@ import {
   INTRO_SLIDES,
   adjacentIntroSlide,
   directionForPresentationKey,
+  fitsPresentationViewport,
   isPresentationEditableTarget,
   isPresentationInteractiveTarget,
   shouldLeaveOverflowingSlide,
@@ -66,7 +67,9 @@ function scrollSlideIntoView(target: HTMLElement) {
   const { height } = target.getBoundingClientRect();
   target.scrollIntoView({
     behavior: prefersReducedMotion() ? "auto" : "smooth",
-    block: height <= window.innerHeight ? "center" : "start",
+    block: fitsPresentationViewport(height, window.innerHeight)
+      ? "center"
+      : "start",
   });
 }
 

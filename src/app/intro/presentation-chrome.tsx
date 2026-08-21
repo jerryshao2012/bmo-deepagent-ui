@@ -90,7 +90,7 @@ export function PresentationChrome({
 
       <button
         aria-label={fullscreenLabel}
-        className="presentation-fullscreen-control pointer-events-auto fixed bottom-5 right-5 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#001928] text-white shadow-lg hover:bg-[#0075BE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2 focus-visible:ring-offset-[#F3F7FA] disabled:cursor-not-allowed disabled:opacity-45 motion-safe:transition motion-safe:active:scale-95"
+        className="presentation-fullscreen-control pointer-events-auto fixed bottom-3 right-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#001928] text-white shadow-lg hover:bg-[#0075BE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2 focus-visible:ring-offset-[#F3F7FA] disabled:cursor-not-allowed disabled:opacity-45 motion-safe:transition motion-safe:active:scale-95 sm:bottom-5 sm:right-5 sm:h-11 sm:w-11"
         data-presentation-fullscreen-control
         disabled={suspended}
         onClick={onToggleFullscreen}

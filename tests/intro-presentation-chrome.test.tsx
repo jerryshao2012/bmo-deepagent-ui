@@ -183,6 +183,26 @@ test("uses motion-safe transforms for the fullscreen control", () => {
   assert.equal(fullscreen.classList.contains("active:scale-95"), false);
 });
 
+test("uses a compact mobile position without hiding fullscreen", () => {
+  renderChrome();
+
+  const fullscreen = screen.getByRole("button", {
+    name: "Enter fullscreen",
+  });
+  for (const mobileClass of ["bottom-3", "right-3", "h-10", "w-10"]) {
+    assert.equal(fullscreen.classList.contains(mobileClass), true);
+  }
+  for (const desktopClass of [
+    "sm:bottom-5",
+    "sm:right-5",
+    "sm:h-11",
+    "sm:w-11",
+  ]) {
+    assert.equal(fullscreen.classList.contains(desktopClass), true);
+  }
+  assert.equal(fullscreen.classList.contains("hidden"), false);
+});
+
 test("activates dots and fullscreen controls from the keyboard", async () => {
   const user = userEvent.setup();
   const navigated: IntroSlideId[] = [];

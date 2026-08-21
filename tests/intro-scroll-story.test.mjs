@@ -578,17 +578,76 @@ test("intro slides keep readable viewport sizing and snap anchors", async () => 
   assert.doesNotMatch(css, /(?:^|[;{])\s*height:\s*100vh/);
 });
 
-test("mobile slides reserve an operable gutter for the fullscreen control", async () => {
+test("mobile slides reserve only the compact fullscreen control gutter", async () => {
   const source = await readFile(introPagePath, "utf8");
   const css = getInlineCss(source);
   const mobileStart = css.indexOf("@media (max-width: 639px)");
   const mobileCss = css.slice(mobileStart);
   const slideRule = getCssRules(mobileCss, ".intro-slide").find((rule) =>
-    /padding-right:\s*5rem/.test(rule.declarations)
+    /padding-right:\s*3\.5rem/.test(rule.declarations)
   );
 
   assert.notEqual(mobileStart, -1);
-  assert.ok(slideRule, "expected a narrow right control gutter below sm");
+  assert.ok(slideRule, "expected a compact right control gutter below sm");
+  assert.doesNotMatch(mobileCss, /padding-right:\s*5rem/);
+});
+
+test("mobile workspace preview reflows long terminal content instead of clipping it", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const previewStart = source.indexOf('<section\n          id="preview"');
+  const previewEnd = source.indexOf("</section>", previewStart);
+  const preview = source.slice(previewStart, previewEnd);
+
+  assert.ok(previewStart >= 0 && previewEnd > previewStart);
+  assert.match(preview, /px-4[^\"]*sm:px-6/);
+  assert.ok(
+    (preview.match(/min-w-0/g)?.length ?? 0) >= 6,
+    "expected nested preview grid and cards to permit flex/grid shrinkage"
+  );
+  assert.match(
+    preview,
+    /flex min-w-0 flex-col items-start gap-3[^\"]*sm:flex-row[^\"]*sm:items-center[^\"]*sm:justify-between/
+  );
+  assert.match(
+    preview,
+    /deep-agent@research-workspace[\s\S]{0,120}|break-all[\s\S]{0,120}deep-agent@research-workspace/
+  );
+  const shellLabelStart = preview.lastIndexOf(
+    "<span",
+    preview.indexOf("deep-agent@research-workspace")
+  );
+  const shellLabel = preview.slice(
+    shellLabelStart,
+    preview.indexOf("</span>", shellLabelStart)
+  );
+  const fileLabelStart = preview.lastIndexOf(
+    "<span",
+    preview.indexOf("Market_Strategy_2026.pdf")
+  );
+  const fileLabel = preview.slice(
+    fileLabelStart,
+    preview.indexOf("</span>", fileLabelStart)
+  );
+  assert.match(shellLabel, /break-all/);
+  assert.match(fileLabel, /break-all/);
+  assert.match(preview, /min-w-0[^\"]*break-words[^\"]*font-mono/);
+});
+
+test("workspace preview hides the unresolved bare thread affordance", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const previewStart = source.indexOf('id="preview"');
+  const previewEnd = source.indexOf("</section>", previewStart);
+  const preview = source.slice(previewStart, previewEnd);
+  const activeThreadIndex = preview.indexOf("Active Thread: #{threadId}");
+  const containerStart = preview.lastIndexOf("<div", activeThreadIndex);
+  const container = preview.slice(
+    containerStart,
+    preview.indexOf("</div>", activeThreadIndex)
+  );
+
+  assert.notEqual(activeThreadIndex, -1);
+  assert.match(container, /aria-hidden=\{!threadId\}/);
+  assert.match(container, /!threadId && "invisible"/);
 });
 
 test("intro page keeps document as the only vertical scroll container", async () => {

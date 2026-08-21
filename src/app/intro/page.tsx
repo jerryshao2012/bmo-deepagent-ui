@@ -1473,7 +1473,7 @@ function IntroPageContent() {
 
         @media (max-width: 639px) {
           .intro-slide {
-            padding-right: 5rem;
+            padding-right: 3.5rem;
           }
         }
 
@@ -1849,20 +1849,20 @@ function IntroPageContent() {
           id="preview"
           data-intro-slide
           aria-label="Workspace preview"
-          className="intro-slide relative flex min-h-[100dvh] items-center justify-center bg-white px-6 pb-16 pt-24"
+          className="intro-slide relative flex min-h-[100dvh] items-center justify-center bg-white px-4 pb-16 pt-24 sm:px-6"
         >
-          <div className="w-full max-w-4xl">
+          <div className="w-full min-w-0 max-w-4xl">
             {/* Interactive Screen Preview */}
-            <div className="hero-preview mt-16 flex justify-center">
+            <div className="hero-preview mt-16 flex min-w-0 justify-center">
               <div
                 ref={stackRef}
                 onMouseMove={handleMouseMove}
                 onMouseLeave={handleMouseLeave}
-                className="workspace-preview-tilt-shell relative w-full max-w-5xl cursor-pointer px-2 py-4"
+                className="workspace-preview-tilt-shell relative w-full min-w-0 max-w-5xl cursor-pointer py-4 sm:px-2"
                 style={{ perspective: "1000px" }}
               >
                 <div
-                  className="workspace-preview-tilt-card relative overflow-hidden rounded-[2rem] border border-[#D6E2EA] bg-white p-3 shadow-[0_24px_64px_-36px_rgba(0,25,40,0.35)] transition-all duration-300 ease-out"
+                  className="workspace-preview-tilt-card relative min-w-0 overflow-hidden rounded-[1.5rem] border border-[#D6E2EA] bg-white p-2 shadow-[0_24px_64px_-36px_rgba(0,25,40,0.35)] transition-all duration-300 ease-out sm:rounded-[2rem] sm:p-3"
                   style={{
                     transform:
                       reducePresentationMotion || (tilt.x === 0 && tilt.y === 0)
@@ -1871,25 +1871,25 @@ function IntroPageContent() {
                     transformStyle: "preserve-3d",
                   }}
                 >
-                  <div className="min-h-[360px] overflow-hidden rounded-[1.6rem] border border-[#17394D] bg-[#001928] p-4 text-left sm:min-h-[460px] sm:p-6">
+                  <div className="min-h-[360px] min-w-0 overflow-hidden rounded-[1.25rem] border border-[#17394D] bg-[#001928] p-3 text-left sm:min-h-[460px] sm:rounded-[1.6rem] sm:p-6">
                     {/* Mock Shell Window */}
-                    <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                      <div className="flex items-center gap-2">
+                    <div className="flex min-w-0 flex-col items-start gap-3 border-b border-white/5 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <span className="h-3.5 w-3.5 rounded-full bg-[#FF5F56]" />
                         <span className="h-3.5 w-3.5 rounded-full bg-[#FFBD2E]" />
                         <span className="h-3.5 w-3.5 rounded-full bg-[#27C93F]" />
-                        <span className="ml-4 font-mono text-xs text-white/40">
+                        <span className="min-w-0 break-all font-mono text-[10px] text-white/40 sm:ml-4 sm:text-xs">
                           deep-agent@research-workspace
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 rounded-full border border-[#0075BE]/30 bg-[#0075BE]/15 px-3 py-1 font-mono text-[10px] uppercase text-[#4DB6F5]">
+                      <div className="flex shrink-0 items-center gap-2 rounded-full border border-[#0075BE]/30 bg-[#0075BE]/15 px-3 py-1 font-mono text-[10px] uppercase text-[#4DB6F5]">
                         <span className="h-1.5 w-1.5 animate-ping rounded-full bg-[#4DB6F5]" />
                         Research Active
                       </div>
                     </div>
 
-                    <div className="grid gap-6 pt-4 lg:grid-cols-[1.3fr_0.7fr]">
-                      <div className="rounded-xl border border-[#31556A]/50 bg-[#00131F]/80 p-4 font-mono text-xs text-[#C9D8E2] sm:p-6">
+                    <div className="grid min-w-0 gap-6 pt-4 lg:grid-cols-[1.3fr_0.7fr]">
+                      <div className="min-w-0 break-words rounded-xl border border-[#31556A]/50 bg-[#00131F]/80 p-3 font-mono text-xs text-[#C9D8E2] sm:p-6">
                         <div className="mb-4 font-semibold text-[#4DB6F5]">
                           // BUILDING THREAD KNOWLEDGE
                         </div>
@@ -1897,7 +1897,7 @@ function IntroPageContent() {
                           <p>
                             <span className="text-emerald-400">✔</span> Added
                             source material from{" "}
-                            <span className="cursor-pointer text-sky-400 underline hover:text-sky-300">
+                            <span className="cursor-pointer break-all text-sky-400 underline hover:text-sky-300">
                               Market_Strategy_2026.pdf
                             </span>
                           </p>
@@ -1925,7 +1925,7 @@ function IntroPageContent() {
                         </div>
                       </div>
 
-                      <div className="flex flex-col justify-between rounded-xl border border-white/5 bg-white/[0.03] p-4 text-stone-200">
+                      <div className="flex min-w-0 flex-col justify-between rounded-xl border border-white/5 bg-white/[0.03] p-4 text-stone-200">
                         <div>
                           <div className="font-mono text-[10px] uppercase text-stone-400">
                             Research Status
@@ -1954,7 +1954,13 @@ function IntroPageContent() {
                             </li>
                           </ul>
                         </div>
-                        <div className="mt-6 rounded-lg border border-[#31556A]/50 bg-[#00131F] p-2.5 text-center font-mono text-[10px] text-white/50">
+                        <div
+                          aria-hidden={!threadId}
+                          className={cn(
+                            "mt-6 rounded-lg border border-[#31556A]/50 bg-[#00131F] p-2.5 text-center font-mono text-[10px] text-white/50",
+                            !threadId && "invisible"
+                          )}
+                        >
                           Active Thread: #{threadId}
                         </div>
                       </div>

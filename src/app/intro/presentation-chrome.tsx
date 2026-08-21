@@ -8,6 +8,7 @@ interface PresentationChromeProps {
   activeSlideId: IntroSlideId;
   isFullscreen: boolean;
   fullscreenStatus: string;
+  suspended: boolean;
   onNavigate(id: IntroSlideId): void;
   onToggleFullscreen(): void;
 }
@@ -16,6 +17,7 @@ export function PresentationChrome({
   activeSlideId,
   isFullscreen,
   fullscreenStatus,
+  suspended,
   onNavigate,
   onToggleFullscreen,
 }: PresentationChromeProps) {
@@ -65,9 +67,10 @@ export function PresentationChrome({
             <button
               aria-current={isActive ? "step" : undefined}
               aria-label={`Go to slide ${index + 1}: ${slide.label}`}
-              className={`h-3 w-3 rounded-full border border-[#0075BE] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2 focus-visible:ring-offset-[#F3F7FA] ${
+              className={`h-3 w-3 rounded-full border border-[#0075BE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2 focus-visible:ring-offset-[#F3F7FA] disabled:cursor-not-allowed disabled:opacity-45 motion-safe:transition ${
                 isActive ? "bg-[#0075BE]" : "bg-white/80 hover:bg-[#0075BE]/40"
               }`}
+              disabled={suspended}
               key={slide.id}
               onClick={() => onNavigate(slide.id)}
               type="button"
@@ -87,7 +90,9 @@ export function PresentationChrome({
 
       <button
         aria-label={fullscreenLabel}
-        className="pointer-events-auto fixed bottom-5 right-5 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#001928] text-white shadow-lg transition hover:bg-[#0075BE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2 focus-visible:ring-offset-[#F3F7FA] active:scale-95"
+        className="presentation-fullscreen-control pointer-events-auto fixed bottom-5 right-5 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#001928] text-white shadow-lg hover:bg-[#0075BE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2 focus-visible:ring-offset-[#F3F7FA] disabled:cursor-not-allowed disabled:opacity-45 motion-safe:transition motion-safe:active:scale-95"
+        data-presentation-fullscreen-control
+        disabled={suspended}
         onClick={onToggleFullscreen}
         type="button"
       >

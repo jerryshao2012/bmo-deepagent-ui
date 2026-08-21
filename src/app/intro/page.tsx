@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { useSearchParams } from "next/navigation";
 import { navigateToIntroPhase, type IntroPhaseId } from "./phase-navigation";
 import { PresentationChrome } from "./presentation-chrome";
 import { useIntroPresentation } from "./use-intro-presentation";
@@ -63,8 +64,42 @@ function createMarkdownClientId(): string {
   return `md-${globalThis.crypto.randomUUID()}`;
 }
 
+function ThreadQueryObserver({
+  onThreadIdChange,
+}: {
+  onThreadIdChange(threadId: string | null): void;
+}) {
+  const searchParams = useSearchParams();
+  const threadId = searchParams.get("thread_id");
+
+  useEffect(() => {
+    onThreadIdChange(threadId);
+  }, [onThreadIdChange, threadId]);
+
+  return null;
+}
+
 function IntroPageContent() {
   const [threadId, setThreadId] = useState<string>("");
+  const syncThreadIdFromQuery = useCallback((tid: string | null) => {
+    if (tid && /^\d{6}$/.test(tid)) {
+      setThreadId(tid);
+      return;
+    }
+
+    const savedThreadId = localStorage.getItem("last_thread_id");
+    const generatedId =
+      savedThreadId && /^\d{6}$/.test(savedThreadId)
+        ? savedThreadId
+        : String(Math.floor(100000 + Math.random() * 900000));
+
+    setThreadId(generatedId);
+    localStorage.setItem("last_thread_id", generatedId);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("thread_id", generatedId);
+    window.history.replaceState({}, "", url.toString());
+  }, []);
 
   const [, setSocket] = useState<WebSocket | null>(null);
   const [wsStatus, setWsStatus] =
@@ -1346,36 +1381,25 @@ function IntroPageContent() {
   // Ref elements for interactive 3D mouse parallax
   const stackRef = useRef<HTMLDivElement>(null);
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  const [reducePresentationMotion, setReducePresentationMotion] =
+    useState(false);
 
-  // Generate 6-digit Thread ID if not present in query params
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-    const tid = searchParams.get("thread_id");
-    if (tid && /^\d{6}$/.test(tid)) {
-      setThreadId(tid);
-    } else {
-      // Check localStorage for existing thread ID first
-      const savedThreadId = localStorage.getItem("last_thread_id");
-      const generatedId =
-        savedThreadId && /^\d{6}$/.test(savedThreadId)
-          ? savedThreadId
-          : String(Math.floor(100000 + Math.random() * 900000));
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const syncMotionPreference = () => {
+      setReducePresentationMotion(motionQuery.matches);
+    };
 
-      setThreadId(generatedId);
-
-      // Save to localStorage for persistence across refreshes
-      localStorage.setItem("last_thread_id", generatedId);
-
-      // Update URL search parameters without reloading
-      const url = new URL(window.location.href);
-      url.searchParams.set("thread_id", generatedId);
-      window.history.replaceState({}, "", url.toString());
-    }
+    syncMotionPreference();
+    motionQuery.addEventListener("change", syncMotionPreference);
+    return () => {
+      motionQuery.removeEventListener("change", syncMotionPreference);
+    };
   }, []);
 
   // Handle mouse move for interactive card 3D tilt
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!stackRef.current) return;
+    if (reducePresentationMotion || !stackRef.current) return;
     const rect = stackRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left - rect.width / 2;
     const y = e.clientY - rect.top - rect.height / 2;
@@ -1387,6 +1411,7 @@ function IntroPageContent() {
   };
 
   const handleMouseLeave = () => {
+    if (reducePresentationMotion) return;
     setTilt({ x: 0, y: 0 });
   };
 
@@ -1446,6 +1471,12 @@ function IntroPageContent() {
           scroll-snap-align: start;
         }
 
+        @media (max-width: 639px) {
+          .intro-slide {
+            padding-right: 5rem;
+          }
+        }
+
         .intro-presentation-ready .intro-slide .hero-copy,
         .intro-presentation-ready .intro-slide .hero-preview,
         .intro-presentation-ready .intro-slide .chapter-copy,
@@ -1474,6 +1505,22 @@ function IntroPageContent() {
 
         .intro-presentation-ready .intro-slide.is-active .chapter-reveal[data-reveal="3"] {
           transition-delay: 220ms;
+        }
+
+        .intro-presentation-initializing.intro-presentation-ready .intro-slide .hero-copy,
+        .intro-presentation-initializing.intro-presentation-ready .intro-slide .hero-preview,
+        .intro-presentation-initializing.intro-presentation-ready .intro-slide .chapter-copy,
+        .intro-presentation-initializing.intro-presentation-ready .intro-slide .chapter-visual,
+        .intro-presentation-initializing.intro-presentation-ready .intro-slide .chapter-reveal,
+        .intro-presentation-initializing.intro-presentation-ready .intro-slide .launch-content {
+          opacity: 1;
+          transform: none;
+          transition: none;
+        }
+
+        .intro-presentation-initializing.intro-presentation-ready .intro-slide.is-active .chapter-reveal[data-reveal="2"],
+        .intro-presentation-initializing.intro-presentation-ready .intro-slide.is-active .chapter-reveal[data-reveal="3"] {
+          transition-delay: 0s;
         }
 
         .workflow-route {
@@ -1522,7 +1569,14 @@ function IntroPageContent() {
             display: none;
           }
 
-          .node-pulse {
+          .workspace-preview-tilt-shell,
+          .workspace-preview-tilt-card {
+            transform: none;
+            transition: none;
+          }
+
+          .intro-slide .animate-ping,
+          .intro-page .node-pulse {
             animation: none;
           }
         }
@@ -1624,16 +1678,24 @@ function IntroPageContent() {
         }}
       />
 
+      <React.Suspense fallback={null}>
+        <ThreadQueryObserver onThreadIdChange={syncThreadIdFromQuery} />
+      </React.Suspense>
+
       <PresentationChrome
         activeSlideId={presentation.activeSlideId}
         isFullscreen={presentation.isFullscreen}
         fullscreenStatus={presentation.fullscreenStatus}
+        suspended={isDialogOpen}
         onNavigate={(id) => presentation.goToSlide(id, "push")}
         onToggleFullscreen={() => void presentation.toggleFullscreen()}
       />
 
       {/* Navigation Header (Klarity Style) */}
-      <header className="fixed left-0 right-0 top-0 z-50 flex h-16 items-center justify-between border-b border-[#D6E2EA] bg-white/95 px-6 shadow-sm backdrop-blur-xl transition-all duration-300">
+      <header
+        inert={isDialogOpen ? true : undefined}
+        className="fixed left-0 right-0 top-0 z-50 flex h-16 items-center justify-between border-b border-[#D6E2EA] bg-white/95 px-6 shadow-sm backdrop-blur-xl transition-all duration-300"
+      >
         <div className="flex items-center gap-6">
           <a
             href="#"
@@ -1717,23 +1779,25 @@ function IntroPageContent() {
             </div>
           </div>
 
-          <div className="hidden select-none items-center gap-1 font-mono text-xs text-[#536B79] sm:flex">
-            <div className="tooltip-wrapper">
-              <button
-                type="button"
-                ref={markdownPreviewTriggerRef}
-                onClick={openMarkdownPreview}
-                className="cursor-pointer underline decoration-[#A9BDCA] decoration-dotted underline-offset-2 transition hover:text-[#001928] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2"
-              >
-                Collab Thread
-              </button>
+          {threadId && (
+            <div className="hidden select-none items-center gap-1 font-mono text-xs text-[#536B79] sm:flex">
+              <div className="tooltip-wrapper">
+                <button
+                  type="button"
+                  ref={markdownPreviewTriggerRef}
+                  onClick={openMarkdownPreview}
+                  className="cursor-pointer underline decoration-[#A9BDCA] decoration-dotted underline-offset-2 transition hover:text-[#001928] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2"
+                >
+                  Collab Thread
+                </button>
+              </div>
+              : #{threadId}
             </div>
-            : #{threadId}
-          </div>
+          )}
 
           <a
             href="/chat"
-            className="card-elevated flex h-9 items-center gap-2 rounded-full bg-[#E31837] px-4 py-2 font-semibold text-white transition hover:scale-[1.02] hover:bg-[#B8122D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2 active:scale-95 active:bg-[#971126]"
+            className="card-elevated flex h-9 items-center gap-2 rounded-full bg-[#E31837] px-4 py-2 font-semibold text-white hover:bg-[#B8122D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2 active:bg-[#971126] motion-safe:transition motion-safe:hover:scale-[1.02] motion-safe:active:scale-95"
           >
             <span className="text-xs">Launch Workspace</span>
             <MessageSquare className="h-3.5 w-3.5" />
@@ -1741,7 +1805,10 @@ function IntroPageContent() {
         </div>
       </header>
 
-      <main aria-label="Applied AI Deep Agent presentation">
+      <main
+        aria-label="Applied AI Deep Agent presentation"
+        inert={isDialogOpen ? true : undefined}
+      >
         {/* 1. HERO SECTION */}
         <section
           id="hero"
@@ -1768,7 +1835,7 @@ function IntroPageContent() {
               <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
                 <a
                   href="/chat"
-                  className="card-elevated flex h-11 items-center gap-2 rounded-full bg-[#E31837] px-6 py-3 font-semibold text-white transition hover:scale-[1.03] hover:bg-[#B8122D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2 active:scale-[0.98] active:bg-[#971126]"
+                  className="card-elevated flex h-11 items-center gap-2 rounded-full bg-[#E31837] px-6 py-3 font-semibold text-white hover:bg-[#B8122D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2 active:bg-[#971126] motion-safe:transition motion-safe:hover:scale-[1.03] motion-safe:active:scale-[0.98]"
                 >
                   Launch Workspace Demo
                   <ChevronRight className="h-4 w-4" />
@@ -1791,13 +1858,16 @@ function IntroPageContent() {
                 ref={stackRef}
                 onMouseMove={handleMouseMove}
                 onMouseLeave={handleMouseLeave}
-                className="relative w-full max-w-5xl cursor-pointer px-2 py-4"
+                className="workspace-preview-tilt-shell relative w-full max-w-5xl cursor-pointer px-2 py-4"
                 style={{ perspective: "1000px" }}
               >
                 <div
-                  className="relative overflow-hidden rounded-[2rem] border border-[#D6E2EA] bg-white p-3 shadow-[0_24px_64px_-36px_rgba(0,25,40,0.35)] transition-all duration-300 ease-out"
+                  className="workspace-preview-tilt-card relative overflow-hidden rounded-[2rem] border border-[#D6E2EA] bg-white p-3 shadow-[0_24px_64px_-36px_rgba(0,25,40,0.35)] transition-all duration-300 ease-out"
                   style={{
-                    transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
+                    transform:
+                      reducePresentationMotion || (tilt.x === 0 && tilt.y === 0)
+                        ? undefined
+                        : `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
                     transformStyle: "preserve-3d",
                   }}
                 >
@@ -1906,7 +1976,7 @@ function IntroPageContent() {
           <div className="mx-auto grid min-h-[calc(100dvh-4rem)] max-w-7xl gap-12 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
             <div className="chapter-copy">
               <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#0075BE]">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0075BE]/10 text-[#0075BE]">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full border border-[#D6E2EA] bg-white text-[#0075BE]">
                   1
                 </span>
                 Phase 1: Ground
@@ -2116,7 +2186,7 @@ function IntroPageContent() {
                     <h5 className="mt-2 text-xs font-bold text-[#001928]">
                       Source Material
                     </h5>
-                    <p className="mt-1 text-[10px] text-[#6A818E]">
+                    <p className="mt-1 text-[10px] text-[#536B79]">
                       Reports &amp; Policies
                     </p>
                   </div>
@@ -2143,7 +2213,7 @@ function IntroPageContent() {
                     <h5 className="mt-2 text-xs font-bold text-[#001928]">
                       Living Wiki
                     </h5>
-                    <p className="mt-1 text-[10px] text-[#6A818E]">
+                    <p className="mt-1 text-[10px] text-[#536B79]">
                       Structured Pages
                     </p>
                   </div>
@@ -2166,7 +2236,7 @@ function IntroPageContent() {
                     <h5 className="mt-2 text-xs font-bold text-[#001928]">
                       Research Plan
                     </h5>
-                    <p className="mt-1 text-[10px] text-[#6A818E]">
+                    <p className="mt-1 text-[10px] text-[#536B79]">
                       Bounded Tasks
                     </p>
                   </div>
@@ -2193,7 +2263,7 @@ function IntroPageContent() {
                     <h5 className="mt-2 text-xs font-bold text-[#001928]">
                       Source-Linked Report
                     </h5>
-                    <p className="mt-1 text-[10px] text-[#6A818E]">
+                    <p className="mt-1 text-[10px] text-[#536B79]">
                       Reviewable Output
                     </p>
                   </div>
@@ -2202,7 +2272,7 @@ function IntroPageContent() {
 
               {/* Dynamic status helper */}
               <div className="relative mt-4 text-center sm:absolute sm:bottom-4 sm:left-4 sm:right-4 sm:mt-0">
-                <span className="inline-block max-w-full whitespace-normal rounded-full border border-[#D6E2EA] bg-white/90 px-3 py-1 font-mono text-[10px] leading-relaxed text-[#6A818E] shadow-sm">
+                <span className="inline-block max-w-full whitespace-normal rounded-full border border-[#D6E2EA] bg-white/90 px-3 py-1 font-mono text-[10px] leading-relaxed text-[#536B79] shadow-sm">
                   {activeNode === "A" &&
                     "Source: Uploaded reports, policies, research, and presentations."}
                   {activeNode === "C" &&
@@ -2219,7 +2289,7 @@ function IntroPageContent() {
 
             <div className="chapter-copy">
               <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#0075BE]">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0075BE]/10 text-[#0075BE]">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full border border-[#D6E2EA] bg-white text-[#0075BE]">
                   2
                 </span>
                 Phase 2: Research
@@ -2277,7 +2347,7 @@ function IntroPageContent() {
           <div className="mx-auto grid min-h-[calc(100dvh-4rem)] max-w-7xl gap-12 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
             <div className="chapter-copy">
               <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#0075BE]">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0075BE]/10 text-[#0075BE]">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full border border-[#D6E2EA] bg-white text-[#0075BE]">
                   3
                 </span>
                 Phase 3: Review
@@ -2353,7 +2423,7 @@ function IntroPageContent() {
                     </p>
                   </div>
                   <div className="border-l border-[#D6E2EA] pl-4 text-[#536B79]">
-                    <h5 className="font-bold text-[#6A818E]">
+                    <h5 className="font-bold text-[#536B79]">
                       Single Context Window
                     </h5>
                     <p className="mt-1">
@@ -2376,7 +2446,7 @@ function IntroPageContent() {
                     </p>
                   </div>
                   <div className="border-l border-[#D6E2EA] pl-4 text-[#536B79]">
-                    <h5 className="font-bold text-[#6A818E]">
+                    <h5 className="font-bold text-[#536B79]">
                       Unlinked Answers
                     </h5>
                     <p className="mt-1">
@@ -2399,7 +2469,7 @@ function IntroPageContent() {
                     </p>
                   </div>
                   <div className="border-l border-[#D6E2EA] pl-4 text-[#536B79]">
-                    <h5 className="font-bold text-[#6A818E]">
+                    <h5 className="font-bold text-[#536B79]">
                       One-Off Prompting
                     </h5>
                     <p className="mt-1">
@@ -2438,14 +2508,14 @@ function IntroPageContent() {
             <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
               <a
                 href="/chat"
-                className="card-elevated flex h-11 items-center justify-center gap-2 rounded-full bg-[#E31837] px-8 py-3 font-semibold text-white transition hover:scale-[1.03] hover:bg-[#B8122D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4DB6F5] focus-visible:ring-offset-2 focus-visible:ring-offset-[#001928] active:scale-[0.98] active:bg-[#971126]"
+                className="card-elevated flex h-11 items-center justify-center gap-2 rounded-full bg-[#E31837] px-8 py-3 font-semibold text-white hover:bg-[#B8122D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4DB6F5] focus-visible:ring-offset-2 focus-visible:ring-offset-[#001928] active:bg-[#971126] motion-safe:transition motion-safe:hover:scale-[1.03] motion-safe:active:scale-[0.98]"
               >
                 Launch Workspace Demo
                 <ChevronRight className="h-4 w-4" />
               </a>
             </div>
 
-            <div className="mt-10 flex flex-col items-center gap-3 font-mono text-[10px] uppercase tracking-widest text-white/35">
+            <div className="mt-10 flex flex-col items-center gap-3 font-mono text-[10px] uppercase tracking-widest text-white/70">
               <a
                 href="https://medium.com/@jerry.shao/harness-engineering-building-production-grade-ai-systems-beyond-prompts-and-context-5fcdffdd6b4c"
                 target="_blank"

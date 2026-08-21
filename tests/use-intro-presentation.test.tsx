@@ -25,6 +25,8 @@ const originalProperties: PropertySnapshot[] = [
   [globalThis, "IntersectionObserver"],
   [window, "setTimeout"],
   [window, "clearTimeout"],
+  [window, "requestAnimationFrame"],
+  [window, "cancelAnimationFrame"],
   [window.history, "pushState"],
   [window.history, "replaceState"],
   [HTMLElement.prototype, "scrollIntoView"],
@@ -109,6 +111,15 @@ let requestFullscreenCalls = 0;
 let exitFullscreenCalls = 0;
 let webkitRequestFullscreenCalls = 0;
 let webkitExitFullscreenCalls = 0;
+let nextAnimationFrameId = 1;
+let animationFrames = new Map<number, FrameRequestCallback>();
+let cancelledAnimationFrames: number[] = [];
+
+function flushAnimationFrames() {
+  const callbacks = [...animationFrames.values()];
+  animationFrames.clear();
+  callbacks.forEach((callback) => callback(0));
+}
 
 function makeRect(top: number, bottom: number): DOMRect {
   return {
@@ -313,6 +324,9 @@ beforeEach(() => {
   exitFullscreenCalls = 0;
   webkitRequestFullscreenCalls = 0;
   webkitExitFullscreenCalls = 0;
+  nextAnimationFrameId = 1;
+  animationFrames = new Map();
+  cancelledAnimationFrames = [];
   MockIntersectionObserver.instances = [];
   setHash();
   Object.defineProperty(window, "innerHeight", {
@@ -332,6 +346,22 @@ beforeEach(() => {
         removeListener: () => undefined,
         dispatchEvent: () => false,
       } as MediaQueryList),
+  });
+  Object.defineProperty(window, "requestAnimationFrame", {
+    configurable: true,
+    value: (callback: FrameRequestCallback) => {
+      const frameId = nextAnimationFrameId;
+      nextAnimationFrameId += 1;
+      animationFrames.set(frameId, callback);
+      return frameId;
+    },
+  });
+  Object.defineProperty(window, "cancelAnimationFrame", {
+    configurable: true,
+    value: (frameId: number) => {
+      cancelledAnimationFrames.push(frameId);
+      animationFrames.delete(frameId);
+    },
   });
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
     configurable: true,
@@ -399,6 +429,62 @@ test("restores a valid hash with reduced-motion scrolling", () => {
     options: { behavior: "auto", block: "start" },
   });
   assert.equal(slides.phase2.classList.contains("is-active"), true);
+});
+
+test("activates a deep link before enabling JS-ready reveal styles", () => {
+  const slides = setupSlides();
+  setHash("#phase2");
+  const rootClasses = document.documentElement.classList;
+  const originalAdd = rootClasses.add.bind(rootClasses);
+  let activeWhenReady = false;
+
+  Object.defineProperty(rootClasses, "add", {
+    configurable: true,
+    value: (...tokens: string[]) => {
+      if (tokens.includes("intro-presentation-ready")) {
+        activeWhenReady = slides.phase2.classList.contains("is-active");
+      }
+      originalAdd(...tokens);
+    },
+  });
+
+  try {
+    const presentation = renderPresentation();
+
+    assert.equal(activeWhenReady, true);
+    assert.equal(slides.phase2.classList.contains("is-active"), true);
+    assert.equal(rootClasses.contains("intro-presentation-initializing"), true);
+    assert.equal(rootClasses.contains("intro-presentation-ready"), true);
+    assert.equal(animationFrames.size, 1);
+
+    act(() => flushAnimationFrames());
+
+    assert.equal(
+      rootClasses.contains("intro-presentation-initializing"),
+      false
+    );
+    assert.equal(rootClasses.contains("intro-presentation-ready"), true);
+    presentation.unmount();
+  } finally {
+    Reflect.deleteProperty(rootClasses, "add");
+  }
+});
+
+test("cancels first-frame initialization when the controller unmounts", () => {
+  setupSlides();
+  const presentation = renderPresentation();
+  const frameId = [...animationFrames.keys()][0];
+
+  assert.equal(typeof frameId, "number");
+  presentation.unmount();
+
+  assert.deepEqual(cancelledAnimationFrames, [frameId]);
+  assert.equal(
+    document.documentElement.classList.contains(
+      "intro-presentation-initializing"
+    ),
+    false
+  );
 });
 
 test("goToSlide replaces history by default", () => {
@@ -875,6 +961,12 @@ test("cleanup removes controller effects, observer, cooldown, and ready class", 
     assert.equal(clearedTimer === undefined, false);
     assert.equal(
       document.documentElement.classList.contains("intro-presentation-ready"),
+      false
+    );
+    assert.equal(
+      document.documentElement.classList.contains(
+        "intro-presentation-initializing"
+      ),
       false
     );
     assert.equal(slides.hero.classList.contains("is-active"), false);

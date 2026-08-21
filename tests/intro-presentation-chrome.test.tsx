@@ -18,6 +18,7 @@ const defaultProps = {
   activeSlideId: "phase1" as IntroSlideId,
   isFullscreen: false,
   fullscreenStatus: "",
+  suspended: false,
   onNavigate: (_id: IntroSlideId) => undefined,
   onToggleFullscreen: () => undefined,
 };
@@ -136,6 +137,50 @@ test("keeps overlay pointer-transparent while controls intercept input", () => {
   assert.equal(overlay.classList.contains("pointer-events-none"), true);
   assert.equal(navigation.classList.contains("pointer-events-auto"), true);
   assert.equal(fullscreen.classList.contains("pointer-events-auto"), true);
+  assert.equal(
+    fullscreen.hasAttribute("data-presentation-fullscreen-control"),
+    true
+  );
+});
+
+test("disables every chrome input while the preview dialog suspends presentation", () => {
+  const navigated: IntroSlideId[] = [];
+  let fullscreenToggles = 0;
+  renderChrome({
+    suspended: true,
+    onNavigate: (id) => navigated.push(id),
+    onToggleFullscreen: () => fullscreenToggles++,
+  });
+
+  const dots = INTRO_SLIDES.map((slide, index) =>
+    screen.getByRole("button", {
+      name: `Go to slide ${index + 1}: ${slide.label}`,
+    })
+  );
+  const fullscreen = screen.getByRole("button", {
+    name: "Enter fullscreen",
+  });
+
+  for (const input of [...dots, fullscreen]) {
+    assert.equal(input.hasAttribute("disabled"), true);
+    fireEvent.click(input);
+  }
+  assert.deepEqual(navigated, []);
+  assert.equal(fullscreenToggles, 0);
+});
+
+test("uses motion-safe transforms for the fullscreen control", () => {
+  renderChrome();
+
+  const fullscreen = screen.getByRole("button", {
+    name: "Enter fullscreen",
+  });
+  assert.equal(fullscreen.classList.contains("motion-safe:transition"), true);
+  assert.equal(
+    fullscreen.classList.contains("motion-safe:active:scale-95"),
+    true
+  );
+  assert.equal(fullscreen.classList.contains("active:scale-95"), false);
 });
 
 test("activates dots and fullscreen controls from the keyboard", async () => {

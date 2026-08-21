@@ -136,7 +136,8 @@ export function useIntroPresentation({
   }, []);
 
   useEffect(() => {
-    document.documentElement.classList.add("intro-presentation-ready");
+    const presentationRoot = document.documentElement;
+    presentationRoot.classList.add("intro-presentation-initializing");
 
     const slides = Array.from(
       document.querySelectorAll<HTMLElement>("[data-intro-slide]")
@@ -183,6 +184,14 @@ export function useIntroPresentation({
     } else {
       navigateToSlide("hero", "replace");
     }
+
+    presentationRoot.classList.add("intro-presentation-ready");
+    let initializationFrame: number | undefined = window.requestAnimationFrame(
+      () => {
+        initializationFrame = undefined;
+        presentationRoot.classList.remove("intro-presentation-initializing");
+      }
+    );
 
     const atSlideBoundary = (
       direction: PresentationDirection,
@@ -380,9 +389,15 @@ export function useIntroPresentation({
       document.removeEventListener("fullscreenchange", syncFullscreen);
       document.removeEventListener("webkitfullscreenchange", syncFullscreen);
       if (wheelCooldown !== undefined) window.clearTimeout(wheelCooldown);
+      if (initializationFrame !== undefined) {
+        window.cancelAnimationFrame(initializationFrame);
+      }
       touchGesture = undefined;
       slides.forEach((slide) => slide.classList.remove("is-active"));
-      document.documentElement.classList.remove("intro-presentation-ready");
+      presentationRoot.classList.remove(
+        "intro-presentation-initializing",
+        "intro-presentation-ready"
+      );
     };
   }, [activateSlide, goToSlide, navigateToSlide, toggleFullscreen]);
 

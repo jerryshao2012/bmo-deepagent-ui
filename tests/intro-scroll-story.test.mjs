@@ -53,6 +53,47 @@ function compareSpecificity(left, right) {
   return 0;
 }
 
+function relativeLuminance(hex) {
+  const channels = hex
+    .replace("#", "")
+    .match(/.{2}/g)
+    .map((channel) => Number.parseInt(channel, 16) / 255)
+    .map((channel) =>
+      channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+    );
+
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+
+function contrastRatio(foreground, background) {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function compositeHex(foreground, background, alpha) {
+  const channels = [0, 2, 4].map((offset) => {
+    const foregroundChannel = Number.parseInt(
+      foreground.slice(offset + 1, offset + 3),
+      16
+    );
+    const backgroundChannel = Number.parseInt(
+      background.slice(offset + 1, offset + 3),
+      16
+    );
+    return Math.round(
+      foregroundChannel * alpha + backgroundChannel * (1 - alpha)
+    );
+  });
+
+  return `#${channels
+    .map((channel) => channel.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
 // Intentional slide-copy changes must update both checksum sentinels after review.
 function extractPresentationText(source) {
   const sourceFile = ts.createSourceFile(
@@ -403,6 +444,127 @@ test("reduced motion wins the cascade for active and inactive reveal roles", asy
   }
 });
 
+test("first hydration activation is visible without consuming later reveal motion", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const css = getInlineCss(source);
+
+  for (const selector of revealSelectors) {
+    const initializingSelector = `.intro-presentation-initializing.intro-presentation-ready .intro-slide ${selector}`;
+    const initializingRule = getCssRules(css, initializingSelector).find(
+      (rule) =>
+        /opacity:\s*1/.test(rule.declarations) &&
+        /transform:\s*none/.test(rule.declarations) &&
+        /transition:\s*none/.test(rule.declarations)
+    );
+
+    assert.ok(
+      initializingRule,
+      `expected first-frame visibility override for ${selector}`
+    );
+  }
+
+  for (const revealIndex of ["2", "3"]) {
+    const selector = `.intro-presentation-initializing.intro-presentation-ready .intro-slide.is-active .chapter-reveal[data-reveal="${revealIndex}"]`;
+    const rule = getCssRules(css, selector).find((candidate) =>
+      /transition-delay:\s*0s/.test(candidate.declarations)
+    );
+
+    assert.ok(
+      rule,
+      `expected first-frame stagger reset for reveal ${revealIndex}`
+    );
+  }
+
+  assert.match(
+    source,
+    /\.intro-presentation-ready \.intro-slide \.hero-copy,[\s\S]*transition: opacity 700ms cubic-bezier\(\.16, 1, \.3, 1\)/
+  );
+});
+
+test("reduced motion disables preview tilt, ping, node pulse, and CTA transforms", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const css = getInlineCss(source);
+  const reducedMotionStart = css.indexOf(
+    "@media (prefers-reduced-motion: reduce)"
+  );
+  const reducedMotionCss = css.slice(reducedMotionStart);
+  const previewStart = source.indexOf('id="preview"');
+  const previewEnd = source.indexOf("</section>", previewStart);
+  const preview = source.slice(previewStart, previewEnd);
+  const presentationStart = source.indexOf("<header");
+  const presentationEnd = source.indexOf("<DialogPrimitive.Root");
+  const presentation = source.slice(presentationStart, presentationEnd);
+  const launchActions = [...presentation.matchAll(/<a\b[\s\S]*?<\/a>/g)]
+    .map(([anchor]) => anchor)
+    .filter((anchor) => anchor.includes("Launch Workspace"));
+
+  assert.match(
+    source,
+    /const \[reducePresentationMotion, setReducePresentationMotion\] =\s*useState\(false\)/
+  );
+  assert.match(
+    source,
+    /window\.matchMedia\("\(prefers-reduced-motion: reduce\)"\)/
+  );
+  assert.match(
+    source,
+    /const handleMouseMove =[^=]*=> \{\s*if \(reducePresentationMotion \|\| !stackRef\.current\) return;/
+  );
+  assert.match(
+    source,
+    /const handleMouseLeave = \(\) => \{\s*if \(reducePresentationMotion\) return;/
+  );
+  assert.match(preview, /workspace-preview-tilt-shell/);
+  assert.match(preview, /workspace-preview-tilt-card/);
+  assert.match(
+    preview,
+    /transform:\s*reducePresentationMotion[\s\S]{0,180}\? undefined[\s\S]{0,180}: `rotateX\(\$\{tilt\.x\}deg\) rotateY\(\$\{tilt\.y\}deg\)`/
+  );
+
+  for (const selector of [
+    ".workspace-preview-tilt-shell",
+    ".workspace-preview-tilt-card",
+  ]) {
+    const rule = getCssRules(reducedMotionCss, selector).find(
+      (candidate) =>
+        /transform:\s*none/.test(candidate.declarations) &&
+        /transition:\s*none/.test(candidate.declarations)
+    );
+    assert.ok(rule, `expected reduced-motion tilt override for ${selector}`);
+  }
+  assert.ok(
+    getCssRules(reducedMotionCss, ".intro-slide .animate-ping").some((rule) =>
+      /animation:\s*none/.test(rule.declarations)
+    )
+  );
+  const basePulseRule = getCssRules(css, ".node-pulse").find((rule) =>
+    /animation:\s*pulse-glow/.test(rule.declarations)
+  );
+  const reducedPulseRule = getCssRules(
+    reducedMotionCss,
+    ".intro-page .node-pulse"
+  ).find((rule) => /animation:\s*none/.test(rule.declarations));
+  assert.ok(basePulseRule, "expected the normal node pulse animation");
+  assert.ok(
+    reducedPulseRule,
+    "expected a reduced-motion node pulse override with stronger specificity"
+  );
+  assert.ok(
+    compareSpecificity(
+      getSelectorSpecificity(reducedPulseRule.selectors[0]),
+      getSelectorSpecificity(basePulseRule.selectors[0])
+    ) > 0
+  );
+  assert.equal(launchActions.length, 3);
+  for (const action of launchActions) {
+    assert.match(action, /motion-safe:transition/);
+    assert.match(action, /motion-safe:hover:scale-/);
+    assert.match(action, /motion-safe:active:scale-/);
+    assert.doesNotMatch(action, /(?:^|\s)hover:scale-/);
+    assert.doesNotMatch(action, /(?:^|\s)active:scale-/);
+  }
+});
+
 test("intro slides keep readable viewport sizing and snap anchors", async () => {
   const source = await readFile(introPagePath, "utf8");
   const css = getInlineCss(source);
@@ -416,6 +578,19 @@ test("intro slides keep readable viewport sizing and snap anchors", async () => 
   assert.doesNotMatch(css, /(?:^|[;{])\s*height:\s*100vh/);
 });
 
+test("mobile slides reserve an operable gutter for the fullscreen control", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const css = getInlineCss(source);
+  const mobileStart = css.indexOf("@media (max-width: 639px)");
+  const mobileCss = css.slice(mobileStart);
+  const slideRule = getCssRules(mobileCss, ".intro-slide").find((rule) =>
+    /padding-right:\s*5rem/.test(rule.declarations)
+  );
+
+  assert.notEqual(mobileStart, -1);
+  assert.ok(slideRule, "expected a narrow right control gutter below sm");
+});
+
 test("intro page keeps document as the only vertical scroll container", async () => {
   const source = await readFile(introPagePath, "utf8");
 
@@ -423,35 +598,52 @@ test("intro page keeps document as the only vertical scroll container", async ()
   assert.doesNotMatch(source, /min-h-screen overflow-x-hidden/);
 });
 
-test("intro page pre-renders presentation content without a JavaScript-only Suspense shell", async () => {
+test("intro page isolates its reactive query observer from the server-rendered deck", async () => {
   const source = await readFile(introPagePath, "utf8");
-  const threadEffectStart = source.indexOf(
-    "// Generate 6-digit Thread ID if not present in query params"
-  );
-  const threadEffectEnd = source.indexOf(
-    "// Handle mouse move for interactive card 3D tilt",
-    threadEffectStart
-  );
-  const threadEffect = source.slice(threadEffectStart, threadEffectEnd);
+  const observerStart = source.indexOf("function ThreadQueryObserver");
+  const contentStart = source.indexOf("function IntroPageContent");
+  const observer = source.slice(observerStart, contentStart);
+  const suspenseStart = source.indexOf("<React.Suspense", contentStart);
+  const suspenseEnd = source.indexOf("</React.Suspense>", suspenseStart);
+  const mainStart = source.indexOf("<main", contentStart);
+  const mainEnd = source.indexOf("</main>", mainStart);
+  const suspense = source.slice(suspenseStart, suspenseEnd);
+  const contentComponent = source.slice(contentStart);
 
-  assert.notEqual(threadEffectStart, -1);
-  assert.ok(threadEffectEnd > threadEffectStart);
+  assert.match(source, /import \{ useSearchParams \} from "next\/navigation";/);
+  assert.ok(observerStart >= 0 && contentStart > observerStart);
+  assert.equal(observer.match(/\buseSearchParams\(\)/g)?.length, 1);
+  assert.match(observer, /const threadId = searchParams\.get\("thread_id"\);/);
+  assert.match(
+    observer,
+    /useEffect\(\(\) => \{\s*onThreadIdChange\(threadId\);\s*\}, \[onThreadIdChange, threadId\]\);/
+  );
+  assert.match(observer, /return null;/);
+  assert.ok(suspenseStart >= 0 && suspenseEnd > suspenseStart);
+  assert.match(suspense, /fallback=\{null\}/);
+  assert.match(
+    suspense,
+    /<ThreadQueryObserver onThreadIdChange=\{syncThreadIdFromQuery\} \/>/
+  );
+  assert.equal(suspense.match(/\bdata-intro-slide\b/g)?.length ?? 0, 0);
+  assert.ok(mainStart > suspenseEnd && mainEnd > mainStart);
+  assert.equal(
+    source.slice(mainStart, mainEnd).match(/\bdata-intro-slide\b/g)?.length,
+    6
+  );
   assert.doesNotMatch(
-    source,
-    /import \{ useSearchParams \} from "next\/navigation";/
+    contentComponent.slice(0, suspenseStart - contentStart),
+    /\buseSearchParams\(\)/
   );
-  assert.doesNotMatch(source, /\buseSearchParams\(\)/);
-  assert.doesNotMatch(source, /<React\.Suspense|Loading Harness Engine/);
-  assert.match(threadEffect, /new URLSearchParams\(window\.location\.search\)/);
-  assert.match(threadEffect, /const tid = searchParams\.get\("thread_id"\);/);
+  assert.doesNotMatch(source, /Loading Harness Engine/);
   assert.match(
-    threadEffect,
+    source,
+    /const syncThreadIdFromQuery = useCallback\(\s*\(tid: string \| null\) => \{[\s\S]*?\},\s*\[\]\s*\);/
+  );
+  assert.match(source, /if \(tid && \/\^\\d\{6\}\$\/\.test\(tid\)\)/);
+  assert.match(
+    source,
     /window\.history\.replaceState\(\{\}, "", url\.toString\(\)\);/
-  );
-  assert.match(threadEffect, /\}, \[\]\);/);
-  assert.match(
-    source,
-    /export default function IntroPage\(\) \{\s*return <IntroPageContent \/>;\s*\}/
   );
 });
 
@@ -502,6 +694,7 @@ test("intro page integrates suspended presentation control and chrome", async ()
   assert.match(source, /activeSlideId=\{presentation\.activeSlideId\}/);
   assert.match(source, /isFullscreen=\{presentation\.isFullscreen\}/);
   assert.match(source, /fullscreenStatus=\{presentation\.fullscreenStatus\}/);
+  assert.match(source, /suspended=\{isDialogOpen\}/);
   assert.match(
     source,
     /onNavigate=\{\(id\) => presentation\.goToSlide\(id, "push"\)\}/
@@ -511,6 +704,11 @@ test("intro page integrates suspended presentation control and chrome", async ()
     /onToggleFullscreen=\{\(\) => void presentation\.toggleFullscreen\(\)\}/
   );
   assert.ok(inlineStyleEnd < chromeStart && chromeStart < headerStart);
+  assert.match(
+    source,
+    /<header[^>]*inert=\{isDialogOpen \? true : undefined\}/
+  );
+  assert.match(source, /<main[^>]*inert=\{isDialogOpen \? true : undefined\}/);
 });
 
 test("controlled Radix dialog isolates the Markdown preview", async () => {
@@ -546,14 +744,13 @@ test("controlled Radix dialog isolates the Markdown preview", async () => {
 
 test("presentation slides use one labelled main and active phase link semantics", async () => {
   const source = await readFile(introPagePath, "utf8");
-  const mainStart = source.indexOf(
-    '<main aria-label="Applied AI Deep Agent presentation">'
-  );
+  const mainStart = source.indexOf("<main");
   const mainEnd = source.indexOf("</main>", mainStart);
   const dialogStart = source.indexOf("<DialogPrimitive.Root");
   const main = source.slice(mainStart, mainEnd);
 
   assert.notEqual(mainStart, -1);
+  assert.match(main, /aria-label="Applied AI Deep Agent presentation"/);
   assert.ok(main.includes('id="hero"'));
   assert.ok(main.includes('id="launch"'));
   assert.ok(mainEnd < dialogStart);
@@ -588,6 +785,7 @@ test("intro header retains product actions and follows active presentation slide
   assert.match(header, /ref=\{markdownPreviewTriggerRef\}/);
   assert.match(header, /Collab Thread/);
   assert.match(header, /: #\{threadId\}/);
+  assert.match(header, /\{threadId && \(/);
   assert.match(header, /Launch Workspace/);
   for (const phaseId of ["phase1", "phase2", "phase3"]) {
     assert.match(
@@ -800,6 +998,43 @@ test("presentation uses blue identity accents, red launch actions, and navy fina
   );
   assert.doesNotMatch(presentation, /#ff8a42|rgba\(255,\s*138,\s*66/i);
   assert.match(presentation, /Applied AI Deep Agent/);
+});
+
+test("small presentation text and phase badges meet WCAG AA contrast", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const mainStart = source.indexOf("<main");
+  const mainEnd = source.indexOf("</main>", mainStart);
+  const main = source.slice(mainStart, mainEnd);
+  const phaseBadges = [
+    ...main.matchAll(
+      /<span className="([^"]*h-6 w-6[^"]*text-\[#0075BE\][^"]*)">\s*[123]\s*<\/span>/g
+    ),
+  ];
+
+  assert.ok(mainStart >= 0 && mainEnd > mainStart);
+  assert.doesNotMatch(main, /#6A818E/i);
+  assert.ok(
+    (main.match(/text-\[#536B79\]/g)?.length ?? 0) >= 7,
+    "expected presentation secondary text to use the AA-safe token"
+  );
+  assert.equal(phaseBadges.length, 3);
+  for (const [, classes] of phaseBadges) {
+    assert.match(classes, /border/);
+    assert.match(classes, /border-\[#D6E2EA\]/i);
+    assert.match(classes, /bg-white/);
+    assert.doesNotMatch(classes, /bg-\[#0075BE\]\/10/i);
+  }
+  assert.match(
+    main,
+    /font-mono text-\[10px\] uppercase tracking-widest text-white\/70/
+  );
+
+  assert.ok(contrastRatio("#536B79", "#FFFFFF") >= 4.5);
+  assert.ok(contrastRatio("#536B79", "#F3F7FA") >= 4.5);
+  assert.ok(contrastRatio("#0075BE", "#FFFFFF") >= 4.5);
+  assert.ok(
+    contrastRatio(compositeHex("#FFFFFF", "#001928", 0.7), "#001928") >= 4.5
+  );
 });
 
 test("presentation reserves its red palette for exactly three launch actions", async () => {

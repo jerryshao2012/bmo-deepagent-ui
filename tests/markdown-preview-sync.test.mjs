@@ -433,7 +433,7 @@ test("markdown preview warning and controls are accessible and use local activit
   const introPage = await source("src/app/intro/page.tsx");
   const opener = sourceSection(
     introPage,
-    '<div className="hidden select-none items-center gap-1',
+    "{threadId && (",
     '<a\n            href="/chat"'
   );
   const modalHeader = sourceSection(

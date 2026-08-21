@@ -59,7 +59,7 @@ export function PresentationChrome({
 
       <nav
         aria-label="Presentation slides"
-        className="pointer-events-auto fixed right-5 top-1/2 hidden -translate-y-1/2 flex-col gap-3 sm:flex"
+        className="pointer-events-auto fixed right-5 top-1/2 flex -translate-y-1/2 flex-col gap-3"
       >
         {INTRO_SLIDES.map((slide, index) => {
           const isActive = slide.id === effectiveActiveSlideId;

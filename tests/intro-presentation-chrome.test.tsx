@@ -85,6 +85,25 @@ test("renders one accessible dot per navigation slide and marks active slide", (
   assert.equal(dots[0].hasAttribute("aria-current"), false);
 });
 
+test("keeps the six-dot rail visible inside the mobile control gutter", () => {
+  renderChrome();
+
+  const navigation = screen.getByRole("navigation", {
+    name: "Presentation slides",
+  });
+
+  assert.equal(navigation.classList.contains("hidden"), false);
+  assert.equal(navigation.classList.contains("flex"), true);
+  for (const mobilePositionClass of [
+    "right-5",
+    "top-1/2",
+    "-translate-y-1/2",
+    "flex-col",
+  ]) {
+    assert.equal(navigation.classList.contains(mobilePositionClass), true);
+  }
+});
+
 test("navigates to clicked dot", () => {
   const navigated: IntroSlideId[] = [];
   renderChrome({ onNavigate: (id) => navigated.push(id) });

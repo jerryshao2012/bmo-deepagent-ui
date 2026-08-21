@@ -1713,7 +1713,7 @@ function IntroPageContent() {
                 <path d="M38.73,95.39H0v16.81h38.73v-16.81Z"></path>
               </svg>
             </div>
-            <span className="font-outfit text-md font-bold uppercase tracking-tight text-[#001928]">
+            <span className="hidden sm:inline font-outfit text-md font-bold uppercase tracking-tight text-[#001928]">
               Applied AI Deep Agent
             </span>
           </a>
@@ -1780,18 +1780,22 @@ function IntroPageContent() {
           </div>
 
           {threadId && (
-            <div className="hidden select-none items-center gap-1 font-mono text-xs text-[#536B79] sm:flex">
+            <div className="flex select-none items-center gap-1 font-mono text-xs text-[#536B79]">
               <div className="tooltip-wrapper">
                 <button
                   type="button"
                   ref={markdownPreviewTriggerRef}
                   onClick={openMarkdownPreview}
-                  className="cursor-pointer underline decoration-[#A9BDCA] decoration-dotted underline-offset-2 transition hover:text-[#001928] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2"
+                  className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-[#D6E2EA] bg-[#F3F7FA] transition hover:text-[#001928] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2 sm:h-auto sm:w-auto sm:rounded-none sm:border-0 sm:bg-transparent sm:underline sm:decoration-[#A9BDCA] sm:decoration-dotted sm:underline-offset-2"
                 >
-                  Collab Thread
+                  <MessageSquare
+                    aria-hidden="true"
+                    className="h-4 w-4 sm:hidden"
+                  />
+                  <span className="sr-only sm:not-sr-only">Collab Thread</span>
                 </button>
               </div>
-              : #{threadId}
+              <span className="hidden sm:inline">: #{threadId}</span>
             </div>
           )}
 

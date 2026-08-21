@@ -856,6 +856,28 @@ test("intro header retains product actions and follows active presentation slide
   }
 });
 
+test("mobile header keeps a compact accessible Collab Thread control", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const header = source.slice(
+    source.indexOf("<header"),
+    source.indexOf("</header>")
+  );
+  const threadControl = header.slice(
+    header.indexOf("{threadId && ("),
+    header.indexOf("{threadId && (") + 1_500
+  );
+
+  assert.match(
+    header,
+    /<span className="hidden sm:inline[^>]*">\s*Applied AI Deep Agent/
+  );
+  assert.match(threadControl, /className="flex select-none/);
+  assert.doesNotMatch(threadControl, /className="hidden select-none/);
+  assert.match(threadControl, /<MessageSquare[^>]*className="h-4 w-4 sm:hidden"/);
+  assert.match(threadControl, /className="sr-only sm:not-sr-only"/);
+  assert.match(threadControl, /className="hidden sm:inline">: #\{threadId\}/);
+});
+
 test("phase 2 keeps complete connector tracks beneath animated paths", async () => {
   const source = await readFile(introPagePath, "utf8");
   const connectorPaths = [

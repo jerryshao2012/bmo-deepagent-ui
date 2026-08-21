@@ -62,6 +62,14 @@ function updateActiveClass(id: IntroSlideId) {
     .forEach((slide) => slide.classList.toggle("is-active", slide.id === id));
 }
 
+function scrollSlideIntoView(target: HTMLElement) {
+  const { height } = target.getBoundingClientRect();
+  target.scrollIntoView({
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
+    block: height <= window.innerHeight ? "center" : "start",
+  });
+}
+
 export function useIntroPresentation({
   suspended,
 }: {
@@ -90,10 +98,7 @@ export function useIntroPresentation({
         return false;
       }
 
-      target.scrollIntoView({
-        behavior: prefersReducedMotion() ? "auto" : "smooth",
-        block: "start",
-      });
+      scrollSlideIntoView(target);
       window.history[`${historyMode}State`](null, "", `#${id}`);
       activateSlide(id);
       return true;
@@ -204,7 +209,7 @@ export function useIntroPresentation({
       return shouldLeaveOverflowingSlide(
         { top, bottom, viewportHeight: window.innerHeight },
         direction,
-        direction === -1 ? HEADER_OFFSET : 0
+        HEADER_OFFSET
       );
     };
 
@@ -253,6 +258,12 @@ export function useIntroPresentation({
       if (event.key === "End") {
         event.preventDefault();
         goToSlide(INTRO_SLIDES[INTRO_SLIDES.length - 1].id, "push");
+        return;
+      }
+
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        navigateAdjacent(event.key === "ArrowRight" ? 1 : -1);
         return;
       }
 

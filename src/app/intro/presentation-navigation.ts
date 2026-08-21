@@ -58,8 +58,12 @@ export function shouldLeaveOverflowingSlide(
   headerOffset = 0,
   epsilon = 2
 ): boolean {
+  if (bottom - top <= viewportHeight + epsilon) {
+    return true;
+  }
+
   if (direction === 1) {
-    return bottom <= viewportHeight + epsilon;
+    return bottom <= viewportHeight + headerOffset + epsilon;
   }
 
   return top >= headerOffset - epsilon;
@@ -95,6 +99,8 @@ export function isPresentationInteractiveTarget(
 
   const tagName = target.tagName?.toUpperCase();
   return (
-    isPresentationEditableTarget(target) || tagName === "BUTTON" || tagName === "A"
+    isPresentationEditableTarget(target) ||
+    tagName === "BUTTON" ||
+    tagName === "A"
   );
 }

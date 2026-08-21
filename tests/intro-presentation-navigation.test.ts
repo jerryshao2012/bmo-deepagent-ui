@@ -45,24 +45,45 @@ test("maps presentation keys to forward, backward, or no direction", () => {
   assert.equal(directionForPresentationKey("Enter", false), null);
 });
 
-test("leaves an overflowing slide only at the direction boundary", () => {
+test("leaves fitting slides without waiting for a vertical boundary", () => {
   assert.equal(
     shouldLeaveOverflowingSlide(
-      { top: 120, bottom: 802, viewportHeight: 800 },
-      1
+      { top: 64, bottom: 864, viewportHeight: 800 },
+      1,
+      64
     ),
     true
   );
   assert.equal(
     shouldLeaveOverflowingSlide(
-      { top: 120, bottom: 803, viewportHeight: 800 },
-      1
+      { top: 0, bottom: 800, viewportHeight: 800 },
+      -1,
+      64
+    ),
+    true
+  );
+});
+
+test("leaves a taller slide only at the direction boundary", () => {
+  assert.equal(
+    shouldLeaveOverflowingSlide(
+      { top: -10, bottom: 866, viewportHeight: 800 },
+      1,
+      64
+    ),
+    true
+  );
+  assert.equal(
+    shouldLeaveOverflowingSlide(
+      { top: -10, bottom: 867, viewportHeight: 800 },
+      1,
+      64
     ),
     false
   );
   assert.equal(
     shouldLeaveOverflowingSlide(
-      { top: 70, bottom: 700, viewportHeight: 800 },
+      { top: 70, bottom: 900, viewportHeight: 800 },
       -1,
       72
     ),
@@ -70,7 +91,7 @@ test("leaves an overflowing slide only at the direction boundary", () => {
   );
   assert.equal(
     shouldLeaveOverflowingSlide(
-      { top: 69, bottom: 700, viewportHeight: 800 },
+      { top: 69, bottom: 900, viewportHeight: 800 },
       -1,
       72
     ),
@@ -78,7 +99,7 @@ test("leaves an overflowing slide only at the direction boundary", () => {
   );
   assert.equal(
     shouldLeaveOverflowingSlide(
-      { top: 100, bottom: 700, viewportHeight: 800 },
+      { top: 100, bottom: 900, viewportHeight: 800 },
       -1,
       72
     ),

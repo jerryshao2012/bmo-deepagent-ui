@@ -400,7 +400,7 @@ test("mounts at hero and replaces missing or invalid hashes with hero", () => {
   assert.equal(slides.hero.classList.contains("is-active"), true);
   assert.deepEqual(scrollCalls.at(-1), {
     element: slides.hero,
-    options: { behavior: "smooth", block: "start" },
+    options: { behavior: "smooth", block: "center" },
   });
   assert.equal(
     document.documentElement.classList.contains("intro-presentation-ready"),
@@ -426,7 +426,7 @@ test("restores a valid hash with reduced-motion scrolling", () => {
   assert.equal(window.location.hash, "#phase2");
   assert.deepEqual(scrollCalls.at(-1), {
     element: slides.phase2,
-    options: { behavior: "auto", block: "start" },
+    options: { behavior: "auto", block: "center" },
   });
   assert.equal(slides.phase2.classList.contains("is-active"), true);
 });
@@ -498,11 +498,25 @@ test("goToSlide replaces history by default", () => {
   assert.equal(window.location.hash, "#phase1");
 });
 
-test("maps keyboard directions, Home and End while clamping slide navigation", () => {
+test("horizontal arrows navigate deterministically without vertical boundary checks", () => {
   const slides = setupSlides();
   const { result } = renderPresentation();
 
   act(() => keydown("ArrowRight"));
+  assert.equal(result.current.activeSlideId, "preview");
+  setRect(slides.preview, 100, 1800);
+  act(() => keydown("ArrowRight"));
+  assert.equal(result.current.activeSlideId, "phase1");
+  setRect(slides.phase1, 0, 1800);
+  act(() => keydown("ArrowLeft"));
+  assert.equal(result.current.activeSlideId, "preview");
+});
+
+test("maps vertical keyboard directions, Home and End while clamping navigation", () => {
+  const slides = setupSlides();
+  const { result } = renderPresentation();
+
+  act(() => keydown("ArrowDown"));
   assert.equal(result.current.activeSlideId, "preview");
   act(() => keydown("PageDown"));
   assert.equal(result.current.activeSlideId, "phase1");
@@ -523,6 +537,38 @@ test("maps keyboard directions, Home and End while clamping slide navigation", (
   assert.equal(clamped.defaultPrevented, true);
   assert.equal(result.current.activeSlideId, "launch");
   assert.equal(window.location.hash, "#launch");
+});
+
+test("one Down press leaves a fitting slide offset below the fixed header", () => {
+  const slides = setupSlides();
+  setRect(slides.hero, 64, 864);
+  const { result } = renderPresentation();
+
+  let down!: KeyboardEvent;
+  act(() => {
+    down = keydown("ArrowDown");
+  });
+
+  assert.equal(down.defaultPrevented, true);
+  assert.equal(result.current.activeSlideId, "preview");
+});
+
+test("aligns fitting destinations centrally and taller destinations at the top", () => {
+  const slides = setupSlides();
+  setRect(slides.phase1, 0, 1200);
+  const { result } = renderPresentation();
+
+  act(() => result.current.goToSlide("preview"));
+  assert.deepEqual(scrollCalls.at(-1), {
+    element: slides.preview,
+    options: { behavior: "smooth", block: "center" },
+  });
+
+  act(() => result.current.goToSlide("phase1"));
+  assert.deepEqual(scrollCalls.at(-1), {
+    element: slides.phase1,
+    options: { behavior: "smooth", block: "start" },
+  });
 });
 
 test("repeated Home replaces hero history while revealing the current slide", () => {
@@ -704,13 +750,13 @@ test("waits for the fixed header boundary before navigating upward", () => {
   const slides = setupSlides();
   const { result } = renderPresentation();
   act(() => result.current.goToSlide("phase1", "replace"));
-  setRect(slides.phase1, 40, 800);
+  setRect(slides.phase1, 40, 900);
 
   const hiddenUnderHeader = keydown("ArrowUp");
   assert.equal(hiddenUnderHeader.defaultPrevented, false);
   assert.equal(result.current.activeSlideId, "phase1");
 
-  setRect(slides.phase1, 62, 800);
+  setRect(slides.phase1, 62, 900);
   let atHeaderBoundary!: KeyboardEvent;
   act(() => {
     atHeaderBoundary = keydown("ArrowUp");

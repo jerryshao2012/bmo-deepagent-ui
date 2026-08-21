@@ -1492,10 +1492,21 @@ function IntroPageContent() {
           .intro-presentation-ready .intro-slide .chapter-copy,
           .intro-presentation-ready .intro-slide .chapter-visual,
           .intro-presentation-ready .intro-slide .chapter-reveal,
-          .intro-presentation-ready .intro-slide .launch-content {
+          .intro-presentation-ready .intro-slide .launch-content,
+          .intro-presentation-ready .intro-slide.is-active .hero-copy,
+          .intro-presentation-ready .intro-slide.is-active .hero-preview,
+          .intro-presentation-ready .intro-slide.is-active .chapter-copy,
+          .intro-presentation-ready .intro-slide.is-active .chapter-visual,
+          .intro-presentation-ready .intro-slide.is-active .chapter-reveal,
+          .intro-presentation-ready .intro-slide.is-active .launch-content {
             opacity: 1;
             transform: none;
             transition: none;
+          }
+
+          .intro-presentation-ready .intro-slide.is-active .chapter-reveal[data-reveal="2"],
+          .intro-presentation-ready .intro-slide.is-active .chapter-reveal[data-reveal="3"] {
+            transition-delay: 0s;
           }
 
           .workflow-route {

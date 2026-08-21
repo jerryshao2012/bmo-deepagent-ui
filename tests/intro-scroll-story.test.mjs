@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import ts from "typescript";
 
 const introPagePath = new URL("../src/app/intro/page.tsx", import.meta.url);
 
@@ -25,11 +27,102 @@ function getInlineCss(source) {
 
 function getCssRules(css, selector) {
   return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .map(([, selectors, declarations]) => ({
-      selectors: selectors.split(",").map((value) => value.trim()),
-      declarations,
+    .map((match) => ({
+      selectors: match[1].split(",").map((value) => value.trim()),
+      declarations: match[2],
+      index: match.index ?? -1,
     }))
     .filter((rule) => rule.selectors.includes(selector));
+}
+
+function getSelectorSpecificity(selector) {
+  const idCount = selector.match(/#[\w-]+/g)?.length ?? 0;
+  const classLikeCount =
+    selector.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g)?.length ?? 0;
+  const elementCount = selector
+    .split(/[\s>+~]+/)
+    .filter((part) => /^[a-z][\w-]*/i.test(part)).length;
+
+  return [idCount, classLikeCount, elementCount];
+}
+
+function compareSpecificity(left, right) {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return left[index] - right[index];
+  }
+  return 0;
+}
+
+// Intentional slide-copy changes must update both checksum sentinels after review.
+function extractPresentationText(source) {
+  const sourceFile = ts.createSourceFile(
+    introPagePath.pathname,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  let main;
+
+  function findMain(node) {
+    if (
+      ts.isJsxElement(node) &&
+      node.openingElement.tagName.getText(sourceFile) === "main"
+    ) {
+      main = node;
+      return;
+    }
+    if (!main) ts.forEachChild(node, findMain);
+  }
+
+  findMain(sourceFile);
+  assert.ok(main, "expected presentation main JSX element");
+
+  const entries = [];
+  const append = (value) => {
+    const normalized = value.replace(/\s+/g, " ").trim();
+    if (normalized) entries.push(normalized);
+  };
+
+  function collectRenderedExpression(expression) {
+    if (
+      ts.isStringLiteral(expression) ||
+      ts.isNoSubstitutionTemplateLiteral(expression)
+    ) {
+      append(expression.text);
+      return;
+    }
+    if (ts.isParenthesizedExpression(expression)) {
+      collectRenderedExpression(expression.expression);
+      return;
+    }
+    if (ts.isConditionalExpression(expression)) {
+      collectRenderedExpression(expression.whenTrue);
+      collectRenderedExpression(expression.whenFalse);
+      return;
+    }
+    if (
+      ts.isBinaryExpression(expression) &&
+      expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+    ) {
+      collectRenderedExpression(expression.right);
+    }
+  }
+
+  function collectChildren(children) {
+    for (const child of children) {
+      if (ts.isJsxText(child)) {
+        append(child.getText(sourceFile));
+      } else if (ts.isJsxElement(child) || ts.isJsxFragment(child)) {
+        collectChildren(child.children);
+      } else if (ts.isJsxExpression(child) && child.expression) {
+        collectRenderedExpression(child.expression);
+      }
+    }
+  }
+
+  collectChildren(main.children);
+  return entries;
 }
 
 for (const [variable, value] of [
@@ -70,6 +163,20 @@ test("intro page renders exactly six ordered semantic presentation slides", asyn
   assert.doesNotMatch(
     source,
     /<section className="border-t border-stone-200\/40 bg-white">/
+  );
+});
+
+test("all six slides preserve the approved visible-copy checksum", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const entries = extractPresentationText(source);
+  const checksum = createHash("sha256")
+    .update(JSON.stringify(entries))
+    .digest("hex");
+
+  assert.equal(entries.length, 94);
+  assert.equal(
+    checksum,
+    "f357fe008405b6bee0f4ad54b3c0742387b53d27730a144f25b410f6c0c90d78"
   );
 });
 
@@ -176,6 +283,124 @@ test("reduced motion makes every reveal visible and disables workflow motion", a
     reducedMotionCss,
     /\.workflow-particle\s*\{\s*display:\s*none;\s*\}/
   );
+});
+
+test("reduced motion wins the cascade for active and inactive reveal roles", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const css = getInlineCss(source);
+  const reducedMotionStart = css.indexOf(
+    "@media (prefers-reduced-motion: reduce)"
+  );
+
+  assert.notEqual(reducedMotionStart, -1);
+
+  for (const selector of revealSelectors) {
+    const inactiveSelector = `.intro-presentation-ready .intro-slide ${selector}`;
+    const activeSelector = `.intro-presentation-ready .intro-slide.is-active ${selector}`;
+    const inactiveRule = getCssRules(css, inactiveSelector).find(
+      (rule) =>
+        rule.index < reducedMotionStart &&
+        /opacity:\s*0/.test(rule.declarations)
+    );
+    const activeRule = getCssRules(css, activeSelector).find(
+      (rule) =>
+        rule.index < reducedMotionStart &&
+        /opacity:\s*1/.test(rule.declarations)
+    );
+    const reducedInactiveRule = getCssRules(css, inactiveSelector).find(
+      (rule) =>
+        rule.index > reducedMotionStart &&
+        /opacity:\s*1/.test(rule.declarations) &&
+        /transform:\s*none/.test(rule.declarations) &&
+        /transition:\s*none/.test(rule.declarations)
+    );
+    const reducedActiveRule = getCssRules(css, activeSelector).find(
+      (rule) =>
+        rule.index > reducedMotionStart &&
+        /opacity:\s*1/.test(rule.declarations) &&
+        /transform:\s*none/.test(rule.declarations) &&
+        /transition:\s*none/.test(rule.declarations)
+    );
+
+    assert.ok(inactiveRule, `expected initial inactive rule for ${selector}`);
+    assert.ok(activeRule, `expected initial active rule for ${selector}`);
+    assert.ok(
+      reducedInactiveRule,
+      `expected later reduced-motion inactive override for ${selector}`
+    );
+    assert.ok(
+      reducedActiveRule,
+      `expected later reduced-motion active override for ${selector}`
+    );
+    assert.ok(reducedInactiveRule.index > inactiveRule.index);
+    assert.ok(reducedActiveRule.index > activeRule.index);
+    assert.doesNotMatch(reducedInactiveRule.declarations, /!important/);
+    assert.doesNotMatch(reducedActiveRule.declarations, /!important/);
+    const initialInactiveSelector = inactiveRule.selectors.find(
+      (candidate) => candidate === inactiveSelector
+    );
+    const initialActiveSelector = activeRule.selectors.find(
+      (candidate) => candidate === activeSelector
+    );
+    const reducedInactiveSelector = reducedInactiveRule.selectors.find(
+      (candidate) => candidate === inactiveSelector
+    );
+    const reducedActiveSelector = reducedActiveRule.selectors.find(
+      (candidate) => candidate === activeSelector
+    );
+
+    assert.ok(initialInactiveSelector && reducedInactiveSelector);
+    assert.ok(initialActiveSelector && reducedActiveSelector);
+    assert.ok(
+      compareSpecificity(
+        getSelectorSpecificity(reducedInactiveSelector),
+        getSelectorSpecificity(initialInactiveSelector)
+      ) >= 0
+    );
+    assert.ok(
+      compareSpecificity(
+        getSelectorSpecificity(reducedActiveSelector),
+        getSelectorSpecificity(initialActiveSelector)
+      ) >= 0
+    );
+  }
+
+  for (const revealIndex of ["2", "3"]) {
+    const staggerSelector = `.intro-presentation-ready .intro-slide.is-active .chapter-reveal[data-reveal="${revealIndex}"]`;
+    const staggerRules = getCssRules(css, staggerSelector);
+    const staggerRule = staggerRules.find(
+      (rule) =>
+        rule.index < reducedMotionStart &&
+        /transition-delay:\s*(?:120|220)ms/.test(rule.declarations)
+    );
+    const reducedStaggerRule = staggerRules.find(
+      (rule) =>
+        rule.index > reducedMotionStart &&
+        /transition-delay:\s*0s/.test(rule.declarations)
+    );
+
+    assert.ok(staggerRule, `expected stagger ${revealIndex}`);
+    assert.ok(
+      reducedStaggerRule,
+      `expected reduced-motion delay reset for reveal ${revealIndex}`
+    );
+    assert.ok(reducedStaggerRule.index > staggerRule.index);
+    assert.doesNotMatch(reducedStaggerRule.declarations, /!important/);
+    const initialStaggerSelector = staggerRule.selectors.find(
+      (candidate) => candidate === staggerSelector
+    );
+    const reducedDelaySelector = reducedStaggerRule.selectors.find(
+      (candidate) => candidate === staggerSelector
+    );
+
+    assert.ok(initialStaggerSelector && reducedDelaySelector);
+    assert.ok(
+      compareSpecificity(
+        getSelectorSpecificity(reducedDelaySelector),
+        getSelectorSpecificity(initialStaggerSelector)
+      ) >= 0
+    );
+  }
 });
 
 test("intro slides keep readable viewport sizing and snap anchors", async () => {
@@ -492,6 +717,47 @@ test("phase 2 workflow cards preserve pointer state and support focus", async ()
   assert.match(source, /\{!activeNode &&\s*"Hover or focus nodes/);
 });
 
+test("all four workflow nodes use BMO-blue active borders and focus rings", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const phase2Id = source.indexOf('id="phase2"');
+  const phase2Start = source.lastIndexOf("<section", phase2Id);
+  const phase2End = source.indexOf("</section>", phase2Start);
+  const phase2 = source.slice(phase2Start, phase2End);
+  const nodeClasses = [
+    ...phase2.matchAll(
+      /className=\{cn\(\s*"([^"]*\bworkflow-node\b[^"]*)",\s*activeNode === "([ABCD])"\s*\?\s*"([^"]*)"\s*:\s*"([^"]*)"\s*\)\}/g
+    ),
+  ].map(([, baseClasses, nodeId, activeClasses, inactiveClasses]) => ({
+    activeClasses,
+    baseClasses,
+    inactiveClasses,
+    nodeId,
+  }));
+
+  assert.ok(phase2Start >= 0 && phase2End > phase2Start);
+  assert.equal(nodeClasses.length, 4);
+  assert.deepEqual(nodeClasses.map(({ nodeId }) => nodeId).sort(), [
+    "A",
+    "B",
+    "C",
+    "D",
+  ]);
+  for (const { activeClasses, baseClasses, inactiveClasses } of nodeClasses) {
+    assert.match(baseClasses, /focus-visible:ring-2/);
+    assert.match(baseClasses, /focus-visible:ring-\[#0075BE\]/i);
+    assert.match(activeClasses, /border-\[#0075BE\]/i);
+    assert.match(
+      activeClasses,
+      /shadow-\[0_8px_20px_-12px_rgba\(0,117,190,0\.45\)\]/i
+    );
+    assert.match(inactiveClasses, /border-\[#D6E2EA\]/i);
+    assert.doesNotMatch(
+      `${baseClasses} ${activeClasses} ${inactiveClasses}`,
+      /#e31837|#ff8a42/i
+    );
+  }
+});
+
 test("presentation uses blue identity accents, red launch actions, and navy final surface", async () => {
   const source = await readFile(introPagePath, "utf8");
   const presentationStart = source.indexOf("<style");
@@ -534,6 +800,43 @@ test("presentation uses blue identity accents, red launch actions, and navy fina
   );
   assert.doesNotMatch(presentation, /#ff8a42|rgba\(255,\s*138,\s*66/i);
   assert.match(presentation, /Applied AI Deep Agent/);
+});
+
+test("presentation reserves its red palette for exactly three launch actions", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const headerStart = source.indexOf("<header");
+  const headerEnd =
+    source.indexOf("</header>", headerStart) + "</header>".length;
+  const mainStart = source.indexOf("<main", headerEnd);
+  const mainEnd = source.indexOf("</main>", mainStart) + "</main>".length;
+  const presentationMarkup =
+    source.slice(headerStart, headerEnd) + source.slice(mainStart, mainEnd);
+  const redPalette = /var\(--bmo-red\)|#e31837|#b8122d|#971126/gi;
+  const launchActions = [...presentationMarkup.matchAll(/<a\b[\s\S]*?<\/a>/g)]
+    .map(([anchor]) => anchor)
+    .filter((anchor) => /Launch Workspace/.test(anchor));
+
+  assert.ok(
+    headerStart >= 0 && headerEnd > headerStart,
+    "expected bounded presentation header"
+  );
+  assert.ok(
+    mainStart >= 0 && mainEnd > mainStart,
+    "expected bounded presentation main"
+  );
+  assert.equal(launchActions.length, 3);
+  for (const action of launchActions) {
+    assert.equal(action.match(redPalette)?.length, 3);
+    assert.match(action, /bg-\[(?:var\(--bmo-red\)|#E31837)\]/i);
+    assert.match(action, /hover:bg-\[#B8122D\]/i);
+    assert.match(action, /active:bg-\[#971126\]/i);
+  }
+
+  const nonLaunchMarkup = launchActions.reduce(
+    (markup, action) => markup.replace(action, ""),
+    presentationMarkup
+  );
+  assert.doesNotMatch(nonLaunchMarkup, redPalette);
 });
 
 test("phase 2 workflow semantics respect accessibility motion settings", async () => {

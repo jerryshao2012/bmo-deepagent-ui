@@ -4,6 +4,54 @@ import test from "node:test";
 
 const introPagePath = new URL("../src/app/intro/page.tsx", import.meta.url);
 
+const revealSelectors = [
+  ".hero-copy",
+  ".hero-preview",
+  ".chapter-copy",
+  ".chapter-visual",
+  ".chapter-reveal",
+  ".launch-content",
+];
+
+function getInlineCss(source) {
+  const cssMarker = "__html: `";
+  const cssStart = source.indexOf(cssMarker);
+  const cssEnd = source.indexOf("\n      `,", cssStart);
+
+  assert.notEqual(cssStart, -1);
+  assert.notEqual(cssEnd, -1);
+  return source.slice(cssStart + cssMarker.length, cssEnd);
+}
+
+function getCssRules(css, selector) {
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map(([, selectors, declarations]) => ({
+      selectors: selectors.split(",").map((value) => value.trim()),
+      declarations,
+    }))
+    .filter((rule) => rule.selectors.includes(selector));
+}
+
+for (const [variable, value] of [
+  ["--bmo-blue", "#0075be"],
+  ["--bmo-navy", "#001928"],
+  ["--bmo-red", "#e31837"],
+  ["--bmo-surface", "#f3f7fa"],
+  ["--bmo-line", "#d6e2ea"],
+]) {
+  test(`intro page declares ${variable} on its page root`, async () => {
+    const source = await readFile(introPagePath, "utf8");
+    const css = getInlineCss(source);
+    const rootRule = getCssRules(css, ".intro-page")[0];
+
+    assert.ok(rootRule, "expected an .intro-page CSS rule");
+    assert.match(
+      rootRule.declarations,
+      new RegExp(`${variable}:\\s*${value};`, "i")
+    );
+  });
+}
+
 test("intro page renders exactly six ordered semantic presentation slides", async () => {
   const source = await readFile(introPagePath, "utf8");
   const slideSections = [...source.matchAll(/<section\b[\s\S]*?>/g)]
@@ -27,6 +75,7 @@ test("intro page renders exactly six ordered semantic presentation slides", asyn
 
 test("intro page removes obsolete sticky story and negative launch tail", async () => {
   const source = await readFile(introPagePath, "utf8");
+  const css = getInlineCss(source);
 
   assert.match(source, /prefers-reduced-motion: reduce/);
   assert.match(source, /scroll-margin-top/);
@@ -35,6 +84,111 @@ test("intro page removes obsolete sticky story and negative launch tail", async 
   assert.doesNotMatch(source, /lg:min-h-\[calc\(100vh-3rem\)\]/);
   assert.doesNotMatch(source, /data-scroll-chapter/);
   assert.doesNotMatch(source, /data-scroll-reveal/);
+  assert.doesNotMatch(css, /\.apple-fade\s*\{[^}]*opacity:\s*0/);
+});
+
+test("intro page gates reveal hiding behind JS readiness and activates every reveal role", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const css = getInlineCss(source);
+
+  for (const selector of revealSelectors) {
+    const gatedSelector = `.intro-presentation-ready .intro-slide ${selector}`;
+    const activeSelector = `.intro-presentation-ready .intro-slide.is-active ${selector}`;
+    const gatedRule = getCssRules(css, gatedSelector).find((rule) =>
+      /opacity:\s*0/.test(rule.declarations)
+    );
+    const activeRule = getCssRules(css, activeSelector).find((rule) =>
+      /opacity:\s*1/.test(rule.declarations)
+    );
+
+    assert.ok(gatedRule, `expected JS-ready gated hiding for ${selector}`);
+    assert.match(gatedRule.declarations, /transform:\s*translateY\([^)]*\)/);
+    assert.match(
+      gatedRule.declarations,
+      /opacity 700ms cubic-bezier\(\.16,\s*1,\s*\.3,\s*1\)/
+    );
+    assert.match(
+      gatedRule.declarations,
+      /transform 700ms cubic-bezier\(\.16,\s*1,\s*\.3,\s*1\)/
+    );
+    assert.ok(activeRule, `expected active-slide reveal for ${selector}`);
+    assert.match(activeRule.declarations, /transform:\s*translateY\(0\)/);
+
+    const unsafeHiddenRule = getCssRules(css, selector).find((rule) =>
+      /opacity:\s*0/.test(rule.declarations)
+    );
+    assert.equal(
+      unsafeHiddenRule,
+      undefined,
+      `${selector} must stay visible without the JS-ready root class`
+    );
+  }
+});
+
+test("chapter reveal items keep deliberate active-slide stagger", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const css = getInlineCss(source);
+
+  const second = getCssRules(
+    css,
+    '.intro-presentation-ready .intro-slide.is-active .chapter-reveal[data-reveal="2"]'
+  )[0];
+  const third = getCssRules(
+    css,
+    '.intro-presentation-ready .intro-slide.is-active .chapter-reveal[data-reveal="3"]'
+  )[0];
+
+  assert.match(second?.declarations ?? "", /transition-delay:\s*120ms/);
+  assert.match(third?.declarations ?? "", /transition-delay:\s*220ms/);
+});
+
+test("reduced motion makes every reveal visible and disables workflow motion", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const css = getInlineCss(source);
+  const reducedMotionStart = css.indexOf(
+    "@media (prefers-reduced-motion: reduce)"
+  );
+  const reducedMotionCss = css.slice(reducedMotionStart);
+
+  assert.notEqual(reducedMotionStart, -1);
+  for (const selector of revealSelectors) {
+    const override = getCssRules(
+      reducedMotionCss,
+      `.intro-presentation-ready .intro-slide ${selector}`
+    ).find(
+      (rule) =>
+        /opacity:\s*1/.test(rule.declarations) &&
+        /transform:\s*none/.test(rule.declarations) &&
+        /transition:\s*none/.test(rule.declarations)
+    );
+    assert.ok(override, `expected reduced-motion visibility for ${selector}`);
+  }
+
+  assert.match(
+    reducedMotionCss,
+    /\.workflow-route\s*\{\s*transition:\s*none;\s*\}/
+  );
+  assert.match(
+    reducedMotionCss,
+    /\.workflow-node\s*\{\s*transition:\s*none;\s*transform:\s*none;\s*\}/
+  );
+  assert.match(
+    reducedMotionCss,
+    /\.workflow-particle\s*\{\s*display:\s*none;\s*\}/
+  );
+});
+
+test("intro slides keep readable viewport sizing and snap anchors", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const css = getInlineCss(source);
+  const slideRule = getCssRules(css, ".intro-slide")[0];
+
+  assert.ok(slideRule);
+  assert.match(slideRule.declarations, /min-height:\s*100dvh/);
+  assert.match(slideRule.declarations, /scroll-margin-top:\s*4rem/);
+  assert.match(slideRule.declarations, /scroll-snap-align:\s*start/);
+  assert.match(slideRule.declarations, /position:\s*relative/);
+  assert.doesNotMatch(css, /(?:^|[;{])\s*height:\s*100vh/);
 });
 
 test("intro page keeps document as the only vertical scroll container", async () => {
@@ -42,6 +196,38 @@ test("intro page keeps document as the only vertical scroll container", async ()
 
   assert.match(source, /min-h-screen overflow-x-clip/);
   assert.doesNotMatch(source, /min-h-screen overflow-x-hidden/);
+});
+
+test("intro page pre-renders presentation content without a JavaScript-only Suspense shell", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const threadEffectStart = source.indexOf(
+    "// Generate 6-digit Thread ID if not present in query params"
+  );
+  const threadEffectEnd = source.indexOf(
+    "// Handle mouse move for interactive card 3D tilt",
+    threadEffectStart
+  );
+  const threadEffect = source.slice(threadEffectStart, threadEffectEnd);
+
+  assert.notEqual(threadEffectStart, -1);
+  assert.ok(threadEffectEnd > threadEffectStart);
+  assert.doesNotMatch(
+    source,
+    /import \{ useSearchParams \} from "next\/navigation";/
+  );
+  assert.doesNotMatch(source, /\buseSearchParams\(\)/);
+  assert.doesNotMatch(source, /<React\.Suspense|Loading Harness Engine/);
+  assert.match(threadEffect, /new URLSearchParams\(window\.location\.search\)/);
+  assert.match(threadEffect, /const tid = searchParams\.get\("thread_id"\);/);
+  assert.match(
+    threadEffect,
+    /window\.history\.replaceState\(\{\}, "", url\.toString\(\)\);/
+  );
+  assert.match(threadEffect, /\}, \[\]\);/);
+  assert.match(
+    source,
+    /export default function IntroPage\(\) \{\s*return <IntroPageContent \/>;\s*\}/
+  );
 });
 
 test("hero and workspace preview are separate sibling slides", async () => {
@@ -220,12 +406,12 @@ test("phase 2 activates complete contextual workflow routes", async () => {
   assert.equal(source.match(/data-workflow-route="upper"/g)?.length, 2);
   assert.equal(source.match(/data-workflow-route="lower"/g)?.length, 2);
   assert.equal(
-    source.match(/stroke=\{upperRouteActive \? "#ff8a42" : "transparent"\}/g)
+    source.match(/stroke=\{upperRouteActive \? "#0075be" : "transparent"\}/gi)
       ?.length,
     2
   );
   assert.equal(
-    source.match(/stroke=\{lowerRouteActive \? "#ff8a42" : "transparent"\}/g)
+    source.match(/stroke=\{lowerRouteActive \? "#0075be" : "transparent"\}/gi)
       ?.length,
     2
   );
@@ -257,7 +443,7 @@ test("phase 2 shows directional particles only on active routes", async () => {
   );
   assert.match(
     source,
-    /\.workflow-particle\s*\{\s*fill:\s*#ff8a42;\s*filter:\s*drop-shadow\(0 0 4px rgba\(255, 138, 66, 0\.72\)\);\s*pointer-events:\s*none;\s*\}/
+    /\.workflow-particle\s*\{\s*fill:\s*#0075be;\s*filter:\s*drop-shadow\(0 0 4px rgba\(0, 117, 190, 0\.72\)\);\s*pointer-events:\s*none;\s*\}/i
   );
   assert.match(
     source,
@@ -304,6 +490,50 @@ test("phase 2 workflow cards preserve pointer state and support focus", async ()
   assert.equal(source.match(/activeNode === "[ABCD]"/g)?.length, 8);
   assert.doesNotMatch(source, /hoveredNode === "[ABCD]"/);
   assert.match(source, /\{!activeNode &&\s*"Hover or focus nodes/);
+});
+
+test("presentation uses blue identity accents, red launch actions, and navy final surface", async () => {
+  const source = await readFile(introPagePath, "utf8");
+  const presentationStart = source.indexOf("<style");
+  const presentationEnd = source.indexOf("<DialogPrimitive.Root");
+  const presentation = source.slice(presentationStart, presentationEnd);
+  const header = source.slice(
+    source.indexOf("<header", presentationStart),
+    source.indexOf("</header>", presentationStart)
+  );
+  const hero = source.slice(
+    source.indexOf('id="hero"', presentationStart),
+    source.indexOf("</section>", source.indexOf('id="hero"'))
+  );
+  const launch = source.slice(
+    source.indexOf('id="launch"', presentationStart),
+    source.indexOf("</section>", source.indexOf('id="launch"'))
+  );
+  const launchAnchors = [...presentation.matchAll(/<a\b[\s\S]*?<\/a>/g)]
+    .map(([anchor]) => anchor)
+    .filter((anchor) => anchor.includes("Launch Workspace"));
+
+  assert.match(
+    header,
+    /bg-\[#0075BE\][^\"]*[^>]*>[\s\S]{0,700}Applied AI Deep Agent/i
+  );
+  assert.match(
+    hero,
+    /text-\[#0075BE\][\s\S]{0,100}Enterprise Research Workspace/i
+  );
+  assert.equal(launchAnchors.length, 3);
+  for (const anchor of launchAnchors) {
+    assert.match(anchor, /bg-\[#E31837\]/i);
+    assert.match(anchor, /hover:bg-\[#B8122D\]/i);
+    assert.match(anchor, /active:bg-\[#971126\]/i);
+  }
+  assert.match(launch, /className="[^"]*bg-\[#001928\][^"]*"/i);
+  assert.match(
+    launch,
+    /radial-gradient\(circle_at_center,rgba\(0,117,190,0\.12\)_0%,transparent_70%\)/i
+  );
+  assert.doesNotMatch(presentation, /#ff8a42|rgba\(255,\s*138,\s*66/i);
+  assert.match(presentation, /Applied AI Deep Agent/);
 });
 
 test("phase 2 workflow semantics respect accessibility motion settings", async () => {
@@ -357,6 +587,10 @@ test("phase 2 workflow stacks safely below sm and keeps diagram layout above it"
   assert.match(
     phase2,
     /Dynamic status helper[\s\S]{0,180}className="[^"]*relative[^"]*sm:absolute[^"]*"/
+  );
+  assert.match(
+    phase2,
+    /Dynamic status helper[\s\S]{0,320}<span className="[^"]*inline-block[^"]*max-w-full[^"]*whitespace-normal[^"]*"/
   );
   assert.match(phase2, /chapter-visual[^"]*flex-col[^"]*p-4[^"]*sm:p-8/);
 });

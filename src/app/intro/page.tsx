@@ -40,7 +40,6 @@ import {
 } from "@/lib/markdown-images";
 
 export const dynamic = "force-dynamic";
-import { useSearchParams } from "next/navigation";
 import {
   Shield,
   Activity,
@@ -65,7 +64,6 @@ function createMarkdownClientId(): string {
 }
 
 function IntroPageContent() {
-  const searchParams = useSearchParams();
   const [threadId, setThreadId] = useState<string>("");
 
   const [, setSocket] = useState<WebSocket | null>(null);
@@ -1351,6 +1349,7 @@ function IntroPageContent() {
 
   // Generate 6-digit Thread ID if not present in query params
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
     const tid = searchParams.get("thread_id");
     if (tid && /^\d{6}$/.test(tid)) {
       setThreadId(tid);
@@ -1372,7 +1371,7 @@ function IntroPageContent() {
       url.searchParams.set("thread_id", generatedId);
       window.history.replaceState({}, "", url.toString());
     }
-  }, [searchParams]);
+  }, []);
 
   // Handle mouse move for interactive card 3D tilt
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1412,16 +1411,24 @@ function IntroPageContent() {
 
   return (
     <div
-      className="selection:bg-primary/10 relative min-h-screen overflow-x-clip font-sans antialiased selection:text-primary"
+      className="intro-page relative min-h-screen overflow-x-clip font-sans antialiased selection:bg-[#0075BE]/15 selection:text-[#001928]"
       style={{
-        backgroundColor: "var(--color-background)",
-        color: "var(--color-text-primary)",
+        backgroundColor: "var(--bmo-surface)",
+        color: "var(--bmo-navy)",
       }}
     >
       {/* Premium styles for custom shadows, gradients, and typography */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
+        .intro-page {
+          --bmo-blue: #0075be;
+          --bmo-navy: #001928;
+          --bmo-red: #e31837;
+          --bmo-surface: #f3f7fa;
+          --bmo-line: #d6e2ea;
+        }
+
         .font-serif-header {
           font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
           font-weight: 600;
@@ -1432,21 +1439,41 @@ function IntroPageContent() {
           font-family: "Geist Mono", "SF Mono", Monaco, monospace;
         }
 
-        /* Scroll reveal transitions */
-        .apple-fade {
-          opacity: 0;
-          transform: translateY(30px);
-          transition: opacity 1s cubic-bezier(0.16, 1, 0.3, 1),
-                      transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+        .intro-slide {
+          min-height: 100dvh;
+          position: relative;
+          scroll-margin-top: 4rem;
+          scroll-snap-align: start;
         }
 
-        .apple-fade.visible {
+        .intro-presentation-ready .intro-slide .hero-copy,
+        .intro-presentation-ready .intro-slide .hero-preview,
+        .intro-presentation-ready .intro-slide .chapter-copy,
+        .intro-presentation-ready .intro-slide .chapter-visual,
+        .intro-presentation-ready .intro-slide .chapter-reveal,
+        .intro-presentation-ready .intro-slide .launch-content {
+          opacity: 0;
+          transform: translateY(24px);
+          transition: opacity 700ms cubic-bezier(.16, 1, .3, 1),
+                      transform 700ms cubic-bezier(.16, 1, .3, 1);
+        }
+
+        .intro-presentation-ready .intro-slide.is-active .hero-copy,
+        .intro-presentation-ready .intro-slide.is-active .hero-preview,
+        .intro-presentation-ready .intro-slide.is-active .chapter-copy,
+        .intro-presentation-ready .intro-slide.is-active .chapter-visual,
+        .intro-presentation-ready .intro-slide.is-active .chapter-reveal,
+        .intro-presentation-ready .intro-slide.is-active .launch-content {
           opacity: 1;
           transform: translateY(0);
         }
 
-        .intro-slide {
-          scroll-margin-top: 4rem;
+        .intro-presentation-ready .intro-slide.is-active .chapter-reveal[data-reveal="2"] {
+          transition-delay: 120ms;
+        }
+
+        .intro-presentation-ready .intro-slide.is-active .chapter-reveal[data-reveal="3"] {
+          transition-delay: 220ms;
         }
 
         .workflow-route {
@@ -1454,12 +1481,23 @@ function IntroPageContent() {
         }
 
         .workflow-particle {
-          fill: #ff8a42;
-          filter: drop-shadow(0 0 4px rgba(255, 138, 66, 0.72));
+          fill: #0075be;
+          filter: drop-shadow(0 0 4px rgba(0, 117, 190, 0.72));
           pointer-events: none;
         }
 
         @media (prefers-reduced-motion: reduce) {
+          .intro-presentation-ready .intro-slide .hero-copy,
+          .intro-presentation-ready .intro-slide .hero-preview,
+          .intro-presentation-ready .intro-slide .chapter-copy,
+          .intro-presentation-ready .intro-slide .chapter-visual,
+          .intro-presentation-ready .intro-slide .chapter-reveal,
+          .intro-presentation-ready .intro-slide .launch-content {
+            opacity: 1;
+            transform: none;
+            transition: none;
+          }
+
           .workflow-route {
             transition: none;
           }
@@ -1480,18 +1518,18 @@ function IntroPageContent() {
 
         /* Subtle card elevation */
         .card-elevated {
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+          box-shadow: 0 1px 3px rgba(0, 25, 40, 0.10), 0 1px 2px rgba(0, 25, 40, 0.06);
         }
 
         .card-elevated:hover {
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+          box-shadow: 0 6px 18px rgba(0, 25, 40, 0.14);
         }
 
         /* Glassmorphism overlays */
         .glass-card {
           background: rgba(255, 255, 255, 0.65);
           backdrop-filter: blur(16px);
-          border: 1px solid rgba(0, 0, 0, 0.06);
+          border: 1px solid rgba(0, 117, 190, 0.12);
         }
 
         /* Custom Telemetry Tooltips */
@@ -1559,10 +1597,10 @@ function IntroPageContent() {
         }
         @keyframes pulse-glow {
           0%, 100% {
-            box-shadow: 0 0 0 0px rgba(255, 138, 66, 0.4);
+            box-shadow: 0 0 0 0px rgba(0, 117, 190, 0.4);
           }
           50% {
-            box-shadow: 0 0 0 8px rgba(255, 138, 66, 0);
+            box-shadow: 0 0 0 8px rgba(0, 117, 190, 0);
           }
         }
 
@@ -1590,7 +1628,7 @@ function IntroPageContent() {
             href="#"
             className="flex items-center gap-2.5 transition hover:opacity-85"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#FF8A42] p-1.5 shadow-sm">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0075BE] p-1.5 shadow-sm">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 121.42 145.86"
@@ -1602,12 +1640,12 @@ function IntroPageContent() {
                 <path d="M38.73,95.39H0v16.81h38.73v-16.81Z"></path>
               </svg>
             </div>
-            <span className="font-outfit text-md font-bold uppercase tracking-tight text-foreground">
+            <span className="font-outfit text-md font-bold uppercase tracking-tight text-[#001928]">
               Applied AI Deep Agent
             </span>
           </a>
-          <span className="hidden h-4 w-px bg-stone-200 sm:block" />
-          <div className="hidden items-center gap-6 text-xs font-semibold text-muted-foreground sm:flex">
+          <span className="hidden h-4 w-px bg-[#D6E2EA] sm:block" />
+          <div className="hidden items-center gap-6 text-xs font-semibold text-[#536B79] sm:flex">
             <a
               href="#phase1"
               aria-current={
@@ -1615,7 +1653,7 @@ function IntroPageContent() {
               }
               onClick={(event) => handlePhaseNavigation(event, "phase1")}
               className={cn(
-                "transition hover:text-foreground",
+                "transition hover:text-[#001928] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-4",
                 presentation.activeSlideId === "phase1" && "text-[#0075BE]"
               )}
             >
@@ -1628,7 +1666,7 @@ function IntroPageContent() {
               }
               onClick={(event) => handlePhaseNavigation(event, "phase2")}
               className={cn(
-                "transition hover:text-foreground",
+                "transition hover:text-[#001928] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-4",
                 presentation.activeSlideId === "phase2" && "text-[#0075BE]"
               )}
             >
@@ -1641,7 +1679,7 @@ function IntroPageContent() {
               }
               onClick={(event) => handlePhaseNavigation(event, "phase3")}
               className={cn(
-                "transition hover:text-foreground",
+                "transition hover:text-[#001928] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-4",
                 presentation.activeSlideId === "phase3" && "text-[#0075BE]"
               )}
             >
@@ -1655,26 +1693,26 @@ function IntroPageContent() {
           <div className="tooltip-wrapper">
             <button
               onClick={handleClearCookies}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-stone-100 text-muted-foreground shadow-sm transition hover:bg-stone-200 hover:text-foreground"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-[#D6E2EA] bg-[#F3F7FA] text-[#536B79] shadow-sm transition hover:bg-[#E6EFF5] hover:text-[#001928] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2"
               title="Clear Session Data"
             >
               <LogOut className="h-3.5 w-3.5" />
             </button>
             <div className="tooltip-box-bottom">
-              <div className="z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-stone-200 bg-white" />
-              <div className="whitespace-nowrap rounded-md border border-stone-200 bg-white px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-stone-700 shadow-lg">
+              <div className="z-10 -mb-1 h-2 w-2 rotate-45 border-l border-t border-[#D6E2EA] bg-white" />
+              <div className="whitespace-nowrap rounded-md border border-[#D6E2EA] bg-white px-2.5 py-1 font-mono text-[9px] font-bold tracking-wider text-[#334A59] shadow-sm">
                 CLEAR COOKIES
               </div>
             </div>
           </div>
 
-          <div className="hidden select-none items-center gap-1 font-mono text-xs text-stone-500 sm:flex">
+          <div className="hidden select-none items-center gap-1 font-mono text-xs text-[#536B79] sm:flex">
             <div className="tooltip-wrapper">
               <button
                 type="button"
                 ref={markdownPreviewTriggerRef}
                 onClick={openMarkdownPreview}
-                className="cursor-pointer underline decoration-stone-300 decoration-dotted underline-offset-2 transition hover:text-foreground"
+                className="cursor-pointer underline decoration-[#A9BDCA] decoration-dotted underline-offset-2 transition hover:text-[#001928] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2"
               >
                 Collab Thread
               </button>
@@ -1684,7 +1722,7 @@ function IntroPageContent() {
 
           <a
             href="/chat"
-            className="card-elevated flex h-9 items-center gap-2 rounded-full bg-[#FF8A42] px-4 py-2 font-semibold text-white transition hover:scale-[1.02] active:scale-95"
+            className="card-elevated flex h-9 items-center gap-2 rounded-full bg-[#E31837] px-4 py-2 font-semibold text-white transition hover:scale-[1.02] hover:bg-[#B8122D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2 active:scale-95 active:bg-[#971126]"
           >
             <span className="text-xs">Launch Workspace</span>
             <MessageSquare className="h-3.5 w-3.5" />
@@ -1697,20 +1735,20 @@ function IntroPageContent() {
         <section
           id="hero"
           data-intro-slide
-          className="intro-slide relative flex min-h-[100dvh] flex-col items-center justify-center px-6 pb-12 pt-28 text-center"
+          className="intro-slide relative flex min-h-[100dvh] flex-col items-center justify-center bg-[#F3F7FA] px-6 pb-12 pt-28 text-center"
         >
-          <div className="apple-fade visible w-full max-w-4xl">
+          <div className="w-full max-w-4xl">
             <div className="hero-copy flex min-h-[calc(100svh-11rem)] flex-col items-center justify-center">
-              <p className="mb-4 text-xs font-bold uppercase tracking-widest text-[#FF8A42]">
+              <p className="mb-4 text-xs font-bold uppercase tracking-widest text-[#0075BE]">
                 Enterprise Research Workspace
               </p>
-              <h1 className="font-serif-header text-5xl font-extrabold leading-[1.1] text-foreground sm:text-7xl lg:text-8xl">
+              <h1 className="font-serif-header text-5xl font-extrabold leading-[1.1] text-[#001928] sm:text-7xl lg:text-8xl">
                 Turn enterprise documents into
                 <br />
                 decision-ready knowledge.
               </h1>
 
-              <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
+              <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-[#405866] sm:text-xl">
                 Applied AI Deep Agent turns reports, policies, research, and
                 presentations into a living thread wiki, then combines document
                 evidence with bounded web research and visible verification.
@@ -1719,7 +1757,7 @@ function IntroPageContent() {
               <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
                 <a
                   href="/chat"
-                  className="card-elevated flex h-11 items-center gap-2 rounded-full bg-[#FF8A42] px-6 py-3 font-semibold text-white transition hover:scale-[1.03]"
+                  className="card-elevated flex h-11 items-center gap-2 rounded-full bg-[#E31837] px-6 py-3 font-semibold text-white transition hover:scale-[1.03] hover:bg-[#B8122D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2 active:scale-[0.98] active:bg-[#971126]"
                 >
                   Launch Workspace Demo
                   <ChevronRight className="h-4 w-4" />
@@ -1733,9 +1771,9 @@ function IntroPageContent() {
           id="preview"
           data-intro-slide
           aria-label="Workspace preview"
-          className="intro-slide relative flex min-h-[100dvh] items-center justify-center px-6 pb-16 pt-24"
+          className="intro-slide relative flex min-h-[100dvh] items-center justify-center bg-white px-6 pb-16 pt-24"
         >
-          <div className="apple-fade visible w-full max-w-4xl">
+          <div className="w-full max-w-4xl">
             {/* Interactive Screen Preview */}
             <div className="hero-preview mt-16 flex justify-center">
               <div
@@ -1746,13 +1784,13 @@ function IntroPageContent() {
                 style={{ perspective: "1000px" }}
               >
                 <div
-                  className="relative overflow-hidden rounded-[2rem] border border-stone-200 bg-white p-3 shadow-2xl transition-all duration-300 ease-out"
+                  className="relative overflow-hidden rounded-[2rem] border border-[#D6E2EA] bg-white p-3 shadow-[0_24px_64px_-36px_rgba(0,25,40,0.35)] transition-all duration-300 ease-out"
                   style={{
                     transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
                     transformStyle: "preserve-3d",
                   }}
                 >
-                  <div className="min-h-[360px] overflow-hidden rounded-[1.6rem] border border-stone-100 bg-stone-950 p-4 text-left sm:min-h-[460px] sm:p-6">
+                  <div className="min-h-[360px] overflow-hidden rounded-[1.6rem] border border-[#17394D] bg-[#001928] p-4 text-left sm:min-h-[460px] sm:p-6">
                     {/* Mock Shell Window */}
                     <div className="flex items-center justify-between border-b border-white/5 pb-3">
                       <div className="flex items-center gap-2">
@@ -1763,15 +1801,15 @@ function IntroPageContent() {
                           deep-agent@research-workspace
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 rounded-full border border-[#FF8A42]/20 bg-[#FF8A42]/10 px-3 py-1 font-mono text-[10px] uppercase text-[#FF8A42]">
-                        <span className="h-1.5 w-1.5 animate-ping rounded-full bg-[#FF8A42]" />
+                      <div className="flex items-center gap-2 rounded-full border border-[#0075BE]/30 bg-[#0075BE]/15 px-3 py-1 font-mono text-[10px] uppercase text-[#4DB6F5]">
+                        <span className="h-1.5 w-1.5 animate-ping rounded-full bg-[#4DB6F5]" />
                         Research Active
                       </div>
                     </div>
 
                     <div className="grid gap-6 pt-4 lg:grid-cols-[1.3fr_0.7fr]">
-                      <div className="rounded-xl border border-white/5 bg-black/40 p-4 font-mono text-xs text-stone-300 sm:p-6">
-                        <div className="mb-4 font-semibold text-[#FF8A42]">
+                      <div className="rounded-xl border border-[#31556A]/50 bg-[#00131F]/80 p-4 font-mono text-xs text-[#C9D8E2] sm:p-6">
+                        <div className="mb-4 font-semibold text-[#4DB6F5]">
                           // BUILDING THREAD KNOWLEDGE
                         </div>
                         <div className="space-y-2">
@@ -1799,7 +1837,7 @@ function IntroPageContent() {
                             <p className="mt-1 text-emerald-400">
                               3 document questions grounded in thread knowledge.
                             </p>
-                            <p className="text-[#FF8A42]">
+                            <p className="text-[#4DB6F5]">
                               2 web evidence gaps queued for review.
                             </p>
                           </div>
@@ -1835,7 +1873,7 @@ function IntroPageContent() {
                             </li>
                           </ul>
                         </div>
-                        <div className="mt-6 rounded-lg border border-white/5 bg-stone-900 p-2.5 text-center font-mono text-[10px] text-white/50">
+                        <div className="mt-6 rounded-lg border border-[#31556A]/50 bg-[#00131F] p-2.5 text-center font-mono text-[10px] text-white/50">
                           Active Thread: #{threadId}
                         </div>
                       </div>
@@ -1852,20 +1890,20 @@ function IntroPageContent() {
         <section
           id="phase1"
           data-intro-slide
-          className="intro-slide scroll-chapter min-h-[100dvh] border-t border-stone-200/40 bg-white px-6 pt-16 lg:px-8"
+          className="intro-slide min-h-[100dvh] border-t border-[#D6E2EA] bg-[#F3F7FA] px-6 pt-16 lg:px-8"
         >
           <div className="mx-auto grid min-h-[calc(100dvh-4rem)] max-w-7xl gap-12 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
             <div className="chapter-copy">
-              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
+              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#0075BE]">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0075BE]/10 text-[#0075BE]">
                   1
                 </span>
                 Phase 1: Ground
               </div>
-              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
+              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-[#001928] sm:text-5xl">
                 Turn source material into a living research workspace.
               </h2>
-              <p className="text-md mt-6 leading-relaxed text-muted-foreground">
+              <p className="text-md mt-6 max-w-[65ch] leading-relaxed text-[#405866]">
                 Upload reports, policies, research, and presentations into an
                 isolated thread. Deep Agent tracks ingestion progress and
                 organizes source material into reusable wiki knowledge.
@@ -1876,14 +1914,14 @@ function IntroPageContent() {
                   className="chapter-reveal flex items-start gap-4"
                   data-reveal="1"
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#E2F1FA] text-[#0075BE]">
                     <Activity className="h-4.5 w-4.5" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-foreground">
+                    <h4 className="font-bold text-[#001928]">
                       Observable Ingestion
                     </h4>
-                    <p className="mt-1 text-xs text-stone-500">
+                    <p className="mt-1 text-xs text-[#536B79]">
                       Follow each source through analysis, review, indexing, and
                       a clear ready state.
                     </p>
@@ -1893,14 +1931,14 @@ function IntroPageContent() {
                   className="chapter-reveal flex items-start gap-4"
                   data-reveal="2"
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#E2F1FA] text-[#0075BE]">
                     <MessageSquare className="h-4.5 w-4.5" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-foreground">
+                    <h4 className="font-bold text-[#001928]">
                       Thread-Scoped Knowledge
                     </h4>
-                    <p className="mt-1 text-xs text-stone-500">
+                    <p className="mt-1 text-xs text-[#536B79]">
                       Browse synthesized pages as a wiki tree or knowledge graph
                       without losing the original sources.
                     </p>
@@ -1910,30 +1948,30 @@ function IntroPageContent() {
             </div>
 
             {/* Interactive Mock of Phase 1 */}
-            <div className="chapter-visual rounded-3xl border border-stone-200/80 bg-stone-50 p-6 shadow-sm">
-              <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
-                <div className="mb-4 flex items-center justify-between border-b border-stone-100 pb-3">
-                  <span className="text-xs font-bold uppercase tracking-wider text-stone-800">
+            <div className="chapter-visual rounded-3xl border border-[#D6E2EA] bg-[#EAF2F7] p-6 shadow-[0_16px_40px_-32px_rgba(0,25,40,0.28)]">
+              <div className="rounded-2xl border border-[#D6E2EA] bg-white p-5 shadow-sm">
+                <div className="mb-4 flex items-center justify-between border-b border-[#D6E2EA] pb-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#001928]">
                     Document Knowledge Ingestion
                   </span>
                   <span className="node-pulse h-2 w-2 rounded-full bg-emerald-500" />
                 </div>
                 <div className="space-y-3 font-mono text-xs text-muted-foreground">
-                  <div className="rounded-lg border border-stone-200/50 bg-stone-50 p-3">
-                    <p className="font-semibold text-[#FF8A42]">
+                  <div className="rounded-lg border border-[#D6E2EA] bg-[#F3F7FA] p-3">
+                    <p className="font-semibold text-[#0075BE]">
                       # Source set added:
                     </p>
                     <p className="mt-1">
                       "Annual report, policy guide, and market research deck."
                     </p>
                   </div>
-                  <div className="flex items-center justify-between rounded-lg border border-stone-200/50 bg-stone-50 px-3 py-2">
+                  <div className="flex items-center justify-between rounded-lg border border-[#D6E2EA] bg-[#F3F7FA] px-3 py-2">
                     <span>Building thread wiki...</span>
                     <span className="font-semibold text-emerald-500">
                       Ready
                     </span>
                   </div>
-                  <div className="relative rounded-lg border border-stone-200 bg-stone-900 p-3 text-white">
+                  <div className="relative rounded-lg border border-[#17394D] bg-[#001928] p-3 text-white">
                     <div className="text-[10px] text-white/50">
                       // Research purpose
                     </div>
@@ -1948,17 +1986,17 @@ function IntroPageContent() {
           </div>
         </section>
 
-        <hr className="border-stone-100" />
+        <hr className="border-[#D6E2EA]" />
 
         {/* Phase 2: Structure */}
         <section
           id="phase2"
           data-intro-slide
-          className="intro-slide scroll-chapter min-h-[100dvh] border-t border-stone-200/40 bg-white px-6 pt-16 lg:px-8"
+          className="intro-slide min-h-[100dvh] border-t border-[#D6E2EA] bg-white px-6 pt-16 lg:px-8"
         >
           <div className="mx-auto grid min-h-[calc(100dvh-4rem)] max-w-7xl gap-12 py-16 lg:grid-cols-[1.25fr_0.75fr] lg:items-center">
             {/* Node Tree Visualizer */}
-            <div className="chapter-visual relative flex min-h-[400px] flex-col items-center justify-center overflow-hidden rounded-3xl border border-stone-200 bg-[#FAF7F0] p-4 sm:p-8">
+            <div className="chapter-visual relative flex min-h-[400px] flex-col items-center justify-center overflow-hidden rounded-3xl border border-[#D6E2EA] bg-[#F3F7FA] p-4 shadow-[0_16px_40px_-32px_rgba(0,25,40,0.28)] sm:p-8">
               <svg
                 className="pointer-events-none absolute inset-0 hidden h-full w-full sm:block"
                 xmlns="http://www.w3.org/2000/svg"
@@ -1983,7 +2021,7 @@ function IntroPageContent() {
                 <path
                   data-workflow-route="upper"
                   d="M 120 180 Q 220 180 320 120"
-                  stroke={upperRouteActive ? "#ff8a42" : "transparent"}
+                  stroke={upperRouteActive ? "#0075be" : "transparent"}
                   strokeWidth="2.5"
                   strokeLinecap="round"
                   fill="none"
@@ -1992,7 +2030,7 @@ function IntroPageContent() {
                 <path
                   data-workflow-route="lower"
                   d="M 120 180 Q 220 180 320 240"
-                  stroke={lowerRouteActive ? "#ff8a42" : "transparent"}
+                  stroke={lowerRouteActive ? "#0075be" : "transparent"}
                   strokeWidth="2.5"
                   strokeLinecap="round"
                   fill="none"
@@ -2001,7 +2039,7 @@ function IntroPageContent() {
                 <path
                   data-workflow-route="upper"
                   d="M 320 120 Q 420 120 520 180"
-                  stroke={upperRouteActive ? "#ff8a42" : "transparent"}
+                  stroke={upperRouteActive ? "#0075be" : "transparent"}
                   strokeWidth="2.5"
                   strokeLinecap="round"
                   fill="none"
@@ -2010,7 +2048,7 @@ function IntroPageContent() {
                 <path
                   data-workflow-route="lower"
                   d="M 320 240 Q 420 240 520 180"
-                  stroke={lowerRouteActive ? "#ff8a42" : "transparent"}
+                  stroke={lowerRouteActive ? "#0075be" : "transparent"}
                   strokeWidth="2.5"
                   strokeLinecap="round"
                   fill="none"
@@ -2057,17 +2095,17 @@ function IntroPageContent() {
                     onBlur={() => setFocusedNode(null)}
                     aria-label="Source Material"
                     className={cn(
-                      "workflow-node w-full max-w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                      "workflow-node w-full max-w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2",
                       activeNode === "A"
-                        ? "scale-105 border-[#FF8A42] shadow-md"
-                        : "border-stone-200"
+                        ? "scale-105 border-[#0075BE] shadow-[0_8px_20px_-12px_rgba(0,117,190,0.45)]"
+                        : "border-[#D6E2EA]"
                     )}
                   >
-                    <FolderTree className="mx-auto h-5 w-5 text-[#FF8A42]" />
-                    <h5 className="mt-2 text-xs font-bold text-stone-800">
+                    <FolderTree className="mx-auto h-5 w-5 text-[#0075BE]" />
+                    <h5 className="mt-2 text-xs font-bold text-[#001928]">
                       Source Material
                     </h5>
-                    <p className="mt-1 text-[10px] text-stone-400">
+                    <p className="mt-1 text-[10px] text-[#6A818E]">
                       Reports &amp; Policies
                     </p>
                   </div>
@@ -2084,17 +2122,17 @@ function IntroPageContent() {
                     onBlur={() => setFocusedNode(null)}
                     aria-label="Living Wiki"
                     className={cn(
-                      "workflow-node w-full max-w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                      "workflow-node w-full max-w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2",
                       activeNode === "C"
-                        ? "scale-105 border-[#FF8A42] shadow-md"
-                        : "border-stone-200"
+                        ? "scale-105 border-[#0075BE] shadow-[0_8px_20px_-12px_rgba(0,117,190,0.45)]"
+                        : "border-[#D6E2EA]"
                     )}
                   >
                     <Terminal className="mx-auto h-5 w-5 text-sky-500" />
-                    <h5 className="mt-2 text-xs font-bold text-stone-800">
+                    <h5 className="mt-2 text-xs font-bold text-[#001928]">
                       Living Wiki
                     </h5>
-                    <p className="mt-1 text-[10px] text-stone-400">
+                    <p className="mt-1 text-[10px] text-[#6A818E]">
                       Structured Pages
                     </p>
                   </div>
@@ -2107,17 +2145,17 @@ function IntroPageContent() {
                     onBlur={() => setFocusedNode(null)}
                     aria-label="Research Plan"
                     className={cn(
-                      "workflow-node w-full max-w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                      "workflow-node w-full max-w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2",
                       activeNode === "D"
-                        ? "scale-105 border-[#FF8A42] shadow-md"
-                        : "border-stone-200"
+                        ? "scale-105 border-[#0075BE] shadow-[0_8px_20px_-12px_rgba(0,117,190,0.45)]"
+                        : "border-[#D6E2EA]"
                     )}
                   >
                     <Shield className="mx-auto h-5 w-5 text-emerald-500" />
-                    <h5 className="mt-2 text-xs font-bold text-stone-800">
+                    <h5 className="mt-2 text-xs font-bold text-[#001928]">
                       Research Plan
                     </h5>
-                    <p className="mt-1 text-[10px] text-stone-400">
+                    <p className="mt-1 text-[10px] text-[#6A818E]">
                       Bounded Tasks
                     </p>
                   </div>
@@ -2134,17 +2172,17 @@ function IntroPageContent() {
                     onBlur={() => setFocusedNode(null)}
                     aria-label="Source-Linked Report"
                     className={cn(
-                      "workflow-node w-full max-w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300",
+                      "workflow-node w-full max-w-36 cursor-pointer rounded-2xl border bg-white p-4 text-center shadow-sm transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0075BE] focus-visible:ring-offset-2",
                       activeNode === "B"
-                        ? "scale-105 border-[#FF8A42] shadow-md"
-                        : "border-stone-200"
+                        ? "scale-105 border-[#0075BE] shadow-[0_8px_20px_-12px_rgba(0,117,190,0.45)]"
+                        : "border-[#D6E2EA]"
                     )}
                   >
                     <CheckCircle className="mx-auto h-5 w-5 text-amber-500" />
-                    <h5 className="mt-2 text-xs font-bold text-stone-800">
+                    <h5 className="mt-2 text-xs font-bold text-[#001928]">
                       Source-Linked Report
                     </h5>
-                    <p className="mt-1 text-[10px] text-stone-400">
+                    <p className="mt-1 text-[10px] text-[#6A818E]">
                       Reviewable Output
                     </p>
                   </div>
@@ -2153,7 +2191,7 @@ function IntroPageContent() {
 
               {/* Dynamic status helper */}
               <div className="relative mt-4 text-center sm:absolute sm:bottom-4 sm:left-4 sm:right-4 sm:mt-0">
-                <span className="rounded-full border border-stone-200/50 bg-white/80 px-3 py-1 font-mono text-[10px] text-stone-400 shadow-sm">
+                <span className="inline-block max-w-full whitespace-normal rounded-full border border-[#D6E2EA] bg-white/90 px-3 py-1 font-mono text-[10px] leading-relaxed text-[#6A818E] shadow-sm">
                   {activeNode === "A" &&
                     "Source: Uploaded reports, policies, research, and presentations."}
                   {activeNode === "C" &&
@@ -2169,16 +2207,16 @@ function IntroPageContent() {
             </div>
 
             <div className="chapter-copy">
-              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
+              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#0075BE]">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0075BE]/10 text-[#0075BE]">
                   2
                 </span>
                 Phase 2: Research
               </div>
-              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
+              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-[#001928] sm:text-5xl">
                 Plan bounded research across documents and the web.
               </h2>
-              <p className="text-md mt-6 leading-relaxed text-muted-foreground">
+              <p className="text-md mt-6 max-w-[65ch] leading-relaxed text-[#405866]">
                 Deep Agent queries thread knowledge first, delegates targeted
                 web research for remaining gaps, and synthesizes the evidence
                 into a report with visible tasks and state files.
@@ -2189,8 +2227,8 @@ function IntroPageContent() {
                   className="chapter-reveal flex items-center gap-3"
                   data-reveal="1"
                 >
-                  <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
-                  <span className="text-sm font-semibold text-stone-800">
+                  <Check className="h-4.5 w-4.5 rounded-full bg-[#0075BE]/10 p-0.5 text-[#0075BE]" />
+                  <span className="text-sm font-semibold text-[#001928]">
                     Thread knowledge used before web search
                   </span>
                 </div>
@@ -2198,8 +2236,8 @@ function IntroPageContent() {
                   className="chapter-reveal flex items-center gap-3"
                   data-reveal="2"
                 >
-                  <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
-                  <span className="text-sm font-semibold text-stone-800">
+                  <Check className="h-4.5 w-4.5 rounded-full bg-[#0075BE]/10 p-0.5 text-[#0075BE]" />
+                  <span className="text-sm font-semibold text-[#001928]">
                     Configurable concurrency and iteration limits
                   </span>
                 </div>
@@ -2207,8 +2245,8 @@ function IntroPageContent() {
                   className="chapter-reveal flex items-center gap-3"
                   data-reveal="3"
                 >
-                  <Check className="h-4.5 w-4.5 rounded-full bg-[#FF8A42]/10 p-0.5 text-[#FF8A42]" />
-                  <span className="text-sm font-semibold text-stone-800">
+                  <Check className="h-4.5 w-4.5 rounded-full bg-[#0075BE]/10 p-0.5 text-[#0075BE]" />
+                  <span className="text-sm font-semibold text-[#001928]">
                     Visible tasks, research passes, and state files
                   </span>
                 </div>
@@ -2217,26 +2255,26 @@ function IntroPageContent() {
           </div>
         </section>
 
-        <hr className="border-stone-100" />
+        <hr className="border-[#D6E2EA]" />
 
         {/* Phase 3: Verify */}
         <section
           id="phase3"
           data-intro-slide
-          className="intro-slide scroll-chapter min-h-[100dvh] border-t border-stone-200/40 bg-white px-6 pt-16 lg:px-8"
+          className="intro-slide min-h-[100dvh] border-t border-[#D6E2EA] bg-[#F3F7FA] px-6 pt-16 lg:px-8"
         >
           <div className="mx-auto grid min-h-[calc(100dvh-4rem)] max-w-7xl gap-12 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
             <div className="chapter-copy">
-              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#FF8A42]">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#FF8A42]/10 text-[#FF8A42]">
+              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#0075BE]">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0075BE]/10 text-[#0075BE]">
                   3
                 </span>
                 Phase 3: Review
               </div>
-              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
+              <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-[#001928] sm:text-5xl">
                 Inspect evidence before you use the result.
               </h2>
-              <p className="text-md mt-6 leading-relaxed text-muted-foreground">
+              <p className="text-md mt-6 max-w-[65ch] leading-relaxed text-[#405866]">
                 Post-generation review checks citation reachability, report
                 coverage, and missing perspectives. Weak reports can be revised
                 through visible verification rounds before final delivery.
@@ -2247,14 +2285,14 @@ function IntroPageContent() {
                   className="chapter-reveal flex items-start gap-4"
                   data-reveal="1"
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#E2F1FA] text-[#0075BE]">
                     <Shield className="h-4.5 w-4.5" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-foreground">
+                    <h4 className="font-bold text-[#001928]">
                       Source-Linked Evidence
                     </h4>
-                    <p className="mt-1 text-xs text-stone-500">
+                    <p className="mt-1 text-xs text-[#536B79]">
                       Open document citations at the referenced page and inspect
                       the surrounding evidence in the workspace.
                     </p>
@@ -2264,14 +2302,14 @@ function IntroPageContent() {
                   className="chapter-reveal flex items-start gap-4"
                   data-reveal="2"
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-800">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#E2F1FA] text-[#0075BE]">
                     <Lock className="h-4.5 w-4.5" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-foreground">
+                    <h4 className="font-bold text-[#001928]">
                       Human-Reviewed Skills
                     </h4>
-                    <p className="mt-1 text-xs text-stone-500">
+                    <p className="mt-1 text-xs text-[#536B79]">
                       Selecting a research skill creates an editable instruction
                       grounded in the current thread before it is sent.
                     </p>
@@ -2281,12 +2319,12 @@ function IntroPageContent() {
             </div>
 
             {/* Comparison specs grid */}
-            <div className="chapter-visual rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
-              <h4 className="font-serif-header mb-4 text-center text-lg font-bold text-stone-800">
+            <div className="chapter-visual rounded-3xl border border-[#D6E2EA] bg-white p-6 shadow-[0_16px_40px_-32px_rgba(0,25,40,0.28)]">
+              <h4 className="font-serif-header mb-4 text-center text-lg font-bold text-[#001928]">
                 Applied AI Deep Agent vs. a Bare Model
               </h4>
-              <div className="divide-y divide-stone-200 overflow-hidden rounded-2xl border border-stone-200 bg-stone-50">
-                <div className="grid grid-cols-2 bg-stone-100/70 p-4 text-xs font-semibold text-stone-700">
+              <div className="divide-y divide-[#D6E2EA] overflow-hidden rounded-2xl border border-[#D6E2EA] bg-[#F8FBFD]">
+                <div className="grid grid-cols-2 bg-[#EAF2F7] p-4 text-xs font-semibold text-[#334A59]">
                   <span>RESEARCH WORKSPACE</span>
                   <span>ONE-OFF MODEL RESPONSE</span>
                 </div>
@@ -2295,16 +2333,16 @@ function IntroPageContent() {
                   data-reveal="1"
                 >
                   <div>
-                    <h5 className="font-bold text-foreground">
+                    <h5 className="font-bold text-[#001928]">
                       Persistent Research Context
                     </h5>
-                    <p className="mt-1 text-stone-500">
+                    <p className="mt-1 text-[#536B79]">
                       Thread wiki, uploaded sources, tasks, and state files
                       remain available for follow-up research.
                     </p>
                   </div>
-                  <div className="border-l border-stone-200 pl-4 text-stone-500">
-                    <h5 className="font-bold text-stone-400">
+                  <div className="border-l border-[#D6E2EA] pl-4 text-[#536B79]">
+                    <h5 className="font-bold text-[#6A818E]">
                       Single Context Window
                     </h5>
                     <p className="mt-1">
@@ -2318,16 +2356,16 @@ function IntroPageContent() {
                   data-reveal="2"
                 >
                   <div>
-                    <h5 className="font-bold text-foreground">
+                    <h5 className="font-bold text-[#001928]">
                       Source Traceability
                     </h5>
-                    <p className="mt-1 text-stone-500">
+                    <p className="mt-1 text-[#536B79]">
                       Document citations open the original file at the
                       referenced page for direct inspection.
                     </p>
                   </div>
-                  <div className="border-l border-stone-200 pl-4 text-stone-500">
-                    <h5 className="font-bold text-stone-400">
+                  <div className="border-l border-[#D6E2EA] pl-4 text-[#536B79]">
+                    <h5 className="font-bold text-[#6A818E]">
                       Unlinked Answers
                     </h5>
                     <p className="mt-1">
@@ -2341,16 +2379,16 @@ function IntroPageContent() {
                   data-reveal="3"
                 >
                   <div>
-                    <h5 className="font-bold text-foreground">
+                    <h5 className="font-bold text-[#001928]">
                       Reusable Research Skills
                     </h5>
-                    <p className="mt-1 text-stone-500">
+                    <p className="mt-1 text-[#536B79]">
                       Apply repeatable workflows for datasets, study slides,
                       interview material, and organization-specific outputs.
                     </p>
                   </div>
-                  <div className="border-l border-stone-200 pl-4 text-stone-500">
-                    <h5 className="font-bold text-stone-400">
+                  <div className="border-l border-[#D6E2EA] pl-4 text-[#536B79]">
+                    <h5 className="font-bold text-[#6A818E]">
                       One-Off Prompting
                     </h5>
                     <p className="mt-1">
@@ -2368,11 +2406,11 @@ function IntroPageContent() {
         <section
           id="launch"
           data-intro-slide
-          className="intro-slide scroll-reveal relative flex min-h-[100dvh] flex-col items-center justify-center bg-stone-950 px-6 py-24 text-center text-white"
+          className="intro-slide relative flex min-h-[100dvh] flex-col items-center justify-center bg-[#001928] px-6 py-24 text-center text-white"
         >
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,138,66,0.06)_0%,transparent_70%)]" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,117,190,0.12)_0%,transparent_70%)]" />
           <div className="launch-content relative z-10 max-w-3xl">
-            <p className="mb-3 font-mono text-xs uppercase tracking-widest text-[#FF8A42]">
+            <p className="mb-3 font-mono text-xs uppercase tracking-widest text-[#4DB6F5]">
               Designed for Human Oversight
             </p>
             <h2 className="font-serif-header text-4xl font-extrabold tracking-tight text-white sm:text-6xl">
@@ -2380,7 +2418,7 @@ function IntroPageContent() {
               <br />
               become reusable knowledge.
             </h2>
-            <p className="mx-auto mt-6 max-w-xl text-sm leading-relaxed text-stone-400">
+            <p className="mx-auto mt-6 max-w-xl text-sm leading-relaxed text-[#B9CAD5]">
               Upload sources, follow research and verification progress, inspect
               citations, and apply reusable skills in one workspace. Generated
               outputs remain subject to human review.
@@ -2389,7 +2427,7 @@ function IntroPageContent() {
             <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
               <a
                 href="/chat"
-                className="card-elevated flex h-11 items-center justify-center gap-2 rounded-full bg-[#FF8A42] px-8 py-3 font-semibold text-white transition hover:scale-[1.03]"
+                className="card-elevated flex h-11 items-center justify-center gap-2 rounded-full bg-[#E31837] px-8 py-3 font-semibold text-white transition hover:scale-[1.03] hover:bg-[#B8122D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4DB6F5] focus-visible:ring-offset-2 focus-visible:ring-offset-[#001928] active:scale-[0.98] active:bg-[#971126]"
               >
                 Launch Workspace Demo
                 <ChevronRight className="h-4 w-4" />
@@ -2767,15 +2805,5 @@ function IntroPageContent() {
 }
 
 export default function IntroPage() {
-  return (
-    <React.Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center bg-black font-mono text-white/50">
-          Loading Harness Engine...
-        </div>
-      }
-    >
-      <IntroPageContent />
-    </React.Suspense>
-  );
+  return <IntroPageContent />;
 }

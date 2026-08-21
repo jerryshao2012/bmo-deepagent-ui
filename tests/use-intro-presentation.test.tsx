@@ -896,6 +896,169 @@ test("center-band observer chooses the nearest slide regardless of entry order",
   assert.equal(slides.preview.classList.contains("is-active"), false);
 });
 
+test("realigns the current slide after fullscreen enter and exit settle", () => {
+  const slides = setupSlides();
+  const { result } = renderPresentation();
+  const observer = MockIntersectionObserver.instances[0];
+  const history = observeHistory();
+  act(() => flushAnimationFrames());
+  scrollCalls = [];
+  history.reset();
+
+  fullscreenTarget = document.documentElement;
+  act(() => document.dispatchEvent(new Event("fullscreenchange")));
+  assert.equal(result.current.isFullscreen, true);
+  assert.equal(result.current.fullscreenStatus, "Fullscreen enabled");
+  assert.equal(scrollCalls.length, 0);
+
+  act(() => flushAnimationFrames());
+  assert.equal(scrollCalls.length, 0);
+
+  act(() => observer.emit(slides.phase2));
+  setRect(slides.phase2, 0, 722);
+  Object.defineProperty(window, "innerHeight", {
+    configurable: true,
+    value: 720,
+  });
+  history.reset();
+  const enteredHash = window.location.hash;
+
+  act(() => flushAnimationFrames());
+  assert.deepEqual(scrollCalls, [
+    {
+      element: slides.phase2,
+      options: { behavior: "auto", block: "center" },
+    },
+  ]);
+  assert.deepEqual(history.calls, []);
+  assert.equal(window.location.hash, enteredHash);
+
+  scrollCalls = [];
+  fullscreenTarget = null;
+  act(() => document.dispatchEvent(new Event("fullscreenchange")));
+  assert.equal(result.current.isFullscreen, false);
+  assert.equal(result.current.fullscreenStatus, "Fullscreen exited");
+  assert.equal(scrollCalls.length, 0);
+
+  act(() => flushAnimationFrames());
+  assert.equal(scrollCalls.length, 0);
+
+  act(() => observer.emit(slides.launch));
+  setRect(slides.launch, 0, 603);
+  Object.defineProperty(window, "innerHeight", {
+    configurable: true,
+    value: 600,
+  });
+  history.reset();
+  const exitedHash = window.location.hash;
+
+  act(() => flushAnimationFrames());
+  assert.deepEqual(scrollCalls, [
+    {
+      element: slides.launch,
+      options: { behavior: "auto", block: "start" },
+    },
+  ]);
+  assert.deepEqual(history.calls, []);
+  assert.equal(window.location.hash, exitedHash);
+});
+
+test("realigns after WebKit fullscreen changes", () => {
+  const slides = setupSlides();
+  renderPresentation();
+  act(() => flushAnimationFrames());
+  scrollCalls = [];
+
+  act(() => document.dispatchEvent(new Event("webkitfullscreenchange")));
+  assert.equal(scrollCalls.length, 0);
+  act(() => flushAnimationFrames());
+  assert.equal(scrollCalls.length, 0);
+  act(() => flushAnimationFrames());
+
+  assert.deepEqual(scrollCalls, [
+    {
+      element: slides.hero,
+      options: { behavior: "auto", block: "center" },
+    },
+  ]);
+});
+
+test("coalesces fullscreen changes before the outer frame", () => {
+  const slides = setupSlides();
+  renderPresentation();
+  act(() => flushAnimationFrames());
+  scrollCalls = [];
+
+  act(() => document.dispatchEvent(new Event("fullscreenchange")));
+  const supersededOuterFrame = [...animationFrames.keys()][0];
+  act(() => document.dispatchEvent(new Event("webkitfullscreenchange")));
+
+  assert.deepEqual(cancelledAnimationFrames, [supersededOuterFrame]);
+  act(() => flushAnimationFrames());
+  assert.equal(scrollCalls.length, 0);
+  act(() => flushAnimationFrames());
+  assert.deepEqual(scrollCalls, [
+    {
+      element: slides.hero,
+      options: { behavior: "auto", block: "center" },
+    },
+  ]);
+});
+
+test("coalesces fullscreen changes after the outer frame", () => {
+  const slides = setupSlides();
+  renderPresentation();
+  act(() => flushAnimationFrames());
+  scrollCalls = [];
+
+  act(() => document.dispatchEvent(new Event("fullscreenchange")));
+  act(() => flushAnimationFrames());
+  const supersededInnerFrame = [...animationFrames.keys()][0];
+  act(() => document.dispatchEvent(new Event("webkitfullscreenchange")));
+
+  assert.deepEqual(cancelledAnimationFrames, [supersededInnerFrame]);
+  act(() => flushAnimationFrames());
+  assert.equal(scrollCalls.length, 0);
+  act(() => flushAnimationFrames());
+  assert.deepEqual(scrollCalls, [
+    {
+      element: slides.hero,
+      options: { behavior: "auto", block: "center" },
+    },
+  ]);
+});
+
+test("cancels fullscreen realignment when unmounted with the outer frame pending", () => {
+  setupSlides();
+  const presentation = renderPresentation();
+  act(() => flushAnimationFrames());
+  scrollCalls = [];
+
+  act(() => document.dispatchEvent(new Event("fullscreenchange")));
+  const outerFrame = [...animationFrames.keys()][0];
+  presentation.unmount();
+  act(() => flushAnimationFrames());
+
+  assert.deepEqual(cancelledAnimationFrames, [outerFrame]);
+  assert.equal(scrollCalls.length, 0);
+});
+
+test("cancels fullscreen realignment when unmounted with the inner frame pending", () => {
+  setupSlides();
+  const presentation = renderPresentation();
+  act(() => flushAnimationFrames());
+  scrollCalls = [];
+
+  act(() => document.dispatchEvent(new Event("fullscreenchange")));
+  act(() => flushAnimationFrames());
+  const innerFrame = [...animationFrames.keys()][0];
+  presentation.unmount();
+  act(() => flushAnimationFrames());
+
+  assert.deepEqual(cancelledAnimationFrames, [innerFrame]);
+  assert.equal(scrollCalls.length, 0);
+});
+
 test("fullscreen changes update state and standard enter and exit APIs", async () => {
   setupSlides();
   const { result } = renderPresentation();

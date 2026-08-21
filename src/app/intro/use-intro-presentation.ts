@@ -63,10 +63,13 @@ function updateActiveClass(id: IntroSlideId) {
     .forEach((slide) => slide.classList.toggle("is-active", slide.id === id));
 }
 
-function scrollSlideIntoView(target: HTMLElement) {
+function scrollSlideIntoView(
+  target: HTMLElement,
+  behavior: ScrollBehavior = prefersReducedMotion() ? "auto" : "smooth"
+) {
   const { height } = target.getBoundingClientRect();
   target.scrollIntoView({
-    behavior: prefersReducedMotion() ? "auto" : "smooth",
+    behavior,
     block: fitsPresentationViewport(height, window.innerHeight)
       ? "center"
       : "start",
@@ -374,11 +377,32 @@ export function useIntroPresentation({
       touchGesture = undefined;
     };
 
+    let fullscreenOuterFrame: number | undefined;
+    let fullscreenInnerFrame: number | undefined;
+    const cancelFullscreenRealignment = () => {
+      if (fullscreenOuterFrame !== undefined) {
+        window.cancelAnimationFrame(fullscreenOuterFrame);
+        fullscreenOuterFrame = undefined;
+      }
+      if (fullscreenInnerFrame !== undefined) {
+        window.cancelAnimationFrame(fullscreenInnerFrame);
+        fullscreenInnerFrame = undefined;
+      }
+    };
     const syncFullscreen = () => {
       const enabled = isFullscreenActive();
       isFullscreenRef.current = enabled;
       setIsFullscreen(enabled);
       setFullscreenStatus(enabled ? "Fullscreen enabled" : "Fullscreen exited");
+      cancelFullscreenRealignment();
+      fullscreenOuterFrame = window.requestAnimationFrame(() => {
+        fullscreenOuterFrame = undefined;
+        fullscreenInnerFrame = window.requestAnimationFrame(() => {
+          fullscreenInnerFrame = undefined;
+          const activeSlide = document.getElementById(activeSlideIdRef.current);
+          if (activeSlide) scrollSlideIntoView(activeSlide, "auto");
+        });
+      });
     };
 
     document.addEventListener("keydown", handleKeyDown);
@@ -402,6 +426,7 @@ export function useIntroPresentation({
       document.removeEventListener("touchcancel", handleTouchCancel);
       document.removeEventListener("fullscreenchange", syncFullscreen);
       document.removeEventListener("webkitfullscreenchange", syncFullscreen);
+      cancelFullscreenRealignment();
       if (wheelCooldown !== undefined) window.clearTimeout(wheelCooldown);
       if (initializationFrame !== undefined) {
         window.cancelAnimationFrame(initializationFrame);

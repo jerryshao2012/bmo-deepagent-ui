@@ -1452,16 +1452,18 @@ function IntroPageContent() {
           --bmo-red: #e31837;
           --bmo-surface: #f3f7fa;
           --bmo-line: #d6e2ea;
+          --bmo-surface-deep: #e6f9fe;
+          --bmo-soft-line: rgba(0, 25, 40, 0.09);
         }
 
         .font-serif-header {
-          font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          font-weight: 600;
+          font-family: "Heebo", Arial, sans-serif;
+          font-weight: 700;
           letter-spacing: -0.02em;
         }
 
         .font-mono {
-          font-family: "Geist Mono", "SF Mono", Monaco, monospace;
+          font-family: "IBM Plex Mono", monospace;
         }
 
         .intro-slide {
@@ -1469,6 +1471,67 @@ function IntroPageContent() {
           position: relative;
           scroll-margin-top: 4rem;
           scroll-snap-align: start;
+        }
+
+        /* Ambient Drifting Lights on Slide 1 */
+        .ambient-light-field {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          pointer-events: none;
+          z-index: 1;
+        }
+
+        .ambient-light-a,
+        .ambient-light-b,
+        .ambient-light-c {
+          position: absolute;
+          border-radius: 999px;
+          filter: blur(55px);
+          opacity: 0.45;
+          pointer-events: none;
+        }
+
+        .ambient-light-a {
+          width: 24rem;
+          height: 24rem;
+          top: 10%;
+          left: 15%;
+          background: radial-gradient(circle, rgba(0, 158, 201, 0.35) 0%, rgba(0, 117, 190, 0) 70%);
+          animation: ambientDriftA 16s ease-in-out infinite alternate;
+        }
+
+        .ambient-light-b {
+          width: 28rem;
+          height: 28rem;
+          top: 35%;
+          right: 12%;
+          background: radial-gradient(circle, rgba(115, 195, 235, 0.3) 0%, rgba(0, 117, 190, 0) 70%);
+          animation: ambientDriftB 20s ease-in-out infinite alternate;
+        }
+
+        .ambient-light-c {
+          width: 20rem;
+          height: 20rem;
+          bottom: 8%;
+          left: 30%;
+          background: radial-gradient(circle, rgba(0, 184, 140, 0.22) 0%, rgba(0, 184, 140, 0) 70%);
+          animation: ambientDriftC 18s ease-in-out infinite alternate;
+        }
+
+        @keyframes ambientDriftA {
+          0% { transform: translate(0, 0) scale(1); }
+          100% { transform: translate(50px, 35px) scale(1.12); }
+        }
+
+        @keyframes ambientDriftB {
+          0% { transform: translate(0, 0) scale(1); }
+          100% { transform: translate(-45px, -30px) scale(1.08); }
+        }
+
+        @keyframes ambientDriftC {
+          0% { transform: translate(0, 0) scale(1); }
+          100% { transform: translate(30px, -40px) scale(1.15); }
         }
 
         @media (max-width: 639px) {
@@ -1689,6 +1752,7 @@ function IntroPageContent() {
         suspended={isDialogOpen}
         onNavigate={(id) => presentation.goToSlide(id, "push")}
         onToggleFullscreen={() => void presentation.toggleFullscreen()}
+        onOpenNotesPopup={() => presentation.openSpeakerNotes()}
       />
 
       {/* Navigation Header (Klarity Style) */}
@@ -1817,9 +1881,14 @@ function IntroPageContent() {
         <section
           id="hero"
           data-intro-slide
-          className="intro-slide relative flex min-h-[100dvh] flex-col items-center justify-center bg-[#F3F7FA] px-6 pb-12 pt-28 text-center"
+          className="intro-slide relative flex min-h-[100dvh] flex-col items-center justify-center bg-[#F3F7FA] px-6 pb-12 pt-28 text-center overflow-hidden"
         >
-          <div className="w-full max-w-4xl">
+          <div className="ambient-light-field pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+            <div className="ambient-light-a" />
+            <div className="ambient-light-b" />
+            <div className="ambient-light-c" />
+          </div>
+          <div className="relative z-10 w-full max-w-4xl">
             <div className="hero-copy flex min-h-[calc(100svh-11rem)] flex-col items-center justify-center">
               <p className="mb-4 text-xs font-bold uppercase tracking-widest text-[#0075BE]">
                 Enterprise Research Workspace

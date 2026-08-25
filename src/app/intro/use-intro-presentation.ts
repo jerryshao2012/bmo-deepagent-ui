@@ -14,6 +14,7 @@ import {
   type PresentationInputTarget,
   type PresentationDirection,
 } from "./presentation-navigation";
+import { SpeakerNotesPopupManager } from "./speaker-notes-popup";
 
 const FULLSCREEN_UNAVAILABLE =
   "Fullscreen is unavailable in this browser context";
@@ -38,6 +39,7 @@ export interface IntroPresentationState {
   fullscreenStatus: string;
   goToSlide(id: IntroSlideId, historyMode?: "push" | "replace"): void;
   toggleFullscreen(): Promise<void>;
+  openSpeakerNotes(): boolean;
 }
 
 function isIntroSlideId(id: string): id is IntroSlideId {
@@ -87,6 +89,7 @@ export function useIntroPresentation({
   const activeSlideIdRef = useRef<IntroSlideId>("hero");
   const isFullscreenRef = useRef(isFullscreen);
   const suspendedRef = useRef(suspended);
+  const notesManagerRef = useRef<SpeakerNotesPopupManager | null>(null);
 
   suspendedRef.current = suspended;
   isFullscreenRef.current = isFullscreen;
@@ -95,6 +98,7 @@ export function useIntroPresentation({
     activeSlideIdRef.current = id;
     updateActiveClass(id);
     setActiveSlideId(id);
+    notesManagerRef.current?.updateSlide(id);
   }, []);
 
   const navigateToSlide = useCallback(
@@ -124,6 +128,16 @@ export function useIntroPresentation({
     [navigateToSlide]
   );
 
+  const openSpeakerNotes = useCallback((): boolean => {
+    if (typeof window === "undefined") return false;
+    if (!notesManagerRef.current) {
+      notesManagerRef.current = new SpeakerNotesPopupManager((targetId) => {
+        goToSlide(targetId, "push");
+      });
+    }
+    return notesManagerRef.current.openOrFocus(activeSlideIdRef.current);
+  }, [goToSlide]);
+
   const toggleFullscreen = useCallback(async () => {
     const fullscreenDocument = document as FullscreenDocument;
     const fullscreenElement = document.documentElement as FullscreenElement;
@@ -149,6 +163,12 @@ export function useIntroPresentation({
   useEffect(() => {
     const presentationRoot = document.documentElement;
     presentationRoot.classList.add("intro-presentation-initializing");
+
+    if (!notesManagerRef.current) {
+      notesManagerRef.current = new SpeakerNotesPopupManager((targetId) => {
+        goToSlide(targetId, "push");
+      });
+    }
 
     const slides = Array.from(
       document.querySelectorAll<HTMLElement>("[data-intro-slide]")
@@ -244,6 +264,12 @@ export function useIntroPresentation({
       if (event.key.toLowerCase() === "f") {
         event.preventDefault();
         void toggleFullscreen();
+        return;
+      }
+
+      if (event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        openSpeakerNotes();
         return;
       }
 
@@ -351,27 +377,13 @@ export function useIntroPresentation({
       if (
         suspendedRef.current ||
         !gesture ||
-        event.changedTouches.length !== 1
+        !gesture.claimed ||
+        gesture.direction === null
       ) {
         return;
       }
-
-      const endY = event.changedTouches[0]?.clientY;
-      if (endY === undefined) return;
-
-      const deltaY = gesture.startY - endY;
-      if (Math.abs(deltaY) < TOUCH_THRESHOLD) return;
-
-      const direction: PresentationDirection = deltaY > 0 ? 1 : -1;
-      if (
-        (!gesture.claimed && !atSlideBoundary(direction, gesture.slideId)) ||
-        (gesture.direction !== null && gesture.direction !== direction)
-      ) {
-        return;
-      }
-
       event.preventDefault();
-      navigateAdjacent(direction, gesture.slideId);
+      navigateAdjacent(gesture.direction, gesture.slideId);
     };
     const handleTouchCancel = () => {
       touchGesture = undefined;
@@ -389,11 +401,14 @@ export function useIntroPresentation({
         fullscreenInnerFrame = undefined;
       }
     };
+
     const syncFullscreen = () => {
-      const enabled = isFullscreenActive();
-      isFullscreenRef.current = enabled;
-      setIsFullscreen(enabled);
-      setFullscreenStatus(enabled ? "Fullscreen enabled" : "Fullscreen exited");
+      const active = isFullscreenActive();
+      setIsFullscreen(active);
+      setFullscreenStatus(
+        active ? "Fullscreen enabled" : "Fullscreen exited"
+      );
+
       cancelFullscreenRealignment();
       fullscreenOuterFrame = window.requestAnimationFrame(() => {
         fullscreenOuterFrame = undefined;
@@ -437,8 +452,9 @@ export function useIntroPresentation({
         "intro-presentation-initializing",
         "intro-presentation-ready"
       );
+      notesManagerRef.current?.close();
     };
-  }, [activateSlide, goToSlide, navigateToSlide, toggleFullscreen]);
+  }, [activateSlide, goToSlide, navigateToSlide, openSpeakerNotes, toggleFullscreen]);
 
   const activeSlideIndex = useMemo(
     () => INTRO_SLIDES.findIndex((slide) => slide.id === activeSlideId),
@@ -452,5 +468,6 @@ export function useIntroPresentation({
     fullscreenStatus,
     goToSlide,
     toggleFullscreen,
+    openSpeakerNotes,
   };
 }

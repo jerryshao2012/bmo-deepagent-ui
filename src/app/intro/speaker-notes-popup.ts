@@ -25,7 +25,7 @@ export class SpeakerNotesPopupManager {
     return Boolean(this.popupWindow && !this.popupWindow.closed);
   }
 
-  public openOrFocus(initialSlideId: IntroSlideId): boolean {
+  public async openOrFocus(initialSlideId: IntroSlideId): Promise<boolean> {
     this.currentSlideId = initialSlideId;
 
     if (this.isOpen()) {
@@ -34,16 +34,60 @@ export class SpeakerNotesPopupManager {
       return true;
     }
 
-    const width = Math.min(1040, window.screen.availWidth || 1040);
-    const height = Math.min(800, window.screen.availHeight || 800);
+    let width = Math.min(1040, window.screen?.availWidth || 1040);
+    let height = Math.min(800, window.screen?.availHeight || 800);
     const screenAny = window.screen as unknown as {
       availLeft?: number;
       availTop?: number;
     };
-    const left =
-      (screenAny.availLeft !== undefined ? screenAny.availLeft : 0) + 40;
-    const top =
-      (screenAny.availTop !== undefined ? screenAny.availTop : 0) + 40;
+    let left =
+      (screenAny?.availLeft !== undefined ? screenAny.availLeft : 0) + 40;
+    let top =
+      (screenAny?.availTop !== undefined ? screenAny.availTop : 0) + 40;
+
+    // Use Window Management API to target external/secondary screen if available
+    if (typeof window !== "undefined" && "getScreenDetails" in window) {
+      try {
+        const screenDetails = await (window as unknown as {
+          getScreenDetails: () => Promise<{
+            screens: Array<{
+              availLeft?: number;
+              availTop?: number;
+              availWidth?: number;
+              availHeight?: number;
+            }>;
+            currentScreen: unknown;
+          }>;
+        }).getScreenDetails();
+
+        if (
+          screenDetails?.screens &&
+          Array.isArray(screenDetails.screens) &&
+          screenDetails.screens.length > 1
+        ) {
+          const otherScreen =
+            screenDetails.screens.find(
+              (s) => s !== screenDetails.currentScreen
+            ) || screenDetails.screens[1];
+
+          if (otherScreen) {
+            const availWidth = otherScreen.availWidth || 1040;
+            const availHeight = otherScreen.availHeight || 800;
+            width = Math.min(1040, availWidth);
+            height = Math.min(800, availHeight);
+            left =
+              (otherScreen.availLeft ?? 0) +
+              Math.max(20, Math.floor((availWidth - width) / 2));
+            top =
+              (otherScreen.availTop ?? 0) +
+              Math.max(20, Math.floor((availHeight - height) / 2));
+          }
+        }
+      } catch {
+        // Fallback gracefully if permission denied or window-management unsupported
+      }
+    }
+
     const features = `width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes`;
 
     try {
@@ -503,6 +547,7 @@ export class SpeakerNotesPopupManager {
       <div class="timer-display" id="popupTimerDisplay">00:00:00</div>
       <button type="button" class="btn" id="popupTimerToggle">Start</button>
       <button type="button" class="btn" id="popupTimerReset">Reset</button>
+      <button type="button" class="btn" id="popupScreenBtn" title="Move window to other display">⇄ Screen</button>
       <button type="button" class="btn btn-icon" id="popupFontMinus" title="Decrease font size">A-</button>
       <button type="button" class="btn btn-icon" id="popupFontPlus" title="Increase font size">A+</button>
       <button type="button" class="btn btn-nav" id="popupPrevBtn">← Prev</button>
@@ -587,6 +632,12 @@ export class SpeakerNotesPopupManager {
       ?.addEventListener("click", () => this.resetTimer());
 
     doc
+      .getElementById("popupScreenBtn")
+      ?.addEventListener("click", () => {
+        void this.moveToNextScreen();
+      });
+
+    doc
       .getElementById("popupFontMinus")
       ?.addEventListener("click", () => this.adjustFontSize(-1));
     doc
@@ -665,6 +716,55 @@ export class SpeakerNotesPopupManager {
       if (pane) {
         pane.style.fontSize = `${this.baseFontSize}px`;
       }
+    }
+  }
+
+  private async moveToNextScreen(): Promise<void> {
+    if (!this.popupWindow || this.popupWindow.closed) return;
+    if (typeof window === "undefined" || !("getScreenDetails" in window)) {
+      return;
+    }
+    try {
+      const screenDetails = await (window as unknown as {
+        getScreenDetails: () => Promise<{
+          screens: Array<{
+            availLeft?: number;
+            availTop?: number;
+            availWidth?: number;
+            availHeight?: number;
+          }>;
+          currentScreen: unknown;
+        }>;
+      }).getScreenDetails();
+
+      if (!screenDetails?.screens || screenDetails.screens.length < 2) {
+        return;
+      }
+
+      const screens = screenDetails.screens;
+      const current = screenDetails.currentScreen;
+      const currentIndex = screens.findIndex((s) => s === current);
+      const nextIndex =
+        currentIndex >= 0 ? (currentIndex + 1) % screens.length : 1;
+      const targetScreen = screens[nextIndex];
+      if (!targetScreen) return;
+
+      const availWidth = targetScreen.availWidth || 1040;
+      const availHeight = targetScreen.availHeight || 800;
+      const width = Math.min(1040, availWidth);
+      const height = Math.min(800, availHeight);
+      const left =
+        (targetScreen.availLeft ?? 0) +
+        Math.max(20, Math.floor((availWidth - width) / 2));
+      const top =
+        (targetScreen.availTop ?? 0) +
+        Math.max(20, Math.floor((availHeight - height) / 2));
+
+      this.popupWindow.moveTo(left, top);
+      this.popupWindow.resizeTo(width, height);
+      this.popupWindow.focus();
+    } catch {
+      // Ignore if screen detail access is denied
     }
   }
 

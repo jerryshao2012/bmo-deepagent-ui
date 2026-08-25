@@ -1752,7 +1752,7 @@ function IntroPageContent() {
         suspended={isDialogOpen}
         onNavigate={(id) => presentation.goToSlide(id, "push")}
         onToggleFullscreen={() => void presentation.toggleFullscreen()}
-        onOpenNotesPopup={() => presentation.openSpeakerNotes()}
+        onOpenNotesPopup={() => void presentation.openSpeakerNotes()}
       />
 
       {/* Navigation Header (Klarity Style) */}

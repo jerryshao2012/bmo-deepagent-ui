@@ -39,7 +39,7 @@ export interface IntroPresentationState {
   fullscreenStatus: string;
   goToSlide(id: IntroSlideId, historyMode?: "push" | "replace"): void;
   toggleFullscreen(): Promise<void>;
-  openSpeakerNotes(): boolean;
+  openSpeakerNotes(): Promise<boolean>;
 }
 
 function isIntroSlideId(id: string): id is IntroSlideId {
@@ -128,14 +128,14 @@ export function useIntroPresentation({
     [navigateToSlide]
   );
 
-  const openSpeakerNotes = useCallback((): boolean => {
+  const openSpeakerNotes = useCallback(async (): Promise<boolean> => {
     if (typeof window === "undefined") return false;
     if (!notesManagerRef.current) {
       notesManagerRef.current = new SpeakerNotesPopupManager((targetId) => {
         goToSlide(targetId, "push");
       });
     }
-    return notesManagerRef.current.openOrFocus(activeSlideIdRef.current);
+    return await notesManagerRef.current.openOrFocus(activeSlideIdRef.current);
   }, [goToSlide]);
 
   const toggleFullscreen = useCallback(async () => {
@@ -269,7 +269,7 @@ export function useIntroPresentation({
 
       if (event.key.toLowerCase() === "n") {
         event.preventDefault();
-        openSpeakerNotes();
+        void openSpeakerNotes();
         return;
       }
 

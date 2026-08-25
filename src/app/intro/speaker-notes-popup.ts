@@ -36,10 +36,14 @@ export class SpeakerNotesPopupManager {
 
     const width = Math.min(1040, window.screen.availWidth || 1040);
     const height = Math.min(800, window.screen.availHeight || 800);
+    const screenAny = window.screen as unknown as {
+      availLeft?: number;
+      availTop?: number;
+    };
     const left =
-      (window.screen.availLeft !== undefined ? window.screen.availLeft : 0) + 40;
+      (screenAny.availLeft !== undefined ? screenAny.availLeft : 0) + 40;
     const top =
-      (window.screen.availTop !== undefined ? window.screen.availTop : 0) + 40;
+      (screenAny.availTop !== undefined ? screenAny.availTop : 0) + 40;
     const features = `width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes`;
 
     try {

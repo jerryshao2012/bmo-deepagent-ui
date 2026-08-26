@@ -37,6 +37,7 @@ const attachmentLabelCases = [
   ["mail.msg", "Outlook file"],
   ["brochure.pub", "Publisher document"],
   ["request.xsn", "InfoPath form"],
+  ["manual.pdf", "PDF document"],
 ] as const;
 
 test("renders exact archive and Office labels for lowercase and uppercase filenames", () => {
@@ -310,5 +311,68 @@ test("preserves the attachment download failure toast", async () => {
   } finally {
     globalThis.fetch = originalFetch;
     toastError.mock.restore();
+  }
+});
+
+test("uses file-text icon for PDF filenames", () => {
+  const pdf = render(
+    <SyncedMarkdownAttachment
+      markdownId="123456"
+      assetId="1b14e924-5f0e-4fdb-b85d-4dddf8bc4271"
+      filename="guide.pdf"
+      size={1572864}
+      allowDownload={true}
+      light={true}
+    />
+  );
+  assert.ok(pdf.container.querySelector("svg.lucide-file-text"));
+  assert.equal(pdf.container.querySelector("svg.lucide-file-archive"), null);
+  cleanup();
+});
+
+test("downloads a PDF through the authenticated asset URL", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalClick = window.HTMLAnchorElement.prototype.click;
+  let requestedUrl = "";
+  let downloadedFilename = "";
+  globalThis.fetch = async (input) => {
+    requestedUrl = String(input);
+    return new Response(new Blob(["%PDF-1.4"]), {
+      headers: {
+        "Content-Disposition":
+          "attachment; filename*=UTF-8''handbook.pdf",
+      },
+    });
+  };
+  window.HTMLAnchorElement.prototype.click = function () {
+    downloadedFilename = this.download;
+  };
+
+  try {
+    render(
+      <SyncedMarkdownAttachment
+        markdownId="123456"
+        assetId="1b14e924-5f0e-4fdb-b85d-4dddf8bc4271"
+        filename="handbook.pdf"
+        size={1024}
+        allowDownload={true}
+        light={true}
+      />
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Download handbook.pdf" })
+    );
+
+    await waitFor(() => {
+      assert.equal(
+        requestedUrl,
+        "/api/markdown-images/123456/1b14e924-5f0e-4fdb-b85d-4dddf8bc4271/download"
+      );
+      assert.equal(downloadedFilename, "handbook.pdf");
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    window.HTMLAnchorElement.prototype.click = originalClick;
   }
 });

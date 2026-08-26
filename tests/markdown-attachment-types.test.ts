@@ -8,9 +8,11 @@ import {
   MARKDOWN_OFFICE_FAMILIES,
   isMarkdownArchiveContentType,
   isMarkdownAttachmentAsset,
+  isPdfFilename,
   isSupportedMarkdownArchiveFile,
   isSupportedMarkdownAttachmentFile,
   isSupportedMarkdownOfficeFile,
+  isSupportedMarkdownPdfFile,
   markdownArchiveLabel,
   markdownAttachmentLabel,
   officeFamilyForFilename,
@@ -570,6 +572,64 @@ test("returns exact archive, Office, and fallback labels", () => {
       office.label
     );
   }
+  assert.equal(markdownAttachmentLabel("document.pdf"), "PDF document");
+  assert.equal(markdownAttachmentLabel("DOCUMENT.PDF"), "PDF document");
   assert.equal(markdownArchiveLabel("unknown.bin"), null);
   assert.equal(markdownAttachmentLabel("unknown.bin"), "Attachment");
+});
+
+test("recognizes PDF documents, respects gate, and detects stored PDF assets", () => {
+  assert.equal(isPdfFilename("report.pdf"), true);
+  assert.equal(isPdfFilename("REPORT.PDF"), true);
+  assert.equal(isPdfFilename("folder/report.pdf"), false);
+  assert.equal(isPdfFilename("report.pdf.exe"), false);
+  assert.equal(isPdfFilename("report"), false);
+
+  assert.equal(
+    isSupportedMarkdownPdfFile({ name: "doc.pdf", type: "application/pdf" }),
+    true
+  );
+  assert.equal(
+    isSupportedMarkdownPdfFile(
+      { name: "doc.pdf", type: "application/pdf" },
+      false
+    ),
+    false
+  );
+  assert.equal(
+    isSupportedMarkdownAttachmentFile({
+      name: "doc.pdf",
+      type: "application/pdf",
+    }),
+    true
+  );
+  assert.equal(
+    isSupportedMarkdownAttachmentFile(
+      { name: "doc.pdf", type: "application/pdf" },
+      false
+    ),
+    false
+  );
+
+  assert.equal(
+    isMarkdownAttachmentAsset({
+      filename: "misleading.bin",
+      contentType: "application/pdf",
+    }),
+    true
+  );
+  assert.equal(
+    isMarkdownAttachmentAsset({
+      filename: "misleading.bin",
+      contentType: "application/x-pdf",
+    }),
+    true
+  );
+  assert.equal(
+    isMarkdownAttachmentAsset({
+      filename: "report.pdf",
+      contentType: "application/octet-stream",
+    }),
+    true
+  );
 });

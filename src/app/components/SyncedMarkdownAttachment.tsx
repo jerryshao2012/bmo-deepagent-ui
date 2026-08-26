@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState } from "react";
-import { Download, File, FileArchive, Loader2 } from "lucide-react";
+import { Download, File, FileArchive, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
+  isPdfFilename,
   markdownArchiveLabel,
   markdownAttachmentLabel,
 } from "@/lib/markdown-attachment-types";
@@ -33,6 +34,7 @@ export function SyncedMarkdownAttachment({
   const formattedSize = formatMarkdownAttachmentSize(size);
   const attachmentLabel = markdownAttachmentLabel(filename);
   const isArchive = markdownArchiveLabel(filename) !== null;
+  const isPdf = isPdfFilename(filename);
   const description = formattedSize
     ? `${attachmentLabel} · ${formattedSize}`
     : attachmentLabel;
@@ -70,6 +72,8 @@ export function SyncedMarkdownAttachment({
       >
         {isArchive ? (
           <FileArchive className="h-5 w-5" />
+        ) : isPdf ? (
+          <FileText className="h-5 w-5" />
         ) : (
           <File className="h-5 w-5" />
         )}

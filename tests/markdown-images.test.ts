@@ -854,3 +854,25 @@ test("Remove publishes empty, awaits upload, then deletes snapshotted ID", async
   assert.equal(currentMarkdownId, "654321");
   assert.deepEqual(events, ["publish-empty", "delete:123456"]);
 });
+
+test("validates PDF documents and generates type-neutral attachment markdown", () => {
+  const validation = validateMarkdownAssetFiles([
+    { name: "document.pdf", type: "application/pdf", size: 1024 },
+    { name: "UPPER.PDF", type: "", size: 2048 },
+  ]);
+  assert.equal(validation.rejected.length, 0);
+  assert.equal(validation.accepted.length, 2);
+
+  const markdown = buildSyncedAssetMarkdown([
+    {
+      id: "1b14e924-5f0e-4fdb-b85d-4dddf8bc4271",
+      filename: "quarterly-report.pdf",
+      content_type: "application/pdf",
+      size: 1048576,
+    },
+  ]);
+  assert.equal(
+    markdown,
+    '[quarterly-report.pdf](/__markdown-attachment/1b14e924-5f0e-4fdb-b85d-4dddf8bc4271 "size=1048576")'
+  );
+});

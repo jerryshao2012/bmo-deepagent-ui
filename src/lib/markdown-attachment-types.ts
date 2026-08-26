@@ -407,13 +407,28 @@ export function isSupportedMarkdownOfficeFile(
   return extendedEnabled && officeFamilyForFilename(file.name) !== null;
 }
 
+export function isPdfFilename(filename: string): boolean {
+  if (filename.includes("/") || filename.includes("\\")) return false;
+  const match = /^(.+)\.([^.]+)$/.exec(filename);
+  if (!match) return false;
+  return match[2].toLowerCase() === "pdf";
+}
+
+export function isSupportedMarkdownPdfFile(
+  file: MarkdownFileLike,
+  extendedEnabled = EXTENDED_MARKDOWN_ATTACHMENT_UPLOADS_ENABLED
+): boolean {
+  return extendedEnabled && isPdfFilename(file.name);
+}
+
 export function isSupportedMarkdownAttachmentFile(
   file: MarkdownFileLike,
   extendedEnabled = EXTENDED_MARKDOWN_ATTACHMENT_UPLOADS_ENABLED
 ): boolean {
   return (
     isSupportedMarkdownArchiveFile(file, extendedEnabled) ||
-    isSupportedMarkdownOfficeFile(file, extendedEnabled)
+    isSupportedMarkdownOfficeFile(file, extendedEnabled) ||
+    isSupportedMarkdownPdfFile(file, extendedEnabled)
   );
 }
 
@@ -421,8 +436,11 @@ export function isMarkdownAttachmentAsset(asset: MarkdownAssetLike): boolean {
   const normalizedContentType = asset.contentType.toLowerCase();
   return (
     isMarkdownArchiveContentType(normalizedContentType) ||
+    normalizedContentType === "application/pdf" ||
+    normalizedContentType === "application/x-pdf" ||
     (normalizedContentType === "application/octet-stream" &&
-      officeFamilyForFilename(asset.filename) !== null)
+      (officeFamilyForFilename(asset.filename) !== null ||
+        isPdfFilename(asset.filename)))
   );
 }
 
@@ -433,6 +451,7 @@ export function markdownArchiveLabel(filename: string): string | null {
 export function markdownAttachmentLabel(filename: string): string {
   const archiveLabel = markdownArchiveLabel(filename);
   if (archiveLabel) return archiveLabel;
+  if (isPdfFilename(filename)) return "PDF document";
   const officeFamily = officeFamilyForFilename(filename);
   return officeFamily
     ? MARKDOWN_OFFICE_FAMILIES[officeFamily].label

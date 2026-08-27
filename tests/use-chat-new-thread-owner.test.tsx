@@ -208,3 +208,121 @@ test("installed SDK stop cancels a rejoined server run without an executor submi
   await waitFor(() => assert.equal(rejoinedSignal?.aborted, true));
   await waitFor(() => assert.deepEqual(cancelCalls, [["A", "run-A"]]));
 });
+
+test("resume interrupt submits typed value on owning thread with HITL config", async () => {
+  const streamed: Array<{
+    threadId: string;
+    options: Record<string, unknown>;
+  }> = [];
+  const client = {
+    threads: {
+      getState: async () => ({
+        values: { messages: [], todos: [], files: {} },
+      }),
+    },
+    runs: {
+      stream(
+        threadId: string,
+        _assistantId: string,
+        options: Record<string, unknown>
+      ) {
+        streamed.push({ threadId, options });
+        return {
+          async next() {
+            return { done: true, value: undefined };
+          },
+          [Symbol.asyncIterator]() {
+            return this;
+          },
+        };
+      },
+    },
+  } as never;
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <NuqsTestingAdapter searchParams={{ threadId: "A" }}>
+      <ClientContext.Provider value={{ client }}>
+        {children}
+      </ClientContext.Provider>
+    </NuqsTestingAdapter>
+  );
+  const { result } = renderHook(
+    () =>
+      useChat({
+        activeAssistant: {
+          assistant_id: "assistant-1",
+          config: {
+            configurable: {
+              model: "gemma",
+              client_capabilities: { markdown_preview: 1 },
+            },
+          },
+        } as never,
+      }),
+    { wrapper }
+  );
+  const resumeValue = {
+    decisions: [{ type: "approve" }],
+  };
+
+  act(() => {
+    result.current.resumeInterrupt({ threadId: "A", value: resumeValue });
+  });
+
+  await waitFor(() => assert.equal(streamed.length, 1));
+  assert.equal(streamed[0].threadId, "A");
+  assert.deepEqual(streamed[0].options.command, { resume: resumeValue });
+  assert.deepEqual(streamed[0].options.config, {
+    configurable: {
+      model: "gemma",
+      clarification_mode: "auto",
+      client_capabilities: {
+        markdown_preview: 1,
+        requirement_clarification: 1,
+      },
+    },
+  });
+});
+
+test("resume interrupt rejects stale thread submissions", async () => {
+  const streamed: unknown[] = [];
+  const client = {
+    threads: {
+      getState: async () => ({
+        values: { messages: [], todos: [], files: {} },
+      }),
+    },
+    runs: {
+      stream() {
+        streamed.push("unexpected");
+        return {
+          async next() {
+            return { done: true, value: undefined };
+          },
+          [Symbol.asyncIterator]() {
+            return this;
+          },
+        };
+      },
+    },
+  } as never;
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <NuqsTestingAdapter searchParams={{ threadId: "A" }}>
+      <ClientContext.Provider value={{ client }}>
+        {children}
+      </ClientContext.Provider>
+    </NuqsTestingAdapter>
+  );
+  const { result } = renderHook(() => useChat({ activeAssistant: null }), {
+    wrapper,
+  });
+
+  assert.throws(
+    () =>
+      result.current.resumeInterrupt({
+        threadId: "B",
+        value: { decisions: [{ type: "approve" }] },
+      }),
+    /stale interrupt/i
+  );
+  assert.deepEqual(streamed, []);
+});

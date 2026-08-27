@@ -26,6 +26,7 @@ import { useQueryState } from "nuqs";
 import { LangGraphChatGateway } from "@/features/chat/infrastructure/langgraph-chat-gateway";
 import { LangGraphRunExecutor } from "@/features/chat/infrastructure/langgraph-run-executor";
 import { ThreadSnapshotPoller } from "@/features/chat/application/thread-snapshot-poller";
+import { mergeHitlConfig, type ResumeInterruptInput } from "@/features/hitl";
 import { CHAT_STREAM_OPTIONS } from "./chat-stream-options";
 import {
   selectEffectiveTodos,
@@ -177,6 +178,7 @@ export function useChat({
     hasStartedLoading: boolean;
     baselineMessageCount: number;
   } | null>(null);
+  const pendingResumeKeyRef = useRef<string | null>(null);
   const handleThreadId = useCallback(
     (nextThreadId: string) => {
       runExecutorRef.current?.promoteNewThreadOwner(nextThreadId);
@@ -198,10 +200,12 @@ export function useChat({
     defaultHeaders: { "x-auth-scheme": "langsmith" },
     // Revalidate thread list when stream finishes, errors, or creates new thread
     onFinish: (_state, run) => {
+      pendingResumeKeyRef.current = null;
       runExecutorRef.current?.onRunFinished(run?.run_id);
       onHistoryRevalidateAction?.();
     },
     onError: (error, run) => {
+      pendingResumeKeyRef.current = null;
       runExecutorRef.current?.onRunError(run?.run_id);
       console.error("Stream error:", error);
       const errorObject = normalizeStreamError(error);
@@ -452,7 +456,10 @@ export function useChat({
             // Clear todos optimistically when user sends a new message
             todos: [],
           }),
-          config: { ...(activeAssistant?.config ?? {}), recursion_limit: 100 },
+          config: mergeHitlConfig({
+            ...(activeAssistant?.config ?? {}),
+            recursion_limit: 100,
+          }),
         },
         { onAccepted: options?.onAccepted }
       );
@@ -481,7 +488,7 @@ export function useChat({
           ...(optimisticMessages
             ? { optimisticValues: { messages: optimisticMessages } }
             : {}),
-          config: activeAssistant?.config,
+          config: mergeHitlConfig(activeAssistant?.config),
           checkpoint: checkpoint,
           ...(isRerunningSubagent
             ? { interruptAfter: ["tools"] }
@@ -490,7 +497,10 @@ export function useChat({
       } else {
         runExecutor.submit(
           { messages },
-          { config: activeAssistant?.config, interruptBefore: ["tools"] }
+          {
+            config: mergeHitlConfig(activeAssistant?.config),
+            interruptBefore: ["tools"],
+          }
         );
       }
     },
@@ -533,8 +543,10 @@ export function useChat({
           todos: [],
         }),
         config: {
-          ...(activeAssistant?.config || {}),
-          recursion_limit: 100,
+          ...mergeHitlConfig({
+            ...(activeAssistant?.config || {}),
+            recursion_limit: 100,
+          }),
         },
         ...(hasTaskToolCall
           ? { interruptAfter: ["tools"] }
@@ -555,14 +567,25 @@ export function useChat({
   }, [runExecutor, onHistoryRevalidateAction]);
 
   const resumeInterrupt = useCallback(
-    (value: any) => {
+    (input: ResumeInterruptInput) => {
+      if (!threadId || input.threadId !== threadId) {
+        throw new Error("Cannot resume stale interrupt for another thread.");
+      }
+      const resumeKey = `${input.threadId}:${JSON.stringify(input.value)}`;
+      if (pendingResumeKeyRef.current === resumeKey) {
+        throw new Error("Cannot submit duplicate interrupt resume.");
+      }
       setStreamError(null);
       runGenerationRef.current += 1;
-      runExecutor.submit(null, { command: { resume: value } });
+      pendingResumeKeyRef.current = resumeKey;
+      runExecutor.submit(null, {
+        command: { resume: input.value },
+        config: mergeHitlConfig(activeAssistant?.config),
+      });
       // Update thread list when resuming from interrupt
       onHistoryRevalidateAction?.();
     },
-    [runExecutor, onHistoryRevalidateAction]
+    [threadId, runExecutor, activeAssistant?.config, onHistoryRevalidateAction]
   );
 
   const clearStreamError = useCallback(() => {

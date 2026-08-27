@@ -12,36 +12,20 @@ import {
   Brain,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ToolCall, ActionRequest, ReviewConfig } from "@/app/types/types";
+import { ToolCall } from "@/app/types/types";
 import { cn } from "@/lib/utils";
 import { LoadExternalComponent } from "@langchain/langgraph-sdk/react-ui";
-import { ToolApprovalInterrupt } from "@/app/components/ToolApprovalInterrupt";
 
 interface ToolCallBoxProps {
   toolCall: ToolCall;
   uiComponent?: any;
   stream?: any;
   graphId?: string;
-  actionRequest?: ActionRequest;
-  reviewConfig?: ReviewConfig;
-  onResume?: (value: any) => void;
-  isLoading?: boolean;
 }
 
 export const ToolCallBox = React.memo<ToolCallBoxProps>(
-  ({
-    toolCall,
-    uiComponent,
-    stream,
-    graphId,
-    actionRequest,
-    reviewConfig,
-    onResume,
-    isLoading,
-  }) => {
-    const [isExpanded, setIsExpanded] = useState(
-      () => !!uiComponent || !!actionRequest
-    );
+  ({ toolCall, uiComponent, stream, graphId }) => {
+    const [isExpanded, setIsExpanded] = useState(() => !!uiComponent);
     const [expandedArgs, setExpandedArgs] = useState<Record<string, boolean>>(
       {}
     );
@@ -116,14 +100,14 @@ export const ToolCallBox = React.memo<ToolCallBoxProps>(
         typeof thoughtContent === "string"
           ? thoughtContent
           : thoughtContent
-            ? JSON.stringify(thoughtContent, null, 2)
-            : null;
+          ? JSON.stringify(thoughtContent, null, 2)
+          : null;
 
       if (!displayText) return null;
 
       return (
         <details className="group my-1">
-          <summary className="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground marker:content-none select-none">
+          <summary className="flex cursor-pointer select-none items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors marker:content-none hover:text-foreground">
             <Brain className="h-3 w-3 flex-shrink-0" />
             <span>Reasoning</span>
             <ChevronDown className="ml-auto h-3 w-3 flex-shrink-0 transition-transform group-open:rotate-180" />
@@ -185,16 +169,6 @@ export const ToolCallBox = React.memo<ToolCallBoxProps>(
                   message={uiComponent}
                   namespace={graphId}
                   meta={{ status, args, result: result ?? "No Result Yet" }}
-                />
-              </div>
-            ) : actionRequest && onResume ? (
-              // Show tool approval UI when there's an action request but no GenUI
-              <div className="mt-4">
-                <ToolApprovalInterrupt
-                  actionRequest={actionRequest}
-                  reviewConfig={reviewConfig}
-                  onResume={onResume}
-                  isLoading={isLoading}
                 />
               </div>
             ) : (

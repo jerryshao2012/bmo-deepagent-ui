@@ -34,10 +34,11 @@ import { getConfig } from "@/lib/config";
 import { getBrowserSessionToken } from "@/lib/langgraph-client";
 import { authenticatedFetch } from "@/platform/http/authenticated-fetch";
 import { ChatMessage } from "@/app/components/ChatMessage";
-import type { TodoItem, ActionRequest, ReviewConfig } from "@/app/types/types";
+import type { TodoItem } from "@/app/types/types";
 import { Assistant } from "@langchain/langgraph-sdk";
 import { useChatContext } from "@/providers/ChatContext";
 import { cn } from "@/lib/utils";
+import { HitlInterruptPanel, parseInterrupt } from "@/features/hitl";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { FilesPopover } from "@/app/components/TasksFilesSidebar";
 import { WikiTreeViewer } from "@/app/components/WikiTreeViewer";
@@ -865,7 +866,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     isResolvingSelectedThreadStatus ||
     !assistant ||
     isUploading ||
-    isIngesting;
+    isIngesting ||
+    interrupt !== undefined;
   const showRunningMode =
     isLoading ||
     isSelectedThreadBusy ||
@@ -1153,23 +1155,10 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
 
   const hasTasks = displayTodos.length > 0;
   const hasFiles = Object.keys(files).length > 0;
-
-  // Parse out any action requests or review configs from the interrupt
-  const actionRequestsMap: Map<string, ActionRequest> | null = useMemo(() => {
-    const actionRequests =
-      interrupt?.value && (interrupt.value as any)["action_requests"];
-    if (!actionRequests) return new Map<string, ActionRequest>();
-    return new Map(actionRequests.map((ar: ActionRequest) => [ar.name, ar]));
-  }, [interrupt]);
-
-  const reviewConfigsMap: Map<string, ReviewConfig> | null = useMemo(() => {
-    const reviewConfigs =
-      interrupt?.value && (interrupt.value as any)["review_configs"];
-    if (!reviewConfigs) return new Map<string, ReviewConfig>();
-    return new Map(
-      reviewConfigs.map((rc: ReviewConfig) => [rc.actionName, rc])
-    );
-  }, [interrupt]);
+  const parsedInterrupt = useMemo(
+    () => (interrupt ? parseInterrupt(interrupt) : null),
+    [interrupt]
+  );
 
   return (
     <div
@@ -1271,8 +1260,6 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                     const messageUi = ui?.filter(
                       (u: any) => u.metadata?.message_id === data.message.id
                     );
-                    const isLastMessage =
-                      index === processedMessages.length - 1;
                     return (
                       <ChatMessage
                         key={data.message.id}
@@ -1288,21 +1275,23 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                           data.message.id === processingHumanMessageId
                         }
                         toolCalls={data.toolCalls}
-                        isLoading={isLoading}
-                        actionRequestsMap={
-                          isLastMessage ? actionRequestsMap : undefined
-                        }
-                        reviewConfigsMap={
-                          isLastMessage ? reviewConfigsMap : undefined
-                        }
                         ui={messageUi}
                         stream={stream}
-                        onResumeInterrupt={resumeInterrupt}
                         graphId={assistant?.graph_id}
                         onDocumentClick={handleDocumentClick}
                       />
                     );
                   })}
+                  {parsedInterrupt && (
+                    <div className="mt-6">
+                      <HitlInterruptPanel
+                        parsedInterrupt={parsedInterrupt}
+                        currentThreadId={currentThreadId}
+                        isLoading={isLoading}
+                        onResume={resumeInterrupt}
+                      />
+                    </div>
+                  )}
                 </>
               )}
             </div>

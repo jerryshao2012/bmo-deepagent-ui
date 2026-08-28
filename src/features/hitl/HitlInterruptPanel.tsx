@@ -21,7 +21,7 @@ import {
   type ParsedInterrupt,
   type RequirementClarificationInterruptV1,
   type ResumeInterruptInput,
-} from "./index";
+} from "./types";
 
 interface HitlInterruptPanelProps {
   parsedInterrupt: ParsedInterrupt;

@@ -1281,6 +1281,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                         stream={stream}
                         graphId={assistant?.graph_id}
                         onDocumentClick={handleDocumentClick}
+                        onFileClick={handleFileClick}
+                        files={files}
                       />
                     );
                   })}
@@ -2001,6 +2003,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                   onClose={() => setSelectedFile(null)}
                   editDisabled={isLoading || interrupt !== undefined}
                   onDocumentClick={handleDocumentClick}
+                  onFileClick={handleFileClick}
+                  files={files}
                 />
               ) : null}
             </ResizablePanel>

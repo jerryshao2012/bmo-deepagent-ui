@@ -5,7 +5,7 @@ import { Copy, Check } from "lucide-react";
 import { SubAgentIndicator } from "@/app/components/SubAgentIndicator";
 import { ToolCallBox } from "@/app/components/ToolCallBox";
 import { MarkdownContent } from "@/app/components/MarkdownContent";
-import type { SubAgent, ToolCall } from "@/app/types/types";
+import type { SubAgent, ToolCall, FileItem } from "@/app/types/types";
 import { Message } from "@langchain/langgraph-sdk";
 import {
   extractSubAgentContent,
@@ -28,6 +28,8 @@ interface ChatMessageProps {
     slide?: number,
     quote?: string
   ) => void;
+  onFileClick?: (file: FileItem) => void;
+  files?: Record<string, unknown>;
 }
 
 export function ChatMessage({
@@ -39,6 +41,8 @@ export function ChatMessage({
   stream,
   graphId,
   onDocumentClick,
+  onFileClick,
+  files,
 }: ChatMessageProps) {
   const isUser = message.type === "human";
   const messageContent = extractStringFromMessageContent(message);
@@ -129,6 +133,8 @@ export function ChatMessage({
                 <MarkdownContent
                   content={messageContent}
                   onDocumentClick={onDocumentClick}
+                  onFileClick={onFileClick}
+                  files={files}
                 />
               ) : null}
             </div>
@@ -217,6 +223,8 @@ export function ChatMessage({
                         <MarkdownContent
                           content={extractSubAgentContent(subAgent.input)}
                           onDocumentClick={onDocumentClick}
+                          onFileClick={onFileClick}
+                          files={files}
                         />
                       </div>
                       {subAgent.output && (
@@ -227,6 +235,8 @@ export function ChatMessage({
                           <MarkdownContent
                             content={extractSubAgentContent(subAgent.output)}
                             onDocumentClick={onDocumentClick}
+                            onFileClick={onFileClick}
+                            files={files}
                           />
                         </>
                       )}

@@ -64,137 +64,155 @@ export const FileViewPanel = React.memo<{
   onClose: () => void;
   editDisabled: boolean;
   onDocumentClick?: (filePath: string, page?: number, slide?: number) => void;
-}>(({ file, onSaveFile, onClose, editDisabled, onDocumentClick }) => {
-  const [isEditingMode, setIsEditingMode] = useState(file === null);
-  // Keep original filename (with /) for server submission
-  const [originalFileName, setOriginalFileName] = useState(String(file?.path || ""));
-  // Display filename (stripped) for UI editing
-  const [displayFileName, setDisplayFileName] = useState(
-    String(file?.path || "").replace(/^[/\\]+/, "")
-  );
-  const [fileContent, setFileContent] = useState(String(file?.content || ""));
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  onFileClick?: (file: FileItem) => void;
+  files?: Record<string, unknown>;
+}>(
+  ({
+    file,
+    onSaveFile,
+    onClose,
+    editDisabled,
+    onDocumentClick,
+    onFileClick,
+    files,
+  }) => {
+    const [isEditingMode, setIsEditingMode] = useState(file === null);
+    // Keep original filename (with /) for server submission
+    const [originalFileName, setOriginalFileName] = useState(
+      String(file?.path || "")
+    );
+    // Display filename (stripped) for UI editing
+    const [displayFileName, setDisplayFileName] = useState(
+      String(file?.path || "").replace(/^[/\\]+/, "")
+    );
+    const [fileContent, setFileContent] = useState(String(file?.content || ""));
+    const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const fileUpdate = useSWRMutation(
-    { kind: "files-update", fileName: originalFileName, fileContent },
-    async ({ fileName, fileContent }) => {
-      if (!fileName || !fileContent) return;
-      // Submit original filename to server
-      return await onSaveFile(fileName, fileContent);
-    },
-    {
-      onSuccess: () => setIsEditingMode(false),
-      onError: (error) => toast.error(`Failed to save file: ${error}`),
-    }
-  );
+    const fileUpdate = useSWRMutation(
+      { kind: "files-update", fileName: originalFileName, fileContent },
+      async ({ fileName, fileContent }) => {
+        if (!fileName || !fileContent) return;
+        // Submit original filename to server
+        return await onSaveFile(fileName, fileContent);
+      },
+      {
+        onSuccess: () => setIsEditingMode(false),
+        onError: (error) => toast.error(`Failed to save file: ${error}`),
+      }
+    );
 
-  useEffect(() => {
-    const original = String(file?.path || "");
-    const display = original.replace(/^[/\\]+/, "");
-    setOriginalFileName(original);
-    setDisplayFileName(display);
-    setFileContent(String(file?.content || ""));
-    setIsEditingMode(file === null);
-    setIsFullscreen(false);
-  }, [file]);
-
-  // Lock scroll on background body when the dialog is mounted
-  useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, []);
-
-  const fileExtension = useMemo(() => {
-    const fileNameStr = displayFileName || "";
-    return fileNameStr.split(".").pop()?.toLowerCase() || "";
-  }, [displayFileName]);
-
-  const isMarkdown = useMemo(() => {
-    return fileExtension === "md" || fileExtension === "markdown";
-  }, [fileExtension]);
-
-  const language = useMemo(() => {
-    return LANGUAGE_MAP[fileExtension] || "text";
-  }, [fileExtension]);
-
-  const handleCopy = useCallback(() => {
-    if (fileContent) {
-      navigator.clipboard.writeText(fileContent);
-    }
-  }, [fileContent]);
-
-  const handleDownload = useCallback(() => {
-    if (fileContent && displayFileName) {
-      const blob = new Blob([fileContent], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = displayFileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }
-  }, [fileContent, displayFileName]);
-
-  const handleEdit = useCallback(() => {
-    setIsEditingMode(true);
-  }, []);
-
-  const handleCancel = useCallback(() => {
-    if (file === null) {
-      onClose();
-    } else {
-      const original = String(file.path || "");
+    useEffect(() => {
+      const original = String(file?.path || "");
       const display = original.replace(/^[/\\]+/, "");
       setOriginalFileName(original);
       setDisplayFileName(display);
-      setFileContent(String(file.content || ""));
-      setIsEditingMode(false);
-    }
-  }, [file, onClose]);
+      setFileContent(String(file?.content || ""));
+      setIsEditingMode(file === null);
+      setIsFullscreen(false);
+    }, [file]);
 
-  // Validate display filename (no spaces, not empty)
-  const fileNameIsValid = useMemo(() => {
-    return displayFileName.trim() !== "" && !displayFileName.includes(" ");
-  }, [displayFileName]);
+    // Lock scroll on background body when the dialog is mounted
+    useEffect(() => {
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = "";
+      };
+    }, []);
 
-  // Check if content changed from original
-  const hasContentChanged = useMemo(() => {
-    if (file === null) return fileContent.trim() !== "";
-    const originalContent = String(file.content || "");
-    return fileContent !== originalContent;
-  }, [file, fileContent]);
+    const fileExtension = useMemo(() => {
+      const fileNameStr = displayFileName || "";
+      return fileNameStr.split(".").pop()?.toLowerCase() || "";
+    }, [displayFileName]);
 
-  // Determine validation error message
-  const validationError = useMemo(() => {
-    if (!displayFileName.trim()) return "Filename is required";
-    if (!fileContent.trim()) return "Content is required";
-    if (displayFileName.includes(" ")) return "Filename cannot contain spaces";
-    if (!hasContentChanged) return "No changes detected";
-    return null;
-  }, [displayFileName, fileContent, hasContentChanged]);
+    const isMarkdown = useMemo(() => {
+      return fileExtension === "md" || fileExtension === "markdown";
+    }, [fileExtension]);
 
-  return (
-    <div
-      className={cn(
-        "flex flex-col h-full w-full bg-background/95 backdrop-blur-md overflow-hidden",
-        isFullscreen ? "fixed inset-0 z-50 p-6" : "p-4"
-      )}
-    >
+    const language = useMemo(() => {
+      return LANGUAGE_MAP[fileExtension] || "text";
+    }, [fileExtension]);
 
-        <Toolbar variant="transparent" className="mb-4 pb-4 border-b border-border">
+    const handleCopy = useCallback(() => {
+      if (fileContent) {
+        navigator.clipboard.writeText(fileContent);
+      }
+    }, [fileContent]);
+
+    const handleDownload = useCallback(() => {
+      if (fileContent && displayFileName) {
+        const blob = new Blob([fileContent], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = displayFileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    }, [fileContent, displayFileName]);
+
+    const handleEdit = useCallback(() => {
+      setIsEditingMode(true);
+    }, []);
+
+    const handleCancel = useCallback(() => {
+      if (file === null) {
+        onClose();
+      } else {
+        const original = String(file.path || "");
+        const display = original.replace(/^[/\\]+/, "");
+        setOriginalFileName(original);
+        setDisplayFileName(display);
+        setFileContent(String(file.content || ""));
+        setIsEditingMode(false);
+      }
+    }, [file, onClose]);
+
+    // Validate display filename (no spaces, not empty)
+    const fileNameIsValid = useMemo(() => {
+      return displayFileName.trim() !== "" && !displayFileName.includes(" ");
+    }, [displayFileName]);
+
+    // Check if content changed from original
+    const hasContentChanged = useMemo(() => {
+      if (file === null) return fileContent.trim() !== "";
+      const originalContent = String(file.content || "");
+      return fileContent !== originalContent;
+    }, [file, fileContent]);
+
+    // Determine validation error message
+    const validationError = useMemo(() => {
+      if (!displayFileName.trim()) return "Filename is required";
+      if (!fileContent.trim()) return "Content is required";
+      if (displayFileName.includes(" "))
+        return "Filename cannot contain spaces";
+      if (!hasContentChanged) return "No changes detected";
+      return null;
+    }, [displayFileName, fileContent, hasContentChanged]);
+
+    return (
+      <div
+        className={cn(
+          "flex h-full w-full flex-col overflow-hidden bg-background/95 backdrop-blur-md",
+          isFullscreen ? "fixed inset-0 z-50 p-6" : "p-4"
+        )}
+      >
+        <Toolbar
+          variant="transparent"
+          className="mb-4 border-b border-border pb-4"
+        >
           <ToolbarGroup>
             <WindowControlDots
               onClose={onClose}
-              onMinimize={() => toast.info("Minimize is not supported in browser dialog")}
+              onMinimize={() =>
+                toast.info("Minimize is not supported in browser dialog")
+              }
               onMaximize={() => setIsFullscreen((prev) => !prev)}
             />
             <ToolbarSeparator />
 
-            <FileText className="text-primary/50 h-5 w-5 shrink-0 ml-1" />
+            <FileText className="text-primary/50 ml-1 h-5 w-5 shrink-0" />
             {isEditingMode && file === null ? (
               <Input
                 value={displayFileName}
@@ -203,7 +221,7 @@ export const FileViewPanel = React.memo<{
                   setOriginalFileName(e.target.value);
                 }}
                 placeholder="Enter filename..."
-                className="text-base font-medium h-8"
+                className="h-8 text-base font-medium"
                 aria-invalid={!fileNameIsValid}
               />
             ) : (
@@ -243,35 +261,56 @@ export const FileViewPanel = React.memo<{
         </Toolbar>
         <div className="min-h-0 flex-1 overflow-hidden">
           {isEditingMode ? (
-            <Tabs defaultValue="edit" className="flex flex-col h-full w-full gap-4">
-              <TabsList className="grid w-full max-w-[400px] grid-cols-2 shrink-0">
+            <Tabs
+              defaultValue="edit"
+              className="flex h-full w-full flex-col gap-4"
+            >
+              <TabsList className="grid w-full max-w-[400px] shrink-0 grid-cols-2">
                 <TabsTrigger value="edit">Markdown</TabsTrigger>
                 <TabsTrigger value="preview">Review Markdown</TabsTrigger>
               </TabsList>
-              <TabsContent value="edit" className="flex-1 flex flex-col min-h-0 data-[state=inactive]:hidden">
+              <TabsContent
+                value="edit"
+                className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+              >
                 <Textarea
                   value={fileContent}
                   onChange={(e) => setFileContent(e.target.value)}
                   placeholder="Enter file content..."
-                  className="flex-1 w-full resize-none font-mono text-sm"
+                  className="w-full flex-1 resize-none font-mono text-sm"
                 />
               </TabsContent>
-              <TabsContent value="preview" className="flex-1 flex flex-col min-h-0 data-[state=inactive]:hidden">
-                <ScrollArea className="bg-surface h-full w-full rounded-md border border-border">
+              <TabsContent
+                value="preview"
+                className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+              >
+                <ScrollArea className="h-full w-full rounded-md border border-border bg-surface">
                   <div className="p-6">
-                    <MarkdownContent content={fileContent} onDocumentClick={onDocumentClick} />
+                    <MarkdownContent
+                      content={fileContent}
+                      onDocumentClick={onDocumentClick}
+                      onFileClick={onFileClick}
+                      files={files}
+                      currentFilePath={originalFileName}
+                    />
                   </div>
                   <ScrollBar orientation="horizontal" />
                 </ScrollArea>
               </TabsContent>
             </Tabs>
           ) : (
-            <ScrollArea className="bg-surface h-full w-full rounded-md">
+            <ScrollArea className="h-full w-full rounded-md bg-surface">
               <div className="p-4">
                 {fileContent ? (
                   isMarkdown ? (
                     <div className="rounded-md p-6">
-                      <MarkdownContent content={fileContent} onDocumentClick={onDocumentClick} />
+                      <MarkdownContent
+                        content={fileContent}
+                        onDocumentClick={onDocumentClick}
+                        onFileClick={onFileClick}
+                        files={files}
+                        currentFilePath={originalFileName}
+                      />
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
@@ -351,8 +390,9 @@ export const FileViewPanel = React.memo<{
             </div>
           </div>
         )}
-    </div>
-  );
-});
+      </div>
+    );
+  }
+);
 
 FileViewPanel.displayName = "FileViewPanel";

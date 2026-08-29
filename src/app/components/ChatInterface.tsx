@@ -873,6 +873,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     isSelectedThreadBusy ||
     isResolvingSelectedThreadStatus ||
     isIngesting;
+  const isInputRunning =
+    (showRunningMode || Boolean(processingHumanMessageId)) && !interrupt;
 
   // ── Drag-and-drop handlers ──────────────────────────────────────────────
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -1301,7 +1303,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
             <div
               className={cn(
                 "mx-4 mb-6 flex flex-shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-background",
-                "mx-auto w-[calc(100%-32px)] max-w-[1024px] transition-colors duration-200 ease-in-out"
+                "mx-auto w-[calc(100%-32px)] max-w-[1024px] transition-colors duration-200 ease-in-out",
+                isInputRunning && "user-input-processing-bubble"
               )}
             >
               {(hasTasks || hasFiles || documents.length > 0) && (

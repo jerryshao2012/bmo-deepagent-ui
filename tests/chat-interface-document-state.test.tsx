@@ -1711,3 +1711,49 @@ test("document refresh, upload, and delete never write LangGraph thread state", 
     restoreFetch();
   }
 });
+
+test("user input box applies animated rectangle during running state and removes it when idle", async () => {
+  configure();
+  const writes: StateWrite[] = [];
+  const restoreFetch = installFetch({
+    onList: async () => documentsResponse([]),
+  });
+
+  try {
+    renderChat({
+      client: makeClient(writes),
+      chat: baseChat(() => {}),
+      canToggleLoading: true,
+    });
+
+    const textarea = await screen.findByPlaceholderText("Write your message...");
+    const composerBox = textarea.closest("form")?.parentElement;
+    assert.ok(composerBox, "Composer box should exist");
+    assert.equal(
+      composerBox.classList.contains("user-input-processing-bubble"),
+      false,
+      "Should not have animated rectangle when idle"
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle loading" }));
+    await waitFor(() =>
+      assert.equal(
+        composerBox.classList.contains("user-input-processing-bubble"),
+        true,
+        "Should have animated rectangle when running"
+      )
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle loading" }));
+    await waitFor(() =>
+      assert.equal(
+        composerBox.classList.contains("user-input-processing-bubble"),
+        false,
+        "Should remove animated rectangle when no longer running"
+      )
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+

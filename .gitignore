@@ -27,6 +27,7 @@ graphify-out/
 .resolved-azure-endpoints.json
 .deepeval/
 .superpowers/
+.impeccable
 
 # Temporary files
 *.tmp

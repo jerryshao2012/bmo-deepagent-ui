@@ -17,7 +17,7 @@ graphify-out/
 node_modules/
 output/
 tests/
-.env.docker.example
+.env*
 .mcp.json
 *.tsbuildinfo
 AGENTS.md

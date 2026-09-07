@@ -75,7 +75,11 @@ IMAGE_TAG="$ECR_URL/$ECR_REPO_NAME:latest"
 ensure_container_cli_ready
 
 echo "🔨 Building container image ($IMAGE_TAG)..."
-container_cli_build --progress plain --platform linux/amd64 -f Dockerfile-aws -t "$IMAGE_TAG" .
+container_cli_build --progress plain --platform linux/amd64 -f Dockerfile-aws \
+  --build-arg "NEXT_PUBLIC_LANGGRAPH_URL=$NEXT_PUBLIC_LANGGRAPH_URL" \
+  --build-arg "NEXT_PUBLIC_ASSISTANT_ID=${NEXT_PUBLIC_ASSISTANT_ID:-research}" \
+  --build-arg "NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED=${NEXT_PUBLIC_MARKDOWN_EXTENDED_ATTACHMENTS_ENABLED:-true}" \
+  -t "$IMAGE_TAG" .
 
 echo "🔑 Logging in to AWS ECR..."
 aws ecr get-login-password --region "$AWS_REGION" | container_cli_login --username AWS --password-stdin "$ECR_URL"

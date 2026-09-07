@@ -881,3 +881,132 @@ test("limits title hydration concurrency while preserving thread order", async (
     threads.map((thread) => `Title ${thread.thread_id}`)
   );
 });
+
+for (const recentCount of [0, 75, 125]) {
+  test(`cleanup deletes all expired pages while retaining ${recentCount} recent threads`, async () => {
+    let rows = Array.from({ length: recentCount + 250 }, (_, index) =>
+      thread({
+        thread_id: `cleanup-${index}`,
+        updated_at:
+          index < recentCount
+            ? new Date().toISOString()
+            : "2000-01-01T00:00:00Z",
+      })
+    );
+    const fake = fakeClient([]);
+    fake.client.threads.search = async (query) =>
+      rows.slice(
+        query?.offset ?? 0,
+        (query?.offset ?? 0) + (query?.limit ?? 100)
+      );
+    const repo = repository(fake.client);
+    repo.delete = async (id) => {
+      rows = rows.filter((row) => row.thread_id !== id);
+    };
+    await repo.cleanupOlderThan(30);
+    assert.equal(rows.length, recentCount);
+    assert.ok(
+      rows.every((row) => new Date(row.updated_at).getFullYear() > 2000)
+    );
+  });
+}
+
+test("cleanup advances past failed deletions without skipping later expired rows", async (t) => {
+  let rows = Array.from({ length: 250 }, (_, index) =>
+    thread({
+      thread_id: `cleanup-${index}`,
+      updated_at: "2000-01-01T00:00:00Z",
+    })
+  );
+  const attempts: string[] = [];
+  const fake = fakeClient([]);
+  fake.client.threads.search = async (query) =>
+    rows.slice(
+      query?.offset ?? 0,
+      (query?.offset ?? 0) + (query?.limit ?? 100)
+    );
+  const repo = repository(fake.client);
+  t.mock.method(console, "error", () => {});
+  repo.delete = async (id) => {
+    attempts.push(id);
+    if (id === "cleanup-0") throw new Error("deletion unavailable");
+    rows = rows.filter((row) => row.thread_id !== id);
+  };
+  await repo.cleanupOlderThan(30);
+  assert.deepEqual(
+    rows.map((row) => row.thread_id),
+    ["cleanup-0"]
+  );
+  assert.equal(attempts.length, 250);
+});
+
+test("cleanup advances past a full page of failed deletions", async (t) => {
+  let rows = Array.from({ length: 150 }, (_, index) =>
+    thread({ thread_id: `failed-${index}`, updated_at: "2000-01-01T00:00:00Z" })
+  );
+  const fake = fakeClient([]);
+  const offsets: number[] = [];
+  fake.client.threads.search = async (query) => {
+    const offset = query?.offset ?? 0;
+    offsets.push(offset);
+    assert.ok(offsets.length <= 2, "must not retry a failed page indefinitely");
+    return rows.slice(offset, offset + (query?.limit ?? 100));
+  };
+  const repo = repository(fake.client);
+  t.mock.method(console, "error", () => {});
+  repo.delete = async (id) => {
+    if (Number(id.split("-")[1]) < 100) throw new Error("unavailable");
+    rows = rows.filter((row) => row.thread_id !== id);
+  };
+  await repo.cleanupOlderThan(30);
+  assert.equal(rows.length, 100);
+  assert.deepEqual(offsets, [0, 100]);
+});
+
+test("cleanupOlderThan deletes all expired threads without skipping due to offset advancement", async () => {
+  const expiredDate = new Date(
+    Date.now() - 40 * 24 * 60 * 60 * 1000
+  ).toISOString();
+  let threadsList = Array.from({ length: 250 }, (_, i) =>
+    thread({
+      thread_id: `expired-thread-${i}`,
+      updated_at: expiredDate,
+    })
+  );
+
+  const deletedIds: string[] = [];
+  const searchOffsets: number[] = [];
+
+  const client: FakeClient = {
+    threads: {
+      search: async (query) => {
+        const offset = query?.offset ?? 0;
+        const limit = query?.limit ?? 100;
+        searchOffsets.push(offset);
+        return threadsList.slice(offset, offset + limit);
+      },
+      getState: async () => ({}),
+      get: async (id) => thread({ thread_id: id }),
+      delete: async (threadId) => {
+        deletedIds.push(threadId);
+        threadsList = threadsList.filter((t) => t.thread_id !== threadId);
+      },
+      update: async (id) => thread({ thread_id: id }),
+    },
+  };
+
+  const repo = repository(client, "http://cleanup.test");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(null, { status: 200 })) as typeof fetch;
+  try {
+    await repo.cleanupOlderThan(30);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(deletedIds.length, 250);
+  assert.equal(threadsList.length, 0);
+  // When all fetched threads are deleted, offset stays at 0
+  assert.deepEqual(searchOffsets, [0, 0, 0]);
+});

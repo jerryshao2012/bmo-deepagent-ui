@@ -876,3 +876,57 @@ test("validates PDF documents and generates type-neutral attachment markdown", (
     '[quarterly-report.pdf](/__markdown-attachment/1b14e924-5f0e-4fdb-b85d-4dddf8bc4271 "size=1048576")'
   );
 });
+
+test("createMermaidImageStore rejects non-string and oversized payloads, evicts via LRU, and safely decodes PNG", async () => {
+  const { createMermaidImageStore } = await import("../runtime/images.cjs");
+
+  const store = createMermaidImageStore({ capacity: 2, maxBytes: 200 });
+
+  // 1. Rejects non-string payload
+  assert.throws(() => store.put(12345 as any), /must be a string/);
+  assert.throws(
+    () => store.put({ image: "base64" } as any),
+    /must be a string/
+  );
+  assert.throws(() => store.put(null as any), /must be a string/);
+  assert.throws(() => store.put(undefined as any), /must be a string/);
+
+  // 2. Rejects oversized payload
+  const oversized = "a".repeat(201);
+  assert.throws(() => store.put(oversized), /exceeds limit/);
+
+  // 3. Stores valid payload
+  const pngBase64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==";
+  const validDataUrl = `data:image/png;base64,${pngBase64}`;
+  const id1 = store.put(validDataUrl);
+  assert.equal(typeof id1, "string");
+  assert.ok(id1.startsWith("img_"));
+
+  // 4. Safely decodes PNG
+  const buf1 = store.png(id1);
+  assert.ok(Buffer.isBuffer(buf1));
+  assert.deepEqual(buf1, Buffer.from(pngBase64, "base64"));
+
+  // 5. Safely handles malformed / non-existent id retrieval without throwing
+  assert.equal(store.png("non-existent"), null);
+  assert.equal(store.png(123 as any), null);
+  assert.equal(store.png(null as any), null);
+
+  // 6. Evicts via LRU when capacity is exceeded
+  const validDataUrl2 = validDataUrl;
+  const id2 = store.put(validDataUrl2);
+  assert.equal(store.size, 2);
+
+  // Access id1 to make id2 least recently used
+  assert.ok(store.png(id1));
+
+  // Add 3rd item -> should evict id2
+  const validDataUrl3 = validDataUrl;
+  const id3 = store.put(validDataUrl3);
+  assert.equal(store.size, 2);
+
+  assert.equal(store.png(id2), null); // Evicted!
+  assert.ok(store.png(id1)); // Retained!
+  assert.ok(store.png(id3)); // Retained!
+});

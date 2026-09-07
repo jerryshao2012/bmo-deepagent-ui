@@ -814,10 +814,18 @@ test("App Service deployment skips unchanged settings to preserve F1 stop quota"
   );
 });
 
-test("all-in-one deployment runs the App Service deploy flow", async () => {
+test("all-in-one deployment builds before the Container Apps deploy flow", async () => {
   const allScript = await source("all.sh");
 
   assert.match(allScript, /^#!\/bin\/bash\nset -e\n/);
-  assert.match(allScript, /\.\/deploy\.sh\n$/);
-  assert.doesNotMatch(allScript, /\.\/build\.sh/);
+  assert.match(allScript, /\.\/build\.sh && \.\/deploy-azure-container-app\.sh\n$/);
+});
+
+test("AWS image receives public build configuration without copying env files", async () => {
+  const [dockerfile, buildScript] = await Promise.all([source("Dockerfile-aws"), source("build-aws.sh")]);
+  assert.doesNotMatch(dockerfile, /^COPY .*\.env/m);
+  assert.match(dockerfile, /ARG NEXT_PUBLIC_LANGGRAPH_URL/);
+  assert.match(dockerfile, /ENV NEXT_PUBLIC_LANGGRAPH_URL=\$NEXT_PUBLIC_LANGGRAPH_URL/);
+  assert.match(dockerfile, /COPY --from=builder \/app\/runtime \.\/runtime/);
+  assert.match(buildScript, /--build-arg "NEXT_PUBLIC_LANGGRAPH_URL=\$NEXT_PUBLIC_LANGGRAPH_URL"/);
 });

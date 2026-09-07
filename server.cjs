@@ -12,7 +12,7 @@ const {
   resolveServerMarkdown,
 } = require("./runtime/state.cjs");
 const { createMarkdownPersistence } = require("./runtime/persistence.cjs");
-const { createMermaidImageStore } = require("./runtime/images.cjs");
+const { createMermaidImageStore, handleMermaidImageRequest } = require("./runtime/images.cjs");
 
 const { dev, port } = runtimeConfig();
 const hostname = process.env.HOST || "0.0.0.0";
@@ -40,74 +40,10 @@ function readMarkdownOperationMetadata(metadata) {
 
 app.prepare().then(() => {
   // Temporary in-memory store for exported Mermaid PNG images
-  const mermaidImages = new Map();
+  const mermaidImages = createMermaidImageStore();
 
   const server = createServer((req, res) => {
-    const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
-    const pathname = parsedUrl.pathname;
-
-    // Route to store base64 Mermaid image
-    if (pathname === "/api/store-mermaid-image" && req.method === "POST") {
-      let body = "";
-      req.on("data", (chunk) => {
-        body += chunk;
-      });
-      req.on("end", () => {
-        try {
-          const data = JSON.parse(body);
-          if (!data || !data.image) {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ success: false, error: "Missing image payload" }));
-            return;
-          }
-          const imageId = `img_${Math.random().toString(36).substring(2, 11)}`;
-          mermaidImages.set(imageId, data.image);
-          console.log(`[Image Store] Cached exported diagram as: ${imageId}`);
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ success: true, id: imageId }));
-        } catch (e) {
-          console.error("[Image Store] Error storing diagram image:", e);
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ success: false, error: e.message }));
-        }
-      });
-      return;
-    }
-
-    // Route to serve binary PNG to Word/Outlook
-    if (
-      pathname &&
-      pathname.startsWith("/api/mermaid-image/") &&
-      req.method === "GET"
-    ) {
-      const match = pathname.match(
-        /^\/api\/mermaid-image\/([a-zA-Z0-9_]+)\.png$/
-      );
-      if (match) {
-        const imageId = match[1];
-        const imageData = mermaidImages.get(imageId);
-        if (imageData) {
-          console.log(`[Image Serve] Serving binary PNG for: ${imageId}`);
-          const base64Content = imageData.split(";base64,").pop();
-          if (base64Content) {
-            const buffer = Buffer.from(base64Content, "base64");
-            res.writeHead(200, {
-              "Content-Type": "image/png",
-              "Content-Length": buffer.length,
-              "Cache-Control": "public, max-age=3600",
-            });
-            res.end(buffer);
-            return;
-          }
-        }
-      }
-      console.warn(
-        `[Image Serve] Diagram image not found or invalid: ${pathname}`
-      );
-      res.writeHead(404, { "Content-Type": "text/plain" });
-      res.end("Not Found");
-      return;
-    }
+    if (handleMermaidImageRequest(req, res, mermaidImages)) return;
 
     handle(req, res);
   });

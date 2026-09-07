@@ -988,8 +988,9 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
                 );
               }
 
-              // State file links and document links are intercepted by the container's
+              // Document links and state file links are intercepted by the container's
               // onClickCapture handler — no special handling needed here.
+              // Document links
               let isStateFile = false;
               if (files && href) {
                 const raw = href.split(/[?#]/)[0].trim();

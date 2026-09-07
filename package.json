@@ -17,13 +17,19 @@
     "test:thread-retention": "node --test tests/thread-retention.test.mjs",
     "test:markdown-images": "node --import tsx --test --test-isolation=none tests/markdown-attachment-types.test.ts tests/markdown-images.test.ts tests/synced-markdown-attachment.test.tsx",
     "test:state-file-links": "node --import tsx --test tests/markdown-state-file-links.test.tsx",
+    "test:hitl": "node --import tsx --test --test-isolation=none tests/hitl-components.test.tsx tests/hitl-runtime.test.ts",
+    "test:chat": "node --import tsx --test --test-isolation=none tests/chat-input-history.test.tsx tests/chat-interface-document-state.test.tsx tests/chat-state-selection.test.ts tests/process-messages.test.ts tests/subagent-chat-message.test.tsx tests/subagent-stream-adapter.test.ts tests/submit-research-message.test.ts tests/thread-document-availability.test.tsx tests/thread-snapshot-poller.test.ts tests/todo-maintenance.test.mjs tests/use-chat-new-thread-owner.test.tsx tests/use-chat-stream-options.test.ts tests/langgraph-thread-repository.test.ts tests/stream-proxy.test.ts",
+    "test:sync": "node --import tsx --test --test-isolation=none tests/markdown-attachment-types.test.ts tests/markdown-images.test.ts tests/synced-markdown-attachment.test.tsx tests/markdown-backend-sync-store.test.ts tests/markdown-connection-lifecycle.test.ts tests/markdown-connection-status.test.ts tests/markdown-pending-edit-coordinator.test.ts tests/markdown-preview-activity.test.ts tests/markdown-preview-focus-restoration.test.ts tests/markdown-preview-sync.test.mjs tests/markdown-server-state.test.mjs tests/markdown-state-file-links.test.tsx tests/markdown-sync-state.test.ts tests/markdown-websocket-heartbeat.test.mjs",
+    "test:deployment": "node --test tests/deployment-security.test.mjs tests/azure-subscription.test.mjs tests/deploy-oracle.test.mjs",
+    "test:behavioral": "yarn test",
     "test:architecture": "node --test tests/architecture-boundaries.test.mjs tests/auth-slice-boundaries.test.mjs tests/chat-thread-boundaries.test.mjs tests/markdown-sync-architecture.test.mjs tests/platform-boundaries.test.mjs tests/wiki-skills-boundaries.test.mjs && node scripts/check-architecture.mjs",
     "test:chat-architecture": "node --test tests/chat-thread-boundaries.test.mjs",
     "test:platform": "node --test tests/platform-boundaries.test.mjs && node --import tsx --test --test-isolation=none tests/api-transport.test.ts tests/authenticated-fetch.test.ts",
     "contract:generate": "openapi-typescript contracts/backend-api.openapi.json -o src/generated/backend-api.ts",
     "contract:check": "openapi-typescript contracts/backend-api.openapi.json -o src/generated/backend-api.ts --check",
     "analyze:har": "node scripts/analyze-har.mjs",
-    "postinstall": "mkdir -p public/pdfjs && cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdfjs/"
+    "postinstall": "mkdir -p public/pdfjs && cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdfjs/",
+    "test": "node --import tsx --test --test-concurrency=4 tests/*.test.mjs tests/*.test.ts tests/*.test.tsx"
   },
   "dependencies": {
     "@langchain/core": "^1.1.48",

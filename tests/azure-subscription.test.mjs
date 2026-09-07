@@ -284,7 +284,6 @@ test("tracked Azure scripts do not hardcode subscription UUIDs", async () => {
 });
 
 const scriptContracts = [
-  ["build.sh", "az group show"],
   ["deploy.sh", "az webapp show"],
   ["secrets.sh.example", "az keyvault secret set"],
 ];

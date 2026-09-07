@@ -709,7 +709,7 @@ test("synced attachments use canonical type-neutral links and a dedicated card",
   const attachmentRenderer = sourceSection(
     markdownContent,
     "const attachmentId = parseSyncedAttachmentHref",
-    "// Document links"
+    "let isStateFile = false;"
   );
 
   assert.match(attachmentRenderer, /parseSyncedAttachmentHref\(href\)/);

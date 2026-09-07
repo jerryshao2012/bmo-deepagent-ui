@@ -475,10 +475,12 @@ export class LangGraphThreadRepository implements ThreadRepository {
         sortOrder: "desc",
       });
       if (threads.length === 0) break;
+      let deletedCount = 0;
       for (const thread of threads) {
         if (new Date(thread.updated_at) < cutoff) {
           try {
             await this.delete(thread.thread_id);
+            deletedCount += 1;
           } catch (error) {
             console.error(
               `[Cleanup] Failed to delete thread ${thread.thread_id}:`,
@@ -487,7 +489,9 @@ export class LangGraphThreadRepository implements ThreadRepository {
           }
         }
       }
-      offset += batchSize;
+      // Deleted rows no longer occupy offsets; retain failed deletions in
+      // the count so they cannot trap cleanup on the same page.
+      offset += threads.length - deletedCount;
       hasMore = threads.length === batchSize;
     }
   }

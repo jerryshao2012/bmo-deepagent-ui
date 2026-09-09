@@ -166,14 +166,21 @@ export class SpeakerNotesPopupManager {
       --ease: cubic-bezier(0.16, 1, 0.3, 1);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+    }
     body {
       background: var(--bg);
       color: var(--ink);
       font-family: var(--font-display);
-      min-height: 100vh;
+      height: 100vh;
+      height: 100dvh;
       display: flex;
       flex-direction: column;
-      overflow-x: hidden;
+      overflow: hidden;
       -webkit-font-smoothing: antialiased;
     }
     header.speaker-header {
@@ -188,6 +195,7 @@ export class SpeakerNotesPopupManager {
       position: sticky;
       top: 0;
       z-index: 100;
+      flex-shrink: 0;
     }
     .header-left {
       display: flex;
@@ -297,10 +305,12 @@ export class SpeakerNotesPopupManager {
     }
     .main-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1.65fr) minmax(18rem, 0.95fr);
+      grid-template-columns: minmax(18rem, 21rem) minmax(0, 1fr);
       flex: 1;
+      min-height: 0;
       gap: 1.25rem;
       padding: 1.25rem 1.4rem;
+      overflow: hidden;
     }
     .notes-pane {
       display: flex;
@@ -310,6 +320,19 @@ export class SpeakerNotesPopupManager {
       border: 1px solid var(--line);
       border-radius: 12px;
       padding: 1.4rem;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+    .notes-scroll-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding-right: 0.25rem;
     }
     .slide-meta-bar {
       display: flex;
@@ -318,6 +341,7 @@ export class SpeakerNotesPopupManager {
       gap: 1rem;
       padding-bottom: 0.9rem;
       border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
     }
     .slide-meta-info {
       display: flex;
@@ -413,7 +437,12 @@ export class SpeakerNotesPopupManager {
     .side-pane {
       display: flex;
       flex-direction: column;
-      gap: 1.25rem;
+      gap: 1rem;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      min-height: 0;
+      height: 100%;
+      padding-right: 0.2rem;
     }
     .card-box {
       background: var(--panel);
@@ -423,6 +452,7 @@ export class SpeakerNotesPopupManager {
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
+      flex-shrink: 0;
     }
     .card-box-header {
       font-family: var(--font-mono);
@@ -509,6 +539,7 @@ export class SpeakerNotesPopupManager {
       flex-shrink: 0;
     }
     .shortcuts-footer {
+      flex-shrink: 0;
       padding: 0.75rem 1.4rem;
       background: var(--panel);
       border-top: 1px solid var(--line);
@@ -528,8 +559,35 @@ export class SpeakerNotesPopupManager {
       padding: 0.1rem 0.35rem;
       color: #fff;
     }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(115, 195, 235, 0.25);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(115, 195, 235, 0.45);
+    }
     @media (max-width: 820px) {
-      .main-grid { grid-template-columns: 1fr; }
+      .main-grid {
+        grid-template-columns: 1fr;
+        overflow-y: auto;
+      }
+      .side-pane {
+        height: auto;
+        max-height: 240px;
+      }
+      .notes-pane {
+        height: auto;
+      }
+      .notes-scroll-pane {
+        overflow: visible;
+      }
     }
   </style>
 </head>
@@ -556,26 +614,15 @@ export class SpeakerNotesPopupManager {
   </header>
 
   <main class="main-grid">
-    <section class="notes-pane" id="popupNotesPane">
-      <div class="slide-meta-bar">
-        <div class="slide-meta-info">
-          <span class="slide-eyebrow" id="popupSlideCategory">Vision & Overview</span>
-          <h1 class="slide-heading" id="popupSlideTitle">Loading...</h1>
-        </div>
-      </div>
-
-      <div class="talking-points-card">
-        <div class="talking-points-header">Key Talking Points &amp; Guidance</div>
-        <ul class="points-list" id="popupPointsList"></ul>
-      </div>
-
-      <div class="transition-card" id="popupTransitionCard">
-        <span class="transition-label">Bridge to Next Slide</span>
-        <p class="transition-text" id="popupTransitionText"></p>
-      </div>
-    </section>
-
     <aside class="side-pane">
+      <div class="card-box">
+        <div class="card-box-header">
+          <span>Slide Index</span>
+          <span>6 Slides</span>
+        </div>
+        <div class="slides-nav-list" id="popupSlideNavList"></div>
+      </div>
+
       <div class="card-box">
         <div class="card-box-header">
           <span>Up Next</span>
@@ -587,15 +634,28 @@ export class SpeakerNotesPopupManager {
           <div class="up-next-points" id="popupUpNextSnippet">Next slide snippet</div>
         </div>
       </div>
-
-      <div class="card-box">
-        <div class="card-box-header">
-          <span>Slide Index</span>
-          <span>6 Slides</span>
-        </div>
-        <div class="slides-nav-list" id="popupSlideNavList"></div>
-      </div>
     </aside>
+
+    <section class="notes-pane" id="popupNotesPane">
+      <div class="slide-meta-bar">
+        <div class="slide-meta-info">
+          <span class="slide-eyebrow" id="popupSlideCategory">Vision & Overview</span>
+          <h1 class="slide-heading" id="popupSlideTitle">Loading...</h1>
+        </div>
+      </div>
+
+      <div class="notes-scroll-pane" id="popupNotesScrollPane">
+        <div class="talking-points-card">
+          <div class="talking-points-header">Key Talking Points &amp; Guidance</div>
+          <ul class="points-list" id="popupPointsList"></ul>
+        </div>
+
+        <div class="transition-card" id="popupTransitionCard">
+          <span class="transition-label">Bridge to Next Slide</span>
+          <p class="transition-text" id="popupTransitionText"></p>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer class="shortcuts-footer">
@@ -922,6 +982,20 @@ export class SpeakerNotesPopupManager {
           if (sid) this.onNavigate(sid);
         });
       });
+
+      const activeItem = navList.querySelector(
+        ".nav-item-btn.active"
+      ) as HTMLElement | null;
+      if (activeItem) {
+        activeItem.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    }
+
+    const scrollPane =
+      doc.getElementById("popupNotesScrollPane") ||
+      doc.getElementById("popupNotesPane");
+    if (scrollPane) {
+      scrollPane.scrollTop = 0;
     }
   }
 }

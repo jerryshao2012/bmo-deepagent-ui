@@ -1665,7 +1665,7 @@ for (const [name, dockerEnv, error] of [
   [
     "unmatched quote",
     'NEXT_PUBLIC_ASSISTANT_ID="unterminated\n',
-    /unmatched quote/i,
+    /unterminated quoted value|unmatched quote/i,
   ],
 ]) {
   test(`deployment rejects .env.docker ${name} before external access`, async () => {

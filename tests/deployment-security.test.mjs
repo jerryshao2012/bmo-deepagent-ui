@@ -458,7 +458,7 @@ test("deployment never exposes server API keys through NEXT_PUBLIC variables", a
 
   assert.doesNotMatch(
     deployScript,
-    /NEXT_PUBLIC_LANGSMITH_API_KEY\s*=\s*\$LANGCHAIN_API_KEY/
+    /NEXT_PUBLIC_LANGSMITH_API_KEY\s*=\s*\$LANGSMITH_API_KEY/
   );
 });
 

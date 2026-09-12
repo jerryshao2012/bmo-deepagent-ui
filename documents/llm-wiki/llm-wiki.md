@@ -106,8 +106,8 @@ _Workspace tree exposes generated Wiki files for inspection without replacing or
 
 | Surface         | Static key                                                        | OAuth application session                                               | Selection behavior                                                                                                                         |
 | --------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Document API    | `X-API-Key: <static-key>` only                                    | `X-API-Key: <session-token>` or `Authorization: Bearer <session-token>` | Static-key configuration uses `UPLOAD_API_KEY`, then `LANGCHAIN_API_KEY`, then process-local generated fallback.                           |
-| Thread Wiki API | `X-API-Key: <static-key>` or `Authorization: Bearer <static-key>` | `X-API-Key: <session-token>` or `Authorization: Bearer <session-token>` | `X-API-Key` wins when both headers exist. Configured key selection uses `LANGCHAIN_API_KEY`, then `UPLOAD_API_KEY`; no generated fallback. |
+| Document API    | `X-API-Key: <static-key>` only                                    | `X-API-Key: <session-token>` or `Authorization: Bearer <session-token>` | Static-key configuration uses `UPLOAD_API_KEY`, then `LANGSMITH_API_KEY`, then process-local generated fallback.                           |
+| Thread Wiki API | `X-API-Key: <static-key>` or `Authorization: Bearer <static-key>` | `X-API-Key: <session-token>` or `Authorization: Bearer <session-token>` | `X-API-Key` wins when both headers exist. Configured key selection uses `LANGSMITH_API_KEY`, then `UPLOAD_API_KEY`; no generated fallback. |
 
 Document API also gives any nonempty `X-API-Key` header precedence over Bearer
 session. Bearer is considered only when `X-API-Key` is absent. An invalid
@@ -328,9 +328,9 @@ and
 - `409`: query found source directory but `_wiki_is_ready` did not detect
   populated wiki index. Wait for `wiki_ready: true`; phase alone is not
   readiness contract.
-- `500` during Wiki authentication: neither `LANGCHAIN_API_KEY` nor
+- `500` during Wiki authentication: neither `LANGSMITH_API_KEY` nor
   `UPLOAD_API_KEY` is configured and supplied credential is not valid OAuth
-  session. Backend reports `LANGCHAIN_API_KEY not set`; configure static key or
+  session. Backend reports `LANGSMITH_API_KEY not set`; configure static key or
   supply valid session.
 - `413`: request `Content-Length` or an individual file exceeds configured
   upload limit. Reduce request/file size or change backend limit deliberately.

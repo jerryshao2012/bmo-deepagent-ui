@@ -94,7 +94,7 @@ const defaultManifest = {
 
 const fakeAz = `#!/bin/bash
 set -u
-for variable_name in LANGCHAIN_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET SYNTHETIC_SECRET_CANARY NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE; do
+for variable_name in LANGSMITH_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET SYNTHETIC_SECRET_CANARY NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE; do
   [ -z "\${!variable_name-}" ] || printf 'environment-leak:%s\n' "$variable_name" >> "$COMMAND_LOG"
 done
 {
@@ -400,7 +400,7 @@ esac
 
 const fakeCurl = `#!/bin/bash
 set -u
-for variable_name in LANGCHAIN_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET SYNTHETIC_SECRET_CANARY NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE; do
+for variable_name in LANGSMITH_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET SYNTHETIC_SECRET_CANARY NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE; do
   [ -z "\${!variable_name-}" ] || printf 'environment-leak:%s\n' "$variable_name" >> "$COMMAND_LOG"
 done
 {
@@ -584,7 +584,7 @@ ${uiEnvExtra}
       [
         "node",
         `#!/bin/bash
-for variable_name in LANGCHAIN_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET SYNTHETIC_SECRET_CANARY NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE; do
+for variable_name in LANGSMITH_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET SYNTHETIC_SECRET_CANARY NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE; do
   [ -z "\${!variable_name-}" ] || printf 'environment-leak:%s\\n' "$variable_name" >> "$COMMAND_LOG"
 done
 exec ${process.execPath} "$@"
@@ -1257,7 +1257,7 @@ test("deployment consumes manifest without runtime, build, login, push, rsync, o
 
 test("deployment rejects non-allowlisted .env.docker credentials and controls without leaking them", async () => {
   const dockerEnv = `NEXT_PUBLIC_ASSISTANT_ID=docker-assistant
-LANGCHAIN_API_KEY=docker-env-secret-canary
+LANGSMITH_API_KEY=docker-env-secret-canary
 UPLOAD_API_KEY=docker-env-secret-canary
 PASSKEY_PROXY_SECRET=docker-env-secret-canary
 NODE_OPTIONS=--require=__NODE_OPTIONS_PAYLOAD__
@@ -1280,7 +1280,7 @@ REGISTRY_AUTH_FILE=docker-env-secret-canary
 test("deployment sanitizes inherited credentials and controls before child tools", async () => {
   const { result, log, controlSentinelExists } = await runDeployment({
     inheritedEnv: {
-      LANGCHAIN_API_KEY: "docker-env-secret-canary",
+      LANGSMITH_API_KEY: "docker-env-secret-canary",
       UPLOAD_API_KEY: "docker-env-secret-canary",
       PASSKEY_PROXY_SECRET: "docker-env-secret-canary",
       NODE_OPTIONS: "--require=__NODE_OPTIONS_PAYLOAD__",
@@ -1308,7 +1308,7 @@ test("tracked .env.docker example and unrelated secrets reach Azure preflight wi
   assert.match(log, /^az <group> <show>/m);
   assert.doesNotMatch(
     `${result.stdout}${result.stderr}${log}`,
-    /environment-leak|example-secret-canary|YOUR_LANGCHAIN_API_KEY_HERE|YOUR_UPLOAD_API_KEY_HERE|REPLACE_WITH_AT_LEAST_32_RANDOM_BYTES/
+    /environment-leak|example-secret-canary|YOUR_LANGSMITH_API_KEY_HERE|YOUR_UPLOAD_API_KEY_HERE|REPLACE_WITH_AT_LEAST_32_RANDOM_BYTES/
   );
 });
 

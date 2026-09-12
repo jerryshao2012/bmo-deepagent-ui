@@ -5,7 +5,7 @@ deploy it with [`deploy-aws.sh`](../../deploy-aws.sh) to ECS Fargate behind Appl
 Load Balancer and CloudFront.
 
 > **Production blockers:** Current task definition sets `VERIFY_SSL=false` and injects
-> Secrets Manager `LANGCHAIN-API-KEY` as browser-visible
+> Secrets Manager `LANGSMITH-API-KEY` as browser-visible
 > `NEXT_PUBLIC_LANGSMITH_API_KEY`. Remediate both in `deploy-aws.sh` before production.
 > This guide documents existing automation; it does not endorse those defaults or
 > provide complete production hardening.
@@ -131,7 +131,7 @@ validates secret exists. Without copied helper, secret must already exist. Secre
 keys expected by task definition include:
 
 - `UPLOAD-API-KEY`
-- `LANGCHAIN-API-KEY`
+- `LANGSMITH-API-KEY`
 - `AUTH-SECRET`
 - Google and GitHub OAuth client IDs/secrets
 
@@ -206,7 +206,7 @@ Resolve these before production:
 | Risk                      | Current behavior                                             | Required direction                                                        |
 | ------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------- |
 | TLS verification disabled | Task sets `VERIFY_SSL=false`.                                | Remove override and configure valid backend trust chain.                  |
-| Secret exposed to browser | `LANGCHAIN-API-KEY` becomes `NEXT_PUBLIC_LANGSMITH_API_KEY`. | Keep key server-side; remove browser-visible mapping.                     |
+| Secret exposed to browser | `LANGSMITH-API-KEY` becomes `NEXT_PUBLIC_LANGSMITH_API_KEY`. | Keep key server-side; remove browser-visible mapping.                     |
 | HTTP origin               | CloudFront connects to ALB with `http-only`.                 | Configure TLS from CloudFront to origin or approved private/VPC origin.   |
 | Public task address       | ECS service uses `assignPublicIp=ENABLED`.                   | Prefer private subnets/NAT or VPC endpoints and restricted routing.       |
 | Mutable image             | Task definition references `:latest`.                        | Use immutable image tag/digest and record release mapping.                |

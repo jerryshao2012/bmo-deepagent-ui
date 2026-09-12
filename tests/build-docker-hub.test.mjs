@@ -49,7 +49,7 @@ const priorManifest = Buffer.from(
 
 const fakeRuntime = `#!/bin/bash
 set -u
-for variable_name in LANGCHAIN_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET SYNTHETIC_SECRET_CANARY NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE; do
+for variable_name in LANGSMITH_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET SYNTHETIC_SECRET_CANARY NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE; do
   [ -z "\${!variable_name-}" ] || printf 'environment-leak:%s\n' "$variable_name" >> "$COMMAND_LOG"
 done
 {
@@ -243,7 +243,7 @@ ${backendEnvExtra}`
       await writeFile(
         commandPath,
         `#!/bin/bash
-for variable_name in LANGCHAIN_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET SYNTHETIC_SECRET_CANARY NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE; do
+for variable_name in LANGSMITH_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET SYNTHETIC_SECRET_CANARY NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE; do
   [ -z "\${!variable_name-}" ] || printf 'environment-leak:%s\n' "$variable_name" >> "$COMMAND_LOG"
 done
 {
@@ -273,7 +273,7 @@ printf '20260812T101112Z\n'
     await writeFile(
       nodePath,
       `#!/bin/bash
-for variable_name in LANGCHAIN_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET SYNTHETIC_SECRET_CANARY NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE; do
+for variable_name in LANGSMITH_API_KEY UPLOAD_API_KEY PASSKEY_PROXY_SECRET SYNTHETIC_SECRET_CANARY NODE_OPTIONS DOCKER_CONFIG REGISTRY_AUTH_FILE; do
   [ -z "\${!variable_name-}" ] || printf 'environment-leak:%s\n' "$variable_name" >> "$COMMAND_LOG"
 done
 if [ "\${1:-}" = "-e" ] && printf '%s' "\${2:-}" | /usr/bin/grep -q 'writeFileSync'; then
@@ -851,7 +851,7 @@ test(".env.docker rejects non-allowlisted credentials and controls without leaki
   const { result, log, controlSentinelExists, manifest } = await runBuild({
     exportedPat: "approved-login-pat",
     dockerEnv: `NEXT_PUBLIC_ASSISTANT_ID=allowlisted-assistant
-LANGCHAIN_API_KEY=docker-env-secret-canary
+LANGSMITH_API_KEY=docker-env-secret-canary
 UPLOAD_API_KEY=docker-env-secret-canary
 PASSKEY_PROXY_SECRET=docker-env-secret-canary
 NODE_OPTIONS=--require=__NODE_OPTIONS_PAYLOAD__
@@ -874,7 +874,7 @@ test("build sanitizes inherited credentials and controls before child tools", as
   const { result, log, controlSentinelExists } = await runBuild({
     exportedPat: "approved-login-pat",
     inheritedEnv: {
-      LANGCHAIN_API_KEY: "docker-env-secret-canary",
+      LANGSMITH_API_KEY: "docker-env-secret-canary",
       UPLOAD_API_KEY: "docker-env-secret-canary",
       PASSKEY_PROXY_SECRET: "docker-env-secret-canary",
       NODE_OPTIONS: "--require=__NODE_OPTIONS_PAYLOAD__",
@@ -901,7 +901,7 @@ test("tracked .env.docker example and unrelated secrets remain compatible withou
   assert.equal(JSON.parse(manifest.toString("utf8")).assistantId, "research");
   assert.doesNotMatch(
     `${result.stdout}${result.stderr}${log}`,
-    /environment-leak|example-secret-canary|YOUR_LANGCHAIN_API_KEY_HERE|YOUR_UPLOAD_API_KEY_HERE|REPLACE_WITH_AT_LEAST_32_RANDOM_BYTES/
+    /environment-leak|example-secret-canary|YOUR_LANGSMITH_API_KEY_HERE|YOUR_UPLOAD_API_KEY_HERE|REPLACE_WITH_AT_LEAST_32_RANDOM_BYTES/
   );
 });
 

@@ -407,7 +407,7 @@ cat > "$TASK_DEF_FILE" <<EOF
       ],
       "secrets": [
         { "name": "UPLOAD_API_KEY", "valueFrom": "${SECRET_ARN}:UPLOAD-API-KEY::" },
-        { "name": "NEXT_PUBLIC_LANGSMITH_API_KEY", "valueFrom": "${SECRET_ARN}:LANGCHAIN-API-KEY::" },
+        { "name": "NEXT_PUBLIC_LANGSMITH_API_KEY", "valueFrom": "${SECRET_ARN}:LANGSMITH-API-KEY::" },
         { "name": "AUTH_SECRET", "valueFrom": "${SECRET_ARN}:AUTH-SECRET::" },
         { "name": "AUTH_GITHUB_ID", "valueFrom": "${SECRET_ARN}:AUTH-GITHUB-ID::" },
         { "name": "AUTH_GITHUB_SECRET", "valueFrom": "${SECRET_ARN}:AUTH-GITHUB-SECRET::" },

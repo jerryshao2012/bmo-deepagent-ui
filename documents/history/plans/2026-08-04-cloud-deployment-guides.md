@@ -134,7 +134,7 @@ and updates or creates service using discovered resources.
 - [x] **Step 4: Add mandatory known-risk callout**
 
 State current task definition sets `VERIFY_SSL=false` and maps Secrets Manager
-`LANGCHAIN-API-KEY` to browser-visible `NEXT_PUBLIC_LANGSMITH_API_KEY`, conflicting
+`LANGSMITH-API-KEY` to browser-visible `NEXT_PUBLIC_LANGSMITH_API_KEY`, conflicting
 with production secret policy. Recommend script remediation before production. Also
 document public task IP, HTTP ALB origin, broad IAM needs, mutable `latest`, resource
 charges, and cleanup ownership.

@@ -94,7 +94,7 @@ mandatory `../deep-research/env-aws.sh`, optionally sources `.env`, and mutates
 Include warnings for public IP assignment, HTTP ALB origin, CloudFront propagation,
 IAM permissions, resource charges, and cleanup responsibility. Document current known
 security risks explicitly: task definition sets `VERIFY_SSL=false`, and injects
-Secrets Manager `LANGCHAIN-API-KEY` as browser-visible
+Secrets Manager `LANGSMITH-API-KEY` as browser-visible
 `NEXT_PUBLIC_LANGSMITH_API_KEY`. Guide must recommend remediating script before
 production use rather than endorsing those defaults.
 

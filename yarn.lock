@@ -47,30 +47,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@auth/core@npm:0.41.2":
-  version: 0.41.2
-  resolution: "@auth/core@npm:0.41.2"
-  dependencies:
-    "@panva/hkdf": "npm:^1.2.1"
-    jose: "npm:^6.0.6"
-    oauth4webapi: "npm:^3.3.0"
-    preact: "npm:10.24.3"
-    preact-render-to-string: "npm:6.5.11"
-  peerDependencies:
-    "@simplewebauthn/browser": ^9.0.1
-    "@simplewebauthn/server": ^9.0.2
-    nodemailer: ^7.0.7
-  peerDependenciesMeta:
-    "@simplewebauthn/browser":
-      optional: true
-    "@simplewebauthn/server":
-      optional: true
-    nodemailer:
-      optional: true
-  checksum: 10c0/a8309434a91bb678c5dd644b97ae8ed0935426808f4251ddd5f888b845c152393718978d631ffdf48ed13c2626dae146665592b6be66b7e1c06356764a89dce4
-  languageName: node
-  linkType: hard
-
 "@babel/code-frame@npm:^7.10.4, @babel/code-frame@npm:^7.26.2":
   version: 7.29.7
   resolution: "@babel/code-frame@npm:7.29.7"
@@ -1425,13 +1401,6 @@ __metadata:
   version: 1.0.39
   resolution: "@nolyfill/is-core-module@npm:1.0.39"
   checksum: 10c0/34ab85fdc2e0250879518841f74a30c276bca4f6c3e13526d2d1fe515e1adf6d46c25fcd5989d22ea056d76f7c39210945180b4859fc83b050e2da411aa86289
-  languageName: node
-  linkType: hard
-
-"@panva/hkdf@npm:^1.2.1":
-  version: 1.2.1
-  resolution: "@panva/hkdf@npm:1.2.1"
-  checksum: 10c0/1fabdec9bd2c19b8e88a3fa6fd0c25e25823c5000d9efdf4b6dfe32e9f370f8b9603cf776d120d160bec15fba17e079974cc34f0f52cebb24602cd832dfde19c
   languageName: node
   linkType: hard
 
@@ -4612,7 +4581,6 @@ __metadata:
     mammoth: "npm:^1.12.0"
     mermaid: "npm:^11.15.0"
     next: "npm:^16.1.7"
-    next-auth: "npm:^5.0.0-beta.31"
     nuqs: "npm:^2.8.8"
     openapi-typescript: "npm:^7.13.0"
     pdfjs-dist: "npm:^6.0.227"
@@ -6422,13 +6390,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"jose@npm:^6.0.6":
-  version: 6.2.3
-  resolution: "jose@npm:6.2.3"
-  checksum: 10c0/aa91bccba22cc84d86308f833749bcb0b00441e35c24e0ac79abeac5f76dc62d47bdef9c1da6a0c609f5da6478595f52b252085888b89dbdb163861e40ea4188
-  languageName: node
-  linkType: hard
-
 "js-levenshtein@npm:1.1.6":
   version: 1.1.6
   resolution: "js-levenshtein@npm:1.1.6"
@@ -7554,28 +7515,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"next-auth@npm:^5.0.0-beta.31":
-  version: 5.0.0-beta.31
-  resolution: "next-auth@npm:5.0.0-beta.31"
-  dependencies:
-    "@auth/core": "npm:0.41.2"
-  peerDependencies:
-    "@simplewebauthn/browser": ^9.0.1
-    "@simplewebauthn/server": ^9.0.2
-    next: ^14.0.0-0 || ^15.0.0 || ^16.0.0
-    nodemailer: ^7.0.7
-    react: ^18.2.0 || ^19.0.0
-  peerDependenciesMeta:
-    "@simplewebauthn/browser":
-      optional: true
-    "@simplewebauthn/server":
-      optional: true
-    nodemailer:
-      optional: true
-  checksum: 10c0/9c021909f3b774f2967f706f5b060d9e8ab6ebd5907f4e810caf6838e983f4e10a3db5481c1de3e3a273f7ea3feeddeff6092a91662a5f5ca7bbf54f439c27d4
-  languageName: node
-  linkType: hard
-
 "next@npm:^16.1.7":
   version: 16.2.6
   resolution: "next@npm:16.2.6"
@@ -7714,13 +7653,6 @@ __metadata:
     react-router-dom:
       optional: true
   checksum: 10c0/d3a5503268d5a297c5b5acbd0c6f362f7462f67fea31f88264748ccab7788343bd428b49b7e63f5c5be08afcb22a2ee569fd36b6d0b8f95b8cfca7013ea700e3
-  languageName: node
-  linkType: hard
-
-"oauth4webapi@npm:^3.3.0":
-  version: 3.8.6
-  resolution: "oauth4webapi@npm:3.8.6"
-  checksum: 10c0/479810716702c5616e4a0eb80d4f1c264a6a2b63b04061a62a59375e195d2726e947507ede98e41ee3f9ca800f159621ea371c36f5c4346d015b6ec03e477440
   languageName: node
   linkType: hard
 
@@ -8239,22 +8171,6 @@ __metadata:
     picocolors: "npm:^1.1.1"
     source-map-js: "npm:^1.2.1"
   checksum: 10c0/5127cc7c91ed7a133a1b7318012d8bfa112da9ef092dddf369ae699a1f10ebbd89b1b9f25f3228795b84585c72aabd5ced5fc11f2ba467eedf7b081a66fad024
-  languageName: node
-  linkType: hard
-
-"preact-render-to-string@npm:6.5.11":
-  version: 6.5.11
-  resolution: "preact-render-to-string@npm:6.5.11"
-  peerDependencies:
-    preact: ">=10"
-  checksum: 10c0/a68b704c1343756022fb41322154b45e39f6021b940cbc97e86c292627d017d019700339a17d67b42c308b14fc5323fc120c798f785d6a3e993c8f273610bfe2
-  languageName: node
-  linkType: hard
-
-"preact@npm:10.24.3":
-  version: 10.24.3
-  resolution: "preact@npm:10.24.3"
-  checksum: 10c0/c863df6d7be6a660480189762d8a8f2d4148733fc2bb9efbd9d2fd27315d2c7ede850a16077d716c91666c915c0349bd3c9699733e4f08457226a0519f408761
   languageName: node
   linkType: hard
 

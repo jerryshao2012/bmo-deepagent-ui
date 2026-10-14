@@ -28,6 +28,15 @@ import {
   MarkdownPendingEditCoordinator,
   resolveMarkdownWebSocketSync,
 } from "@/features/markdown-sync/application/pending-edit-coordinator";
+import {
+  createMarkdownUndoHistory,
+  pushMarkdownUndoState,
+  undoMarkdownHistory,
+  redoMarkdownHistory,
+  isMarkdownUndoShortcut,
+  isMarkdownRedoShortcut,
+  type MarkdownUndoHistoryState,
+} from "@/features/markdown-sync/application/preview-undo-redo";
 import { clearRememberedLogin } from "@/lib/remembered-login";
 import {
   buildSyncedAssetMarkdown,
@@ -171,6 +180,42 @@ function IntroPageContent() {
   activeThreadIdRef.current = threadId;
   const isDialogOpenRef = useRef(isDialogOpen);
   isDialogOpenRef.current = isDialogOpen;
+  const undoHistoryRef = useRef<MarkdownUndoHistoryState>(
+    createMarkdownUndoHistory("")
+  );
+  const undoDebounceTimerRef = useRef<number | null>(null);
+
+  const pushUndoSnapshot = useCallback((nextText: string, immediate = false) => {
+    if (immediate) {
+      if (undoDebounceTimerRef.current !== null) {
+        window.clearTimeout(undoDebounceTimerRef.current);
+        undoDebounceTimerRef.current = null;
+      }
+      undoHistoryRef.current = pushMarkdownUndoState(
+        undoHistoryRef.current,
+        nextText
+      );
+      return;
+    }
+
+    if (undoDebounceTimerRef.current === null) {
+      undoHistoryRef.current = pushMarkdownUndoState(
+        undoHistoryRef.current,
+        nextText
+      );
+    } else {
+      undoHistoryRef.current = {
+        ...undoHistoryRef.current,
+        present: nextText,
+        future: [],
+      };
+      window.clearTimeout(undoDebounceTimerRef.current);
+    }
+
+    undoDebounceTimerRef.current = window.setTimeout(() => {
+      undoDebounceTimerRef.current = null;
+    }, 400);
+  }, []);
 
   const updateWsStatus = useCallback((status: MarkdownConnectionStatus) => {
     wsStatusRef.current = status;
@@ -249,6 +294,11 @@ function IntroPageContent() {
       pendingBackendContentRef.current = null;
       backendFailureCountRef.current = 0;
       backendNextRetryAtRef.current = 0;
+      if (undoDebounceTimerRef.current !== null) {
+        window.clearTimeout(undoDebounceTimerRef.current);
+        undoDebounceTimerRef.current = null;
+      }
+      undoHistoryRef.current = createMarkdownUndoHistory("");
       void pendingEditCoordinatorRef.current
         .readCurrent(threadId, () => browserMarkdownStore.load(threadId))
         .then((cachedRead) => {
@@ -257,6 +307,7 @@ function IntroPageContent() {
             cachedRead.value &&
             activeThreadIdRef.current === threadId
           ) {
+            undoHistoryRef.current = createMarkdownUndoHistory(cachedRead.value);
             applyContent(cachedRead.value);
           }
         });
@@ -893,7 +944,41 @@ function IntroPageContent() {
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     noteMarkdownActivity();
-    publishContent(e.target.value);
+    const nextValue = e.target.value;
+    pushUndoSnapshot(nextValue, false);
+    publishContent(nextValue);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isMarkdownUndoShortcut(e)) {
+      e.preventDefault();
+      noteMarkdownActivity();
+      if (undoDebounceTimerRef.current !== null) {
+        window.clearTimeout(undoDebounceTimerRef.current);
+        undoDebounceTimerRef.current = null;
+      }
+      const undoRes = undoMarkdownHistory(undoHistoryRef.current);
+      if (undoRes) {
+        undoHistoryRef.current = undoRes.nextHistory;
+        publishContent(undoRes.text, true);
+      }
+      return;
+    }
+
+    if (isMarkdownRedoShortcut(e)) {
+      e.preventDefault();
+      noteMarkdownActivity();
+      if (undoDebounceTimerRef.current !== null) {
+        window.clearTimeout(undoDebounceTimerRef.current);
+        undoDebounceTimerRef.current = null;
+      }
+      const redoRes = redoMarkdownHistory(undoHistoryRef.current);
+      if (redoRes) {
+        undoHistoryRef.current = redoRes.nextHistory;
+        publishContent(redoRes.text, true);
+      }
+      return;
+    }
   };
 
   const handleRemove = async () => {
@@ -909,7 +994,10 @@ function IntroPageContent() {
       await removeSyncedMarkdownWorkspace({
         markdownId: markdownIdToRemove,
         activeUpload,
-        publishEmpty: () => publishContent(""),
+        publishEmpty: () => {
+          pushUndoSnapshot("", true);
+          publishContent("");
+        },
         deleteNamespace: deleteMarkdownAssets,
       });
       toast.success(
@@ -930,6 +1018,7 @@ function IntroPageContent() {
     noteMarkdownActivity();
     try {
       const text = await navigator.clipboard.readText();
+      pushUndoSnapshot(text, true);
       publishContent(text, Boolean(text));
     } catch (err) {
       console.error("Failed to read from clipboard:", err);
@@ -2916,6 +3005,7 @@ function IntroPageContent() {
                     <textarea
                       value={sharedText}
                       onChange={handleTextChange}
+                      onKeyDown={handleKeyDown}
                       onPaste={handleMarkdownAssetPaste}
                       onDragOver={handleMarkdownAssetDragOver}
                       onDrop={handleMarkdownAssetDrop}
